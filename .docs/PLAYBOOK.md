@@ -5,8 +5,8 @@ A short step-by-step guide to configure VLab and run your first planning cycle.
 ## 1. What you need
 
 - Rust via `rustup` (the pinned toolchain is in `rust-toolchain.toml`).
-- A DeepSeek API key in `DEEPSEEK_API_KEY`.
-- Optional: a GitHub key in `GITHUB_API_KEY` if a project points at a repository.
+- A DeepSeek API key.
+- Optional: a GitHub token if a project points at a repository.
 
 ```sh
 git clone https://github.com/massimobiagioli/vlab.git
@@ -17,22 +17,25 @@ make build-debug
 The binary is `./target/debug/vlab`. `make run ARGS="..."` runs it with data in
 `.data/` instead of your per-user directories.
 
-## 2. Set the credentials
+## 2. Create settings with the credentials
 
-Use environment variables; never put keys in `settings.yaml`.
+Credentials live in `settings.yaml`, never in environment variables. The file
+is private, outside git, and written with mode `0600`.
 
-```sh
-export DEEPSEEK_API_KEY="sk-..."
-export GITHUB_API_KEY="ghp_..."   # optional
-```
-
-## 3. Create settings
+If you use the binary directly, let the editor create the per-user file:
 
 ```sh
 vlab --edit-settings
 ```
 
-Your editor opens a private copy. Save a valid file like:
+If you use `make run`, its settings live in `.data/`; copy the tracked example
+with private permissions and replace the placeholders:
+
+```sh
+install -m 600 .data/settings.example.yaml .data/settings.yaml
+```
+
+A valid file looks like:
 
 ```yaml
 provider: deepseek
@@ -40,15 +43,21 @@ model: deepseek-chat
 # Optional; GitHub is the only source-control provider.
 source_control:
   provider: github
+credentials:
+  deepseek_api_key: "sk-..."
+  github_api_key: "ghp-..."   # optional
 ```
 
-Invalid edits are rejected and the previous file is kept. Check it with:
+`github_api_key` is needed only for projects created with `--github-source`.
+Invalid edits are rejected and the previous file is kept.
+
+## 3. Verify the settings
 
 ```sh
 vlab --show-settings
 ```
 
-It shows `DEEPSEEK_API_KEY: set` and `GITHUB_API_KEY: set` (never the values).
+It shows `DeepSeek API key: set` and `GitHub API key: set` (never the values).
 
 ## 4. Create and open a laboratory
 
@@ -85,7 +94,7 @@ Exit 0 means it is ready. Exit 4 prints one line per failed rule.
 vlab --new-project "Customer Portal"
 ```
 
-With a GitHub repository (requires `GITHUB_API_KEY`):
+With a GitHub repository (requires `credentials.github_api_key`):
 
 ```sh
 vlab --new-project "Customer Portal" --github-source https://github.com/acme/portal
@@ -162,14 +171,17 @@ is never executed or stored.
 | Settings | per-user config dir + `vlab/settings.yaml` | `VLAB_CONFIG_DIR` |
 | Database | per-user data dir + `vlab/vlab.db` | `VLAB_DATA_DIR`, `VLAB_DB_PATH` |
 
-`make run` uses `.data/` inside the project. To reset development data:
+`make run` uses `.data/` inside the project. It contains `settings.yaml` once
+you create it, and that file holds your keys; `.data/settings.example.yaml` is
+only a tracked placeholder. To reset development data (keeping the example):
 
 ```sh
 make clean-data
 ```
 
 There is no backup command; stop VLab before copying the database. SQLite is
-not encrypted at rest; use OS disk encryption for sensitive data.
+not encrypted at rest; use OS disk encryption for sensitive data. Protect
+backups of `settings.yaml` as secrets.
 
 ## 12. Common errors
 
@@ -184,8 +196,8 @@ not encrypted at rest; use OS disk encryption for sensitive data.
 ## Quick start
 
 ```sh
-export DEEPSEEK_API_KEY="sk-..."
-vlab --edit-settings                 # provider: deepseek, model: deepseek-chat
+vlab --edit-settings                 # add provider, model, and keys
+vlab --show-settings
 vlab --new-lab "My Lab"
 vlab --open-lab <lab-id>
 vlab --new-agent                     # create the lead, then other agents

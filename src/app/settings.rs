@@ -14,6 +14,8 @@ use crate::domain::settings::Settings;
 pub enum LoadError {
     Missing,
     Unreadable(io::ErrorKind),
+    /// The file exists but is readable by group or other users on Unix.
+    Exposed,
     Invalid(String),
 }
 
@@ -52,26 +54,16 @@ pub trait Editor {
 pub struct SettingsReport {
     pub path: PathBuf,
     pub settings: Settings,
-    /// Whether `DEEPSEEK_API_KEY` is set; its value is never read here.
-    pub credential_present: bool,
-    /// Whether `GITHUB_API_KEY` is set; its value is never read here.
-    pub github_credential_present: bool,
 }
 
 /// `--show-settings`: reads and validates the file. Makes no provider call.
-pub fn show(
-    store: &impl SettingsStore,
-    credential_present: bool,
-    github_credential_present: bool,
-) -> Result<SettingsReport, AppError> {
+pub fn show(store: &impl SettingsStore) -> Result<SettingsReport, AppError> {
     let settings = store
         .load()
         .map_err(|error| show_error(store.path(), error))?;
     Ok(SettingsReport {
         path: store.path().to_path_buf(),
         settings,
-        credential_present,
-        github_credential_present,
     })
 }
 
@@ -85,6 +77,10 @@ fn show_error(path: &Path, error: LoadError) -> AppError {
         LoadError::Unreadable(kind) => AppError::Configuration {
             problem: format!("the settings file `{path}` cannot be read: {kind}."),
             hint: "Check the file's ownership and permissions.".to_owned(),
+        },
+        LoadError::Exposed => AppError::Configuration {
+            problem: format!("the settings file `{path}` is accessible by other users."),
+            hint: format!("Run `chmod 600 {path}`."),
         },
         LoadError::Invalid(reason) => AppError::Configuration {
             problem: format!("the settings file `{path}` is invalid: {reason}."),

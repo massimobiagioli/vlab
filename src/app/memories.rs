@@ -40,9 +40,10 @@ pub fn create(
     state: &impl AppStateStore,
     scope: MemoryScope,
     content: &str,
+    secret: Option<&str>,
 ) -> Result<Memory, AppError> {
     validate_owner(store, state, &scope)?;
-    if contains_configured_secret(content) {
+    if secret.is_some_and(|secret| !secret.is_empty() && content.contains(secret)) {
         return Err(AppError::Validation {
             problem: "the memory contains a value that looks like the provider credential."
                 .to_owned(),
@@ -173,13 +174,6 @@ fn validate_owner(
         }
     }
     Ok(())
-}
-
-fn contains_configured_secret(value: &str) -> bool {
-    std::env::var("DEEPSEEK_API_KEY")
-        .ok()
-        .filter(|secret| !secret.is_empty())
-        .is_some_and(|secret| value.contains(&secret))
 }
 
 fn map_unique(error: UniqueIdError<crate::app::storage::StorageError>) -> AppError {
@@ -385,7 +379,7 @@ mod tests {
         let mut store = Store::default();
         let scope = MemoryScope::Lab(LabId::parse("a3f91c07").unwrap());
         store.labs.push(LabId::parse("a3f91c07").unwrap());
-        let memory = create(&store, &state(), scope.clone(), "Keep changes small.").unwrap();
+        let memory = create(&store, &state(), scope.clone(), "Keep changes small.", None).unwrap();
         assert_eq!(list(&store, scope.clone()).unwrap().len(), 1);
         let record = preflight(&store, memory.id.as_str()).unwrap();
         delete(&store, &record).unwrap();
@@ -399,7 +393,7 @@ mod tests {
         store
             .projects
             .push((project.clone(), LabId::parse("1c2d3e4f").unwrap()));
-        let error = create(&store, &state(), MemoryScope::Project(project), "x").unwrap_err();
+        let error = create(&store, &state(), MemoryScope::Project(project), "x", None).unwrap_err();
         assert!(matches!(error, AppError::NotFound { .. }), "{error:?}");
     }
 
@@ -414,6 +408,7 @@ mod tests {
             &state(),
             MemoryScope::Agent(AgentId::parse("1c2d3e4f").unwrap()),
             "x",
+            None,
         )
         .unwrap_err();
         assert!(matches!(error, AppError::Validation { .. }), "{error:?}");

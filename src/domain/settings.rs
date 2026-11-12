@@ -1,4 +1,4 @@
-//! Provider and model settings (specification §5.1, ADR-0015).
+//! Provider, model, and credential settings (specification §5.1, ADR-0030).
 
 use std::fmt;
 
@@ -87,6 +87,64 @@ impl std::fmt::Display for SourceControlProvider {
     }
 }
 
+/// Longest accepted credential, in bytes.
+pub const API_KEY_MAX_BYTES: usize = 512;
+
+/// Provider credentials loaded from the private settings file. Values are
+/// never displayed: [`Credentials`] has a redacting `Debug`.
+#[derive(Clone, PartialEq, Eq, Default)]
+pub struct Credentials {
+    pub deepseek_api_key: Option<String>,
+    pub github_api_key: Option<String>,
+}
+
+impl Credentials {
+    pub fn parse(
+        deepseek_api_key: Option<String>,
+        github_api_key: Option<String>,
+    ) -> Result<Self, SettingsError> {
+        Ok(Self {
+            deepseek_api_key: valid_key(deepseek_api_key)?,
+            github_api_key: valid_key(github_api_key)?,
+        })
+    }
+
+    pub fn deepseek_present(&self) -> bool {
+        self.deepseek_api_key.is_some()
+    }
+
+    pub fn github_present(&self) -> bool {
+        self.github_api_key.is_some()
+    }
+}
+
+impl std::fmt::Debug for Credentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Credentials")
+            .field(
+                "deepseek_api_key",
+                &self.deepseek_api_key.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "github_api_key",
+                &self.github_api_key.as_ref().map(|_| "[REDACTED]"),
+            )
+            .finish()
+    }
+}
+
+fn valid_key(value: Option<String>) -> Result<Option<String>, SettingsError> {
+    let Some(value) = value else { return Ok(None) };
+    let trimmed = value.trim();
+    if trimmed.is_empty()
+        || trimmed.len() > API_KEY_MAX_BYTES
+        || trimmed.chars().any(|c| c.is_control() || c.is_whitespace())
+    {
+        return Err(SettingsError::InvalidCredential);
+    }
+    Ok(Some(trimmed.to_owned()))
+}
+
 /// Optional source-control configuration. GitHub is the default and the only
 /// supported provider in the initial release.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -102,11 +160,23 @@ impl SourceControl {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Settings {
     pub provider: ProviderId,
     pub model: ModelId,
     pub source_control: SourceControl,
+    pub credentials: Credentials,
+}
+
+impl std::fmt::Debug for Settings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Settings")
+            .field("provider", &self.provider)
+            .field("model", &self.model)
+            .field("source_control", &self.source_control)
+            .field("credentials", &self.credentials)
+            .finish()
+    }
 }
 
 impl Settings {
@@ -116,6 +186,7 @@ impl Settings {
             provider: ProviderId::parse(provider)?,
             model: ModelId::parse(model)?,
             source_control: SourceControl::default(),
+            credentials: Credentials::default(),
         })
     }
 
@@ -128,6 +199,21 @@ impl Settings {
             provider: ProviderId::parse(provider)?,
             model: ModelId::parse(model)?,
             source_control,
+            credentials: Credentials::default(),
+        })
+    }
+
+    pub fn with_credentials(
+        provider: &str,
+        model: &str,
+        source_control: SourceControl,
+        credentials: Credentials,
+    ) -> Result<Self, SettingsError> {
+        Ok(Self {
+            provider: ProviderId::parse(provider)?,
+            model: ModelId::parse(model)?,
+            source_control,
+            credentials,
         })
     }
 }
@@ -142,6 +228,8 @@ pub enum SettingsError {
     InvalidModel,
     #[error("`source_control.provider` must be `github`")]
     UnsupportedSourceControlProvider,
+    #[error("provider credentials must be non-empty tokens of at most 512 bytes")]
+    InvalidCredential,
 }
 
 #[cfg(test)]
@@ -202,6 +290,35 @@ mod tests {
             SourceControl::parse("gitlab").unwrap_err(),
             SettingsError::UnsupportedSourceControlProvider
         );
+    }
+
+    #[test]
+    fn credentials_are_trimmed_validated_and_redacted() {
+        let credentials =
+            Credentials::parse(Some(" sk-test ".to_owned()), Some(" ghp-test ".to_owned()))
+                .unwrap();
+        assert_eq!(credentials.deepseek_api_key.as_deref(), Some("sk-test"));
+        assert_eq!(credentials.github_api_key.as_deref(), Some("ghp-test"));
+        assert!(credentials.deepseek_present());
+        assert!(credentials.github_present());
+
+        let debug = format!("{credentials:?}");
+        assert!(!debug.contains("sk-test"), "{debug}");
+        assert!(!debug.contains("ghp-test"), "{debug}");
+        assert!(debug.contains("[REDACTED]"), "{debug}");
+
+        let too_long = "k".repeat(API_KEY_MAX_BYTES + 1);
+        for bad in ["", "   ", "two words", "bad\u{1b}", too_long.as_str()] {
+            assert_eq!(
+                Credentials::parse(Some(bad.to_owned()), None),
+                Err(SettingsError::InvalidCredential),
+                "{bad:?}"
+            );
+            if !bad.is_empty() {
+                let error = Credentials::parse(Some(bad.to_owned()), None).unwrap_err();
+                assert!(!error.to_string().contains(bad), "{bad:?}");
+            }
+        }
     }
 
     #[test]

@@ -42,7 +42,7 @@ own prints the list.
 | `make tools` | Install `cargo-audit` and `cargo-deny` at the versions the gates expect. |
 | `make snapshot` | Regenerate `tests/snapshots/help.txt` after an intended help change. |
 | `make clean` | Remove build output. |
-| `make clean-data` | Delete the development data in `.data/`. |
+| `make clean-data` | Delete the development data in `.data/`, keeping the example settings. |
 
 Examples:
 
@@ -56,8 +56,10 @@ make run ARGS="--new-lab 'Payments Platform'"
 `make run` sets `VLAB_CONFIG_DIR` and `VLAB_DATA_DIR` to the project's
 `.data/` folder, so `settings.yaml` and `vlab.db` are written there. Before
 each run it creates the folder if needed and sets its mode to `0700`, because
-VLab refuses directories other users can read. `.data/` is ignored by git.
-Running the binary directly, without `make run`, uses the per-user
+VLab refuses directories other users can read. `.data/` is ignored by git,
+except the tracked placeholder `.data/settings.example.yaml`. Copy it to
+`.data/settings.yaml` and add your keys; `settings.yaml` itself is never
+tracked. Running the binary directly, without `make run`, uses the per-user
 directories below (ADR-0014).
 
 ## Local paths
@@ -73,8 +75,9 @@ VLab never writes to the current working directory by default.
 The per-user directories are `~/Library/Application Support` on macOS and
 `$XDG_CONFIG_HOME` (default `~/.config`) and `$XDG_DATA_HOME` (default
 `~/.local/share`) on Linux. Overrides must be absolute paths. VLab creates its
-directories with mode `0700` and its files with mode `0600` on Unix, and
-refuses to use an existing directory that grants group or other access.
+directories with mode `0700` and its files with mode `0600` on Unix. It
+refuses an existing directory that grants group or other access and, on Unix,
+a settings file readable by group or other users.
 Overrides are operational facilities for tests and controlled deployments,
 not product commands.
 
@@ -86,6 +89,10 @@ before `--new-agent`, because new agents copy the provider and model from
 `settings.yaml` (§5.4).
 
 ```sh
+# Create the private settings file and add provider/model and credentials.
+vlab --edit-settings
+vlab --show-settings
+
 # Create a laboratory; the identifier is printed and is not selected.
 vlab --new-lab "Payments Platform"
 
@@ -109,16 +116,17 @@ the laboratory is structurally incomplete, but planning will require a valid
 laboratory.
 
 ```sh
-# Optional GitHub source; requires GITHUB_API_KEY and a valid settings file.
+# Optional GitHub source; requires credentials.github_api_key in settings.yaml.
 vlab --new-project "Customer Portal" --github-source https://github.com/acme/portal
 vlab --list-projects
 vlab --show-project-kanban <project-id>
 ```
 
 `--github-source` accepts only canonical `https://github.com/<owner>/<repository>`
-URLs. The GitHub key is global (`GITHUB_API_KEY`) and is never stored in the
-project, settings, logs, or output. No GitHub network call is performed in this
-release; the source is configuration metadata for a future operation.
+URLs. The GitHub key is global (`credentials.github_api_key` in
+`settings.yaml`) and is never stored in the project, database, logs, or output.
+No GitHub network call is performed in this release; the source is
+configuration metadata for a future operation.
 
 The board is read-only: it shows the five states, cards, assignee or
 `Unassigned`, priority, due date, story counts, completed count, and pending
@@ -179,7 +187,7 @@ The report contains one line per rule:
 | Memberships resolve | Reserved for referential integrity; always passes while foreign keys are enabled. |
 | Project references resolve | Schema v3 keeps projects inside their laboratory; the rule reports the project count. |
 
-`--check-lab` makes no provider call and does not require `DEEPSEEK_API_KEY`.
+`--check-lab` makes no provider call and does not require a provider key.
 The package links no HTTP client; that arrives with WP-5.
 
 ### Exit codes for this package
@@ -193,13 +201,13 @@ The package links no HTTP client; that arrives with WP-5.
 | 4 | A validation or precondition failure, including an invalid `--check-lab` report, non-interactive `--new-agent`, a full memory scope, an unfinished assigned story, or active planning during deletion. |
 | 5 | The user declined a confirmation or an editor exited unsuccessfully. |
 
-`--show-settings` also reports the source-control provider and whether
-`GITHUB_API_KEY` is set (`set`/`unset` only).
+`--show-settings` also reports the source-control provider and whether the
+DeepSeek and GitHub keys in `settings.yaml` are set (`set`/`unset` only).
 
 ## Request planning
 
 Planning requires a structurally valid active laboratory, a project, valid
-settings, and `DEEPSEEK_API_KEY`.
+settings, and `credentials.deepseek_api_key` in `settings.yaml`.
 
 ```sh
 vlab --new-request <project-id> "Add password reset"

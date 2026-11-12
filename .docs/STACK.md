@@ -125,7 +125,7 @@ Store scoped memory content as bounded text with an explicit scope and owner
 foreign key. Apply the same migration, retention, and permission rules as other
 project data. Store an optional project GitHub source as validated text
 metadata; never store the GitHub credential, which is read from
-`GITHUB_API_KEY`.
+`credentials.github_api_key` in the private `settings.yaml`.
 
 Verify the actual SQLite engine used by the build, whether bundled or
 system-provided. Auditing Rust crates alone is insufficient.
@@ -156,7 +156,8 @@ of this stack.
 - Require explicit approval for destructive, irreversible, or high-impact actions.
 - Do not provide unrestricted shell access.
 - Keep TLS certificate validation enabled.
-- Keep credentials out of source control, prompts, logs, and command output.
+- Keep credentials out of source control except the private, git-ignored
+  `settings.yaml`; keep them out of prompts, logs, and command output.
 
 Use supported provider APIs and supported model identifiers. Record model
 configuration for evaluation and troubleshooting without recording secrets.

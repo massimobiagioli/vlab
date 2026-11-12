@@ -55,6 +55,6 @@ Sinks:
 Secrets travel inside `obs::Redacted<T>`, whose `Display` and `Debug` both
 print `[REDACTED]`. `AppError::Io` keeps only the `io::ErrorKind`, because the
 underlying message may embed paths or data. `tests/redaction.rs` runs the
-binary with the synthetic key `sk-vlab-SECRET-MARKER` in `DEEPSEEK_API_KEY`
-and `RUST_LOG=trace`, and asserts that the marker never appears on stdout or
-stderr.
+binary with the synthetic key `sk-vlab-SECRET-MARKER` in the private
+`settings.yaml` and `RUST_LOG=trace`, and asserts that the marker never appears
+on stdout or stderr.

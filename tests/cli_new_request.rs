@@ -54,7 +54,9 @@ fn seed(sandbox: &Sandbox) -> ProjectId {
 }
 
 fn settings(sandbox: &Sandbox) {
-    sandbox.write_settings("provider: deepseek\nmodel: deepseek-chat\n");
+    sandbox.write_settings(
+        "provider: deepseek\nmodel: deepseek-chat\ncredentials:\n  deepseek_api_key: \"sk-vlab-SECRET-MARKER\"\n",
+    );
 }
 
 #[test]
@@ -151,7 +153,6 @@ fn an_end_to_end_request_creates_linked_stories() {
     let outcome = Outcome::from(
         sandbox
             .command()
-            .env("DEEPSEEK_API_KEY", support::SECRET_MARKER)
             .env(
                 "VLAB_DEEPSEEK_ENDPOINT",
                 format!("{}/chat/completions", server.uri()),

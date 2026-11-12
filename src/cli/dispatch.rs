@@ -29,7 +29,7 @@ use crate::cli::{write_stderr, write_stdout};
 use crate::domain::agent::AgentProfile;
 use crate::domain::budget::{CancelToken, ExecutionLimits};
 use crate::domain::memory::{Memory, MemoryScope};
-use crate::infra::config::{self, SettingsFile};
+use crate::infra::config::SettingsFile;
 use crate::infra::db::Database;
 use crate::infra::paths::Paths;
 use crate::infra::provider::deepseek::{AdapterLimits, DEFAULT_ENDPOINT, DeepSeekProvider};
@@ -46,21 +46,12 @@ pub fn dispatch(
 ) -> Result<(), AppError> {
     match action {
         Action::ShowSettings => {
-            let report = settings::show(
-                &settings_file()?,
-                config::credential_present(),
-                config::github_credential_present(),
-            )?;
+            let report = settings::show(&settings_file()?)?;
             write_stdout(stdout, &render_settings(&report))
         }
         Action::EditSettings => {
             let editor = TerminalEditor::from_environment()?;
-            let report = settings_edit::edit(
-                &settings_file()?,
-                &editor,
-                config::credential_present(),
-                config::github_credential_present(),
-            )?;
+            let report = settings_edit::edit(&settings_file()?, &editor)?;
             let saved = format!("Settings saved.\n\n{}", render_settings(&report));
             write_stdout(stdout, &saved)
         }
@@ -123,20 +114,8 @@ pub fn dispatch(
             projects::parse_project_id(&project_id)?;
             let limits = ExecutionLimits::default();
             let text = input::request_text(text.as_deref(), limits)?;
-            let settings = settings::show(
-                &settings_file()?,
-                config::credential_present(),
-                config::github_credential_present(),
-            )?
-            .settings;
-            if !config::credential_present() {
-                return Err(AppError::Configuration {
-                    problem: "`DEEPSEEK_API_KEY` is not set.".to_owned(),
-                    hint: "Set DEEPSEEK_API_KEY in the environment before submitting a request."
-                        .to_owned(),
-                });
-            }
-            let provider = provider_from_env(limits)?;
+            let settings = settings::show(&settings_file()?)?.settings;
+            let provider = provider_from_settings(&settings, limits)?;
             let cancel = CancelToken::default();
             let handler_token = cancel.clone();
             let _ = ctrlc::set_handler(move || handler_token.cancel());
@@ -176,12 +155,7 @@ pub fn dispatch(
                                 message: error.to_string(),
                             }
                         })?;
-                    let settings = settings::show(
-                        &settings_file()?,
-                        config::credential_present(),
-                        config::github_credential_present(),
-                    )?
-                    .settings;
+                    let settings = settings::show(&settings_file()?)?.settings;
                     if settings.source_control.provider
                         != crate::domain::settings::SourceControlProvider::Github
                     {
@@ -192,10 +166,10 @@ pub fn dispatch(
                                 .to_owned(),
                         });
                     }
-                    if !config::github_credential_present() {
+                    if !settings.credentials.github_present() {
                         return Err(AppError::Configuration {
-                            problem: "`GITHUB_API_KEY` is not set.".to_owned(),
-                            hint: "Set GITHUB_API_KEY in the environment before creating a GitHub-backed project."
+                            problem: "`credentials.github_api_key` is not set.".to_owned(),
+                            hint: "Add credentials.github_api_key to settings.yaml with `vlab --edit-settings`."
                                 .to_owned(),
                         });
                     }
@@ -321,8 +295,12 @@ pub fn dispatch(
                 problem: error.to_string(),
                 hint: "Shorten or correct the memory and try again.".to_owned(),
             })?;
+            let secret = settings_file()
+                .ok()
+                .and_then(|file| crate::app::settings::SettingsStore::load(&file).ok())
+                .and_then(|settings| settings.credentials.deepseek_api_key);
             let mut db = open_database(run_id)?;
-            let memory = memories::create(&db, &db, scope, &text)?;
+            let memory = memories::create(&db, &db, scope, &text, secret.as_deref())?;
             record_event(
                 &mut db,
                 run_id,
@@ -362,21 +340,9 @@ pub fn dispatch(
             if let Some(raw) = &to_agent {
                 agents::parse_agent_id(raw)?;
             }
-            let settings = settings::show(
-                &settings_file()?,
-                config::credential_present(),
-                config::github_credential_present(),
-            )?
-            .settings;
-            if !config::credential_present() {
-                return Err(AppError::Configuration {
-                    problem: "`DEEPSEEK_API_KEY` is not set.".to_owned(),
-                    hint: "Set DEEPSEEK_API_KEY in the environment before asking a question."
-                        .to_owned(),
-                });
-            }
+            let settings = settings::show(&settings_file()?)?.settings;
             let limits = ExecutionLimits::default();
-            let provider = provider_from_env(limits)?;
+            let provider = provider_from_settings(&settings, limits)?;
             let cancel = CancelToken::default();
             let handler_token = cancel.clone();
             let _ = ctrlc::set_handler(move || handler_token.cancel());
@@ -426,12 +392,7 @@ pub fn dispatch(
             if !io::stdin().is_terminal() {
                 return wizard::ensure_interactive(&prompter);
             }
-            let settings = settings::show(
-                &settings_file()?,
-                config::credential_present(),
-                config::github_credential_present(),
-            )?
-            .settings;
+            let settings = settings::show(&settings_file()?)?.settings;
             let mut db = open_database(run_id)?;
             let profile = wizard::run(&mut prompter, &db, &db, &settings)?;
             record_event(
@@ -486,12 +447,12 @@ fn record_event(
 }
 
 fn render_settings(report: &SettingsReport) -> String {
-    let credential = if report.credential_present {
+    let credential = if report.settings.credentials.deepseek_present() {
         "set"
     } else {
         "unset"
     };
-    let github_credential = if report.github_credential_present {
+    let github_credential = if report.settings.credentials.github_present() {
         "set"
     } else {
         "unset"
@@ -502,8 +463,8 @@ fn render_settings(report: &SettingsReport) -> String {
          Provider:          {}\n\
          Model:             {}\n\
          Source control:    {}\n\
-         DEEPSEEK_API_KEY:  {credential}\n\
-         GITHUB_API_KEY:    {github_credential}\n",
+         DeepSeek API key:  {credential}\n\
+         GitHub API key:    {github_credential}\n",
         sanitize(&report.path.display().to_string()),
         report.settings.provider,
         report.settings.model,
@@ -1063,7 +1024,19 @@ fn render_created_memory(memory: &Memory) -> String {
     )
 }
 
-fn provider_from_env(limits: ExecutionLimits) -> Result<DeepSeekProvider, AppError> {
+fn provider_from_settings(
+    settings: &crate::domain::settings::Settings,
+    limits: ExecutionLimits,
+) -> Result<DeepSeekProvider, AppError> {
+    let key = settings
+        .credentials
+        .deepseek_api_key
+        .clone()
+        .ok_or_else(|| AppError::Configuration {
+            problem: "`credentials.deepseek_api_key` is not set.".to_owned(),
+            hint: "Add credentials.deepseek_api_key to settings.yaml with `vlab --edit-settings`."
+                .to_owned(),
+        })?;
     // The test override may only point at a loopback mock; it must never
     // redirect the credential to an arbitrary host.
     let endpoint = std::env::var("VLAB_DEEPSEEK_ENDPOINT")
@@ -1072,8 +1045,9 @@ fn provider_from_env(limits: ExecutionLimits) -> Result<DeepSeekProvider, AppErr
             value.starts_with("http://127.0.0.1:") || value.starts_with("http://localhost:")
         })
         .unwrap_or_else(|| DEFAULT_ENDPOINT.to_owned());
-    DeepSeekProvider::from_env(
+    DeepSeekProvider::new(
         endpoint,
+        key,
         AdapterLimits {
             attempt_timeout: limits.attempt_timeout,
             connect_timeout: std::time::Duration::from_secs(10),

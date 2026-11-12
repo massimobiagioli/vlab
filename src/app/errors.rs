@@ -198,7 +198,9 @@ impl ProviderFailure {
 
     fn hint(self) -> &'static str {
         match self {
-            Self::Authentication => "Check that DEEPSEEK_API_KEY holds a valid key.",
+            Self::Authentication => {
+                "Check that `credentials.deepseek_api_key` in settings.yaml holds a valid key."
+            }
             Self::RateLimited => "Wait a moment, then submit the command again.",
             Self::Transport => "Check your network connection, then retry.",
             Self::Timeout => "Retry later; the provider may be overloaded.",
@@ -208,7 +210,9 @@ impl ProviderFailure {
                 "Retry later; the operation exceeded its time or attempt budget."
             }
             Self::ResponseTooLarge => "Retry later; the provider response exceeded the size limit.",
-            Self::Configuration => "Check the provider configuration and DEEPSEEK_API_KEY.",
+            Self::Configuration => {
+                "Check the provider configuration and `credentials.deepseek_api_key` in settings.yaml."
+            }
         }
     }
 

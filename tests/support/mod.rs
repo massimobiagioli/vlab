@@ -98,6 +98,12 @@ impl Sandbox {
                 .expect("make config dir private");
         }
         fs::write(self.settings_file(), content).expect("write settings");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(self.settings_file(), fs::Permissions::from_mode(0o600))
+                .expect("make settings private");
+        }
     }
 
     /// Installs `tests/fixtures/editors/editor.sh` in a directory whose name

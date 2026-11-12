@@ -62,9 +62,9 @@ For the initial release, a laboratory shall have at most one member with the `le
 A project belongs to exactly one laboratory and may reference one GitHub
 repository through an optional **GitHub source**. The source is a canonical
 `https://github.com/<owner>/<repository>` URL. The GitHub credential is global
-(`GITHUB_API_KEY`) and is never stored in the project or the database. In the
-initial release the source is configuration metadata only; no GitHub network
-operation is performed.
+(`credentials.github_api_key` in `settings.yaml`) and is never stored in the
+project or the database. In the initial release the source is configuration
+metadata only; no GitHub network operation is performed.
 
 Project commands operate within the active laboratory. An identifier belonging to another laboratory shall produce an error rather than silently switching context.
 
@@ -249,23 +249,29 @@ Example structure:
 ```yaml
 provider: deepseek
 model: "<supported-model-id>"
+source_control:
+  provider: github
+credentials:
+  deepseek_api_key: "sk-..."
+  github_api_key: "ghp-..."
 ```
 
 | Field | Required | Description |
 |---|---|---|
 | `provider` | Yes | Provider identifier; initially only `deepseek`. |
 | `model` | Yes | Model identifier accepted by the configured provider. |
+| `source_control.provider` | No | Source-control provider; `github` only. |
+| `credentials.deepseek_api_key` | For planning and questions | Provider credential; a non-empty token of at most 512 bytes. |
+| `credentials.github_api_key` | For `--github-source` | GitHub credential; a non-empty token of at most 512 bytes. |
 
 The example model name `flash` from the requirements shall not be assumed to be a valid DeepSeek model identifier. Supported identifiers must be verified against the provider integration.
 
-Credentials shall not be stored in this file. The initial implementation shall read the planning API key from `DEEPSEEK_API_KEY` and the GitHub key from `GITHUB_API_KEY`. The optional source-control section names the source-control provider:
-
-```yaml
-provider: deepseek
-model: "<supported-model-id>"
-source_control:
-  provider: github
-```
+`settings.yaml` is the only credential store. Credentials shall not be read
+from environment variables, command-line arguments, the database, or any other
+file. The file contains secrets, so it shall be excluded from version control,
+created with mode `0600`, and kept in a directory with mode `0700`. A tracked
+`settings.example.yaml` with placeholders may document the shape but shall
+never contain a real credential.
 
 `source_control` is optional and defaults to `github`; GitHub is the only
 supported source-control provider. Omitting the section is equivalent to
@@ -284,8 +290,8 @@ vlab --show-settings
 The command shall:
 
 - Display the configuration path, provider, model, and source-control provider.
-- Report whether `DEEPSEEK_API_KEY` and `GITHUB_API_KEY` are set, using only
-  `set`/`unset`.
+- Report whether `credentials.deepseek_api_key` and
+  `credentials.github_api_key` are set, using only `set`/`unset`.
 - Report missing or invalid configuration.
 - Never display API keys or other secrets.
 - Make no remote provider or GitHub calls.
@@ -549,7 +555,7 @@ The command shall:
 - Require an active laboratory.
 - Reject an empty name.
 - Accept an optional GitHub source in canonical `https://github.com/<owner>/<repository>` form and reject any other host or shape.
-- When a GitHub source is supplied, require a valid `source_control.provider: github` configuration and a present `GITHUB_API_KEY`; the key is read only from the environment and is never stored or displayed.
+- When a GitHub source is supplied, require a valid `source_control.provider: github` configuration and a present `credentials.github_api_key`; the key is read only from `settings.yaml` and is never stored in the project database or displayed.
 - Persist the project and source atomically.
 - Return its identifier.
 - Make no GitHub network call in the initial release.
@@ -770,7 +776,7 @@ The initial implementation shall support only DeepSeek.
 The provider integration shall:
 
 - Use encrypted transport.
-- Read credentials from `DEEPSEEK_API_KEY`.
+- Read the provider credential from `credentials.deepseek_api_key` in `settings.yaml`.
 - Enforce timeouts.
 - Limit response size.
 - Validate structured output against a local schema.
@@ -802,7 +808,7 @@ It shall:
 - Never execute generated shell commands or source code.
 - Treat memory content as untrusted data: validate its scope, encoding, and size, delimit it in prompts, and never let it change permissions, roles, limits, or assignment rules.
 - Never log or render memory content without sanitization, and never store credentials in it.
-- Treat the GitHub source as a validated URL and `GITHUB_API_KEY` as a credential: never log, persist, or display the key.
+- Treat the GitHub source as a validated URL and `credentials.github_api_key` as a credential: never log, persist in the database, or display the key.
 - Perform no GitHub network call until a concrete operation, permission scope, and failure policy are specified.
 - Include only the scoped memories selected by §3.5, within the configured memory budget.
 - Avoid sending unrelated project data to providers.

@@ -38,7 +38,7 @@ pub fn ask(
     clock: &impl Clock,
     run_id: RunId,
 ) -> Result<AskOutcome, AppError> {
-    if contains_configured_secret(question) {
+    if contains_secret(question, settings.credentials.deepseek_api_key.as_deref()) {
         return Err(AppError::Validation {
             problem: "the question contains a value that looks like the provider credential."
                 .to_owned(),
@@ -111,10 +111,12 @@ pub fn ask(
     let lab_memories = store.memories(&MemoryScope::Lab(lab_id))?;
     let agent_memories = store.memories(&MemoryScope::Agent(target.id.clone()))?;
     let selected = select_memories(&lab_memories, &[], &agent_memories);
-    if selected
-        .iter()
-        .any(|record| contains_configured_secret(&record.memory.content))
-    {
+    if selected.iter().any(|record| {
+        contains_secret(
+            &record.memory.content,
+            settings.credentials.deepseek_api_key.as_deref(),
+        )
+    }) {
         return Err(AppError::Validation {
             problem: "a selected memory contains the provider credential.".to_owned(),
             hint: "Remove credentials from memories before asking.".to_owned(),
@@ -178,7 +180,10 @@ pub fn ask(
         run_id,
     ) {
         Ok(response) => {
-            if contains_configured_secret(&response.content) {
+            if contains_secret(
+                &response.content,
+                settings.credentials.deepseek_api_key.as_deref(),
+            ) {
                 record_question(
                     store,
                     run_id,
@@ -249,11 +254,8 @@ fn record_question(
     let _ = store.record_event(&event);
 }
 
-fn contains_configured_secret(value: &str) -> bool {
-    std::env::var("DEEPSEEK_API_KEY")
-        .ok()
-        .filter(|secret| !secret.is_empty())
-        .is_some_and(|secret| value.contains(&secret))
+fn contains_secret(value: &str, secret: Option<&str>) -> bool {
+    secret.is_some_and(|secret| !secret.is_empty() && value.contains(secret))
 }
 
 fn escape(value: &str) -> String {

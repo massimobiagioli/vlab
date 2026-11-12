@@ -57,7 +57,7 @@ Prompts are behavioral guidance, not security boundaries.
 ## Assets to Protect
 
 - User data and task inputs, including laboratory, project, and agent memory content.
-- Credentials and provider API keys, including `DEEPSEEK_API_KEY` and `GITHUB_API_KEY`.
+- Credentials and provider API keys stored in the private `settings.yaml`.
 - Local files and repository contents.
 - External systems accessible through tools.
 - Approval records and policy configuration.
@@ -180,9 +180,9 @@ case. Model-generated URLs are never implicitly trusted.
 ### Secrets and Data Privacy
 
 - Never commit secrets to source control.
-- Inject credentials through the deployment's approved secret mechanism.
+- Store credentials only in the private `settings.yaml` (`0600`, outside version control); never commit it.
 - Prefer short-lived, narrowly scoped credentials.
-- Keep credentials out of prompts, tool results, errors, logs, settings files, and database rows. The GitHub key comes only from `GITHUB_API_KEY`.
+- Keep credentials out of prompts, tool results, errors, logs, database rows, and every file other than `settings.yaml`. The GitHub key comes only from `credentials.github_api_key`.
 - Validate the project GitHub source as a canonical HTTPS GitHub URL; it is metadata, not a credential.
 - Do not assume that the model can reliably redact secrets.
 - Send only necessary data to model providers.
@@ -251,7 +251,7 @@ Use deterministic model and tool substitutes for repeatable tests.
 Required scenarios include:
 
 - Prompt injection in tool output or memory content cannot grant permissions.
-- A missing or invalid GitHub credential blocks GitHub-backed project creation without creating a project row; the key never appears in output, events, or storage.
+- A missing or invalid GitHub credential blocks GitHub-backed project creation without creating a project row; the key never appears in output, events, or the database.
 - An invalid or non-GitHub source URL is rejected before persistence.
 - Unknown tools and malformed arguments are rejected before execution.
 - Denied actions never reach the tool implementation.

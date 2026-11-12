@@ -737,7 +737,7 @@ Deliver the settings lifecycle (`settings.yaml` read, show, atomic edit) and a p
 **Work**
 - Define typed `Settings { provider: ProviderId, model: ModelId }` with `ProviderId` restricted to `deepseek` for now and `ModelId` non-empty, trimmed, length-bounded.
 - Parse YAML strictly (reject unknown fields), returning exit 2 with the file path and a hint for missing file, malformed YAML, wrong types, unknown provider, and empty model.
-- Never read or store credentials; provide `credential_present() -> bool` from `DEEPSEEK_API_KEY` without exposing the value.
+- Never store credentials outside `settings.yaml`; expose only `set`/`unset` for `credentials.deepseek_api_key` without revealing the value.
 - Do not contact the provider.
 
 **Deliverables**
@@ -754,7 +754,7 @@ Deliver the settings lifecycle (`settings.yaml` read, show, atomic edit) and a p
 **Depends on:** T3.
 
 **Work**
-- Display the resolved settings path, provider, model, validation status, and whether `DEEPSEEK_API_KEY` is set (`set`/`unset` only).
+- Display the resolved settings path, provider, model, validation status, and whether `credentials.deepseek_api_key` is set (`set`/`unset` only).
 - Missing or invalid settings exit 2 with a hint to run `--edit-settings`.
 - Make no remote calls and create no files.
 
@@ -764,7 +764,7 @@ Deliver the settings lifecycle (`settings.yaml` read, show, atomic edit) and a p
 **Done when**
 - stdout contains path/provider/model and never the key value.
 - Invalid settings produce exit 2 with stderr-only diagnostics.
-- A test with `DEEPSEEK_API_KEY=sk-vlab-SECRET` asserts the marker is absent from all output.
+- A test with the synthetic key in `settings.yaml` asserts the marker is absent from all output.
 
 #### WP-2-T5 · Implement `--edit-settings` with atomic replacement
 
@@ -1550,7 +1550,7 @@ Deliver `--new-request` end to end: validate and persist the request, include th
 
 ### 11.2 Scope
 
-**In scope:** execution limits, provider port, DeepSeek adapter, retry policy, prompt/context builder (including scoped memories), output schema and validation, assignment rules, due dates, planning state machine, input handling, security tests, cancellation, recovery from stale `PLANNING`, optional project GitHub source, separate source-control provider configuration, and global `GITHUB_API_KEY` validation. GitHub network operations are out of scope until a concrete operation is specified.
+**In scope:** execution limits, provider port, DeepSeek adapter, retry policy, prompt/context builder (including scoped memories), output schema and validation, assignment rules, due dates, planning state machine, input handling, security tests, cancellation, recovery from stale `PLANNING`, optional project GitHub source, separate source-control provider configuration, and global `credentials.github_api_key` validation. GitHub network operations are out of scope until a concrete operation is specified.
 
 **Out of scope:** direct questions (WP-6), any live-provider call or evaluation (Go-Live), story transitions, autonomous execution, CV transmission.
 
@@ -1627,7 +1627,7 @@ Deliver `--new-request` end to end: validate and persist the request, include th
 
 **Work**
 - Build a `reqwest` client with rustls, certificate validation enabled, connect timeout, and no automatic redirects to untrusted hosts (or redirects disabled).
-- Send `POST` to the verified chat-completions endpoint with `Authorization: Bearer` from `DEEPSEEK_API_KEY`; never log or Debug the header.
+- Send `POST` to the verified chat-completions endpoint with `Authorization: Bearer` from `credentials.deepseek_api_key`; never log or Debug the header.
 - Enforce the per-attempt deadline with `tokio::time::timeout`; read the response body incrementally and abort beyond the 256 KiB cap.
 - Map status codes: 401/403 authentication, 429 rate limited with `Retry-After`, 5xx server, other 4xx invalid request, malformed JSON invalid response.
 - The base URL is a constructor parameter used by tests; production uses the verified constant.
@@ -1679,7 +1679,7 @@ Deliver `--new-request` end to end: validate and persist the request, include th
 - Enforce the request-size limit and the memory budget before building the prompt.
 
 **Deliverables**
-- `src/app/planning/prompt.rs`, golden tests for prompt structure and memory ordering/cut-off, a test that a secret marker in the environment never appears in the prompt.
+- `src/app/planning/prompt.rs`, golden tests for prompt structure and memory ordering/cut-off, a test that a secret marker in `settings.yaml` never appears in the prompt.
 
 **Done when**
 - Golden prompts contain every roster member exactly once and no CV text.
@@ -1794,7 +1794,7 @@ Deliver `--new-request` end to end: validate and persist the request, include th
   - request text instructing the model to read files, call tools, or change rules produces no such capability (there are no tools) and any resulting malformed proposal is rejected;
   - model output naming an unknown/out-of-lab agent is rejected;
   - model output containing a plausible secret or control characters is sanitized or rejected, never logged or rendered raw;
-  - the outbound request contains no `DEEPSEEK_API_KEY`, no CV, and no unrelated project data;
+  - the outbound request contains no credential value, no CV, and no unrelated project data;
   - error paths do not echo request content or provider bodies;
   - a tool-like or shell-like string in model output is stored as inert text at most and never executed;
   - memory content instructing the model to change rules, read files, or call tools remains delimited data, produces no capability, and any resulting malformed proposal is rejected;
@@ -1856,7 +1856,7 @@ Deliver `--new-request` end to end: validate and persist the request, include th
 - Add `projects.github_source` in schema v4 (`migrations/0004_github_source.sql`), nullable for existing projects.
 - Validate an optional canonical `https://github.com/<owner>/<repository>` URL; reject other hosts, extra path segments, query strings, and malformed owners/repositories before storage.
 - Add the optional `source_control` section to `settings.yaml` with `provider: github`; GitHub is the only supported value and the section defaults to GitHub when omitted. Keep `provider`/`model` for DeepSeek.
-- Read the GitHub key only from `GITHUB_API_KEY`; report `set`/`unset` in `--show-settings`; never store, log, prompt, or display the value.
+- Read the GitHub key only from `credentials.github_api_key` in `settings.yaml`; report `set`/`unset` in `--show-settings`; never store in the database, log, prompt, or display the value.
 - Extend `--new-project` with `--github-source <url>`. When a source is supplied, require a valid settings file, the GitHub source-control provider, and a present key; then persist the project and source atomically.
 - Display the source in project creation output, project lists, and the Kanban header. Perform no GitHub network call.
 - Add tests for URL validation, missing key, missing/invalid settings, migration from v3, and secret-marker absence.
@@ -1909,7 +1909,7 @@ working tree. Executed locally on macOS (aarch64), Rust 1.99.1: `make check`
 0 failed** after this change.
 
 Delivered: schema v4 nullable `github_source`; strict canonical URL validation;
-optional `source_control.provider: github` in settings; `GITHUB_API_KEY`
+optional `source_control.provider: github` in settings; `credentials.github_api_key`
 presence reporting; `--new-project --github-source`; project list/Kanban
 display; v3→v4 migration; `.docs/DATA-MODEL.md`; ADR-0025. No GitHub network
 call and no key storage exist. At the time of this partial report the provider
@@ -2178,7 +2178,7 @@ Take the build verified locally in WP-1 to WP-6 and validate it against the outs
 
 - WP-6 gate passed.
 - Blocking assumption confirmed: A-21 (release channel and owner).
-- A GitHub remote exists, and a DeepSeek API key is available in the environment for opt-in live runs only.
+- A GitHub remote exists, and a DeepSeek API key is configured in the private `settings.yaml` for opt-in live runs only.
 
 **Execution checklist**
 
@@ -2216,7 +2216,7 @@ Take the build verified locally in WP-1 to WP-6 and validate it against the outs
 **Depends on:** GL-T1.
 
 **Work**
-- With `DEEPSEEK_API_KEY` set, send one minimal planning request and one question through the real adapter. Confirm the endpoint, the model identifier recorded in WP-5-T12, authentication failure mapping (with an invalid key), and the response envelope the `wiremock` contract tests assume.
+- With `credentials.deepseek_api_key` set in `settings.yaml`, send one minimal planning request and one question through the real adapter. Confirm the endpoint, the model identifier recorded in WP-5-T12, authentication failure mapping (with an invalid key), and the response envelope the `wiremock` contract tests assume.
 - If the live contract differs from the mocks, fix the adapter and the contract tests first (TDD), then repeat.
 
 **Deliverables**
@@ -2231,7 +2231,7 @@ Take the build verified locally in WP-1 to WP-6 and validate it against the outs
 **Depends on:** GL-T2.
 
 **Work**
-- Add `tests/live_smoke.rs` marked `#[ignore]`, gated by `VLAB_LIVE_TESTS=1` and `DEEPSEEK_API_KEY`.
+- Add `tests/live_smoke.rs` marked `#[ignore]`, gated by `VLAB_LIVE_TESTS=1` and a configured `credentials.deepseek_api_key`.
 - Use five synthetic request fixtures, including at least one with laboratory, project, and agent memories, each run three times, against a temporary database.
 - Evaluate each run against the task-quality rubric: stories produced, assignments valid, due dates correct, no unsupported fields, and memory context respected without becoming instructions; record pass/fail.
 - Require at least 14 of 15 successful runs and zero unauthorized actions or limit violations; report all failures with classifications.
@@ -2362,7 +2362,7 @@ Take the build verified locally in WP-1 to WP-6 and validate it against the outs
 | R-F40 | Evidence traceability and semantic limits | `VALIDATION.md` | WP-5-T6, T10; WP-6-T7 | WP5-AC5, AC9; documentation |
 | R-F41 | Scoped memories for laboratories, projects, and agents, with create/list/delete and cascade rules | §3.5, §4.1, §11.2 | WP-4-T1, T9 | WP4-AC1, AC10 |
 | R-F42 | Planning and questions include only selected scoped memories within the 8 KiB budget, delimited as untrusted data | §3.5, §9.2, §7.5, §12 | WP-5-T5, T10; WP-6-T2, T4 | WP5-AC12; WP6-AC10; WP5-AC9 |
-| R-F43 | Optional canonical project GitHub source with a separate source-control provider and global `GITHUB_API_KEY`; local validation only | §3.2, §5.1, §8.2, §11.2 | WP-5-T13 | WP5-AC13 |
+| R-F43 | Optional canonical project GitHub source with a separate source-control provider and global `credentials.github_api_key`; local validation only | §3.2, §5.1, §8.2, §11.2 | WP-5-T13 | WP5-AC13 |
 
 ### 13.2 Engineering and security requirements
 
@@ -2417,7 +2417,7 @@ Take the build verified locally in WP-1 to WP-6 and validate it against the outs
 | 21 | Memories can be created, listed, and deleted for laboratories, projects, and agents, with scope enforced and deletion cascading from the owner | WP-4-T9 | WP4-AC10 |
 | 22 | Memory content is bounded, sanitized, untrusted, and never executed or used to grant permissions or change assignment rules | WP-4-T9; WP-5-T10; WP-6-T4 | WP4-AC10; WP5-AC12; WP6-AC10 |
 | 23 | Planning and questions include only the scoped memories within the configured cap, delimited as data, without silently truncating a memory | WP-5-T5; WP-6-T2 | WP5-AC12; WP6-AC10 |
-| 24 | Projects can optionally reference a canonical GitHub source; creating such a project validates the URL and requires a global `GITHUB_API_KEY`, with no GitHub network call in the initial release | WP-5-T13 | WP5-AC13 |
+| 24 | Projects can optionally reference a canonical GitHub source; creating such a project validates the URL and requires a global `credentials.github_api_key`, with no GitHub network call in the initial release | WP-5-T13 | WP5-AC13 |
 
 ### 13.4 Adapted validation scenarios (`VALIDATION.md`)
 

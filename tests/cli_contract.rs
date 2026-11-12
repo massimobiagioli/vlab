@@ -41,7 +41,7 @@ fn the_exit_code_contract_covers_each_failure_class() {
     sandbox.write_settings("provider: deepseek\nmodel: deepseek-chat\n");
     sandbox
         .run(&["--ask", "Why?"])
-        .assert_failure(2, "DEEPSEEK_API_KEY");
+        .assert_failure(2, "credentials.deepseek_api_key");
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn a_command_never_waits_for_input_when_stdin_is_not_a_terminal() {
     // These return a usage/configuration error instead of blocking.
     sandbox
         .run(&["--ask", "Why?"])
-        .assert_failure(2, "DEEPSEEK_API_KEY");
+        .assert_failure(2, "credentials.deepseek_api_key");
     sandbox
         .run(&["--new-request", "a3f91c07"])
         .assert_failure(2, "must contain non-empty text");

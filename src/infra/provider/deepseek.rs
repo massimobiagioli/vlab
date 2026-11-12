@@ -43,17 +43,6 @@ pub struct DeepSeekProvider {
 }
 
 impl DeepSeekProvider {
-    pub fn from_env(
-        endpoint: impl Into<String>,
-        limits: AdapterLimits,
-    ) -> Result<Self, ProviderError> {
-        let api_key = std::env::var("DEEPSEEK_API_KEY")
-            .ok()
-            .filter(|value| !value.is_empty())
-            .ok_or(ProviderError::Configuration)?;
-        Self::new(endpoint, api_key, limits)
-    }
-
     pub fn new(
         endpoint: impl Into<String>,
         api_key: impl Into<String>,

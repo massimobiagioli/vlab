@@ -53,11 +53,16 @@ fn seed(sandbox: &Sandbox) -> ProjectId {
     project
 }
 
+fn settings_with_key(sandbox: &Sandbox) {
+    sandbox.write_settings(&format!(
+        "provider: deepseek\nmodel: deepseek-chat\ncredentials:\n  deepseek_api_key: \"{SECRET_MARKER}\"\n"
+    ));
+}
+
 fn outcomes(sandbox: &Sandbox, args: &[&str]) -> Outcome {
     Outcome::from(
         sandbox
             .command()
-            .env("DEEPSEEK_API_KEY", SECRET_MARKER)
             .env("RUST_LOG", "trace")
             .args(args)
             .output()
@@ -69,7 +74,7 @@ fn outcomes(sandbox: &Sandbox, args: &[&str]) -> Outcome {
 fn a_secret_in_a_memory_is_rejected_and_never_stored() {
     let sandbox = Sandbox::new();
     seed(&sandbox);
-    sandbox.write_settings("provider: deepseek\nmodel: deepseek-chat\n");
+    settings_with_key(&sandbox);
     let outcome = outcomes(
         &sandbox,
         &["--new-memory", SECRET_MARKER, "--for-lab", "a3f91c07"],
@@ -91,11 +96,10 @@ fn a_secret_in_a_memory_is_rejected_and_never_stored() {
 fn a_secret_in_a_request_is_rejected_before_the_request_row() {
     let sandbox = Sandbox::new();
     let project = seed(&sandbox);
-    sandbox.write_settings("provider: deepseek\nmodel: deepseek-chat\n");
+    settings_with_key(&sandbox);
     let outcome = Outcome::from(
         sandbox
             .command()
-            .env("DEEPSEEK_API_KEY", SECRET_MARKER)
             .arg("--new-request")
             .arg(project.as_str())
             .write_stdin(SECRET_MARKER)
@@ -119,7 +123,7 @@ fn a_secret_in_a_request_is_rejected_before_the_request_row() {
 fn the_marker_is_absent_from_stored_metadata_and_settings() {
     let sandbox = Sandbox::new();
     let project = seed(&sandbox);
-    sandbox.write_settings("provider: deepseek\nmodel: deepseek-chat\n");
+    settings_with_key(&sandbox);
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -134,7 +138,6 @@ fn the_marker_is_absent_from_stored_metadata_and_settings() {
     let outcome = Outcome::from(
         sandbox
             .command()
-            .env("DEEPSEEK_API_KEY", SECRET_MARKER)
             .env(
                 "VLAB_DEEPSEEK_ENDPOINT",
                 format!("{}/chat/completions", server.uri()),
@@ -165,6 +168,7 @@ fn the_marker_is_absent_from_stored_metadata_and_settings() {
             }
         }
     });
+    // The key is allowed in the private settings file, but nowhere else.
     let settings = std::fs::read_to_string(sandbox.settings_file()).unwrap();
-    assert!(!settings.contains(SECRET_MARKER));
+    assert!(settings.contains(SECRET_MARKER));
 }

@@ -4,12 +4,7 @@
 use crate::app::AppError;
 use crate::app::settings::{Editor, LoadError, SettingsDraft, SettingsReport, SettingsStore};
 
-pub fn edit(
-    store: &impl SettingsStore,
-    editor: &impl Editor,
-    credential_present: bool,
-    github_credential_present: bool,
-) -> Result<SettingsReport, AppError> {
+pub fn edit(store: &impl SettingsStore, editor: &impl Editor) -> Result<SettingsReport, AppError> {
     // Every early return drops the draft, which deletes it.
     let draft = store.create_draft()?;
     editor.edit(draft.path())?;
@@ -18,8 +13,6 @@ pub fn edit(
     Ok(SettingsReport {
         path: store.path().to_path_buf(),
         settings,
-        credential_present,
-        github_credential_present,
     })
 }
 
@@ -36,6 +29,10 @@ fn invalid_edit(error: LoadError) -> AppError {
         },
         LoadError::Unreadable(kind) => AppError::Configuration {
             problem: format!("the edited settings cannot be read: {kind}; {kept}."),
+            hint: "Run `vlab --edit-settings` again.".to_owned(),
+        },
+        LoadError::Exposed => AppError::Configuration {
+            problem: format!("the edited settings are accessible by other users; {kept}."),
             hint: "Run `vlab --edit-settings` again.".to_owned(),
         },
     }
@@ -136,17 +133,15 @@ mod tests {
     #[test]
     fn a_valid_edit_is_committed() {
         let (store, log) = store(Ok(valid()));
-        let report = edit(&store, &FakeEditor(Ok(())), true, false).unwrap();
+        let report = edit(&store, &FakeEditor(Ok(()))).unwrap();
         assert_eq!(report.settings, valid());
-        assert!(report.credential_present);
-        assert!(!report.github_credential_present);
         assert_eq!(*log.0.borrow(), ["created", "committed"]);
     }
 
     #[test]
     fn an_invalid_edit_is_discarded_and_explained() {
         let (store, log) = store(Err(LoadError::Invalid("bad".into())));
-        let error = edit(&store, &FakeEditor(Ok(())), false, false).unwrap_err();
+        let error = edit(&store, &FakeEditor(Ok(()))).unwrap_err();
         assert_eq!(
             error.to_string(),
             "the edited settings are invalid: bad; the previous settings were kept."
@@ -157,7 +152,7 @@ mod tests {
     #[test]
     fn an_unsuccessful_editor_cancels_and_discards() {
         let (store, log) = store(Ok(valid()));
-        let error = edit(&store, &FakeEditor(Err(AppError::Cancelled)), false, false).unwrap_err();
+        let error = edit(&store, &FakeEditor(Err(AppError::Cancelled))).unwrap_err();
         assert!(matches!(error, AppError::Cancelled));
         assert_eq!(*log.0.borrow(), ["created", "discarded"]);
     }

@@ -42,40 +42,56 @@ fn valid_settings_are_shown_on_stdout() {
              Provider:          deepseek\n\
              Model:             deepseek-chat\n\
              Source control:    github\n\
-             DEEPSEEK_API_KEY:  unset\n\
-             GITHUB_API_KEY:    unset\n",
+             DeepSeek API key:  unset\n\
+             GitHub API key:    unset\n",
             sandbox.settings_file().display()
         )
     );
 }
 
 #[test]
-fn the_credential_is_reported_as_set_but_never_shown() {
+fn credentials_in_settings_are_reported_as_set_but_never_shown() {
     let sandbox = Sandbox::new();
-    sandbox.write_settings(VALID);
+    sandbox.write_settings(&format!(
+        "{VALID}credentials:\n  deepseek_api_key: \"{SECRET_MARKER}\"\n  github_api_key: \"{SECRET_MARKER}\"\n"
+    ));
     let output = sandbox
         .command()
-        .env("DEEPSEEK_API_KEY", SECRET_MARKER)
-        .env("GITHUB_API_KEY", SECRET_MARKER)
         .env("RUST_LOG", "trace")
         .arg("--show-settings")
         .output()
         .unwrap();
     let outcome = support::Outcome::from(output);
     assert_eq!(outcome.code, 0, "{outcome:#?}");
-    assert!(outcome.stdout.contains("DEEPSEEK_API_KEY:  set\n"));
-    assert!(outcome.stdout.contains("GITHUB_API_KEY:    set\n"));
+    assert!(outcome.stdout.contains("DeepSeek API key:  set\n"));
+    assert!(outcome.stdout.contains("GitHub API key:    set\n"));
     outcome.assert_absent(SECRET_MARKER);
+}
 
-    let empty = support::Outcome::from(
-        sandbox
-            .command()
-            .env("DEEPSEEK_API_KEY", "")
-            .arg("--show-settings")
-            .output()
-            .unwrap(),
-    );
-    assert!(empty.stdout.contains("DEEPSEEK_API_KEY:  unset\n"));
+#[test]
+fn a_missing_credential_section_is_reported_as_unset() {
+    let sandbox = Sandbox::new();
+    sandbox.write_settings(VALID);
+    let outcome = sandbox.run(&["--show-settings"]);
+    assert!(outcome.stdout.contains("DeepSeek API key:  unset\n"));
+    assert!(outcome.stdout.contains("GitHub API key:    unset\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_settings_file_readable_by_other_users_is_refused() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let sandbox = Sandbox::new();
+    sandbox.write_settings(&format!(
+        "{VALID}credentials:\n  deepseek_api_key: \"{SECRET_MARKER}\"\n"
+    ));
+    fs::set_permissions(sandbox.settings_file(), fs::Permissions::from_mode(0o644)).unwrap();
+    let outcome = sandbox.run(&["--show-settings"]);
+    outcome
+        .assert_failure(2, "is accessible by other users")
+        .assert_failure(2, "chmod 600")
+        .assert_absent(SECRET_MARKER);
 }
 
 #[test]

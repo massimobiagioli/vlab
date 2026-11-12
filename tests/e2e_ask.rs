@@ -44,7 +44,9 @@ fn seed(sandbox: &Sandbox) -> AgentId {
 fn a_question_targets_the_lead_and_is_sanitized() {
     let sandbox = Sandbox::new();
     let lead = seed(&sandbox);
-    sandbox.write_settings("provider: deepseek\nmodel: deepseek-chat\n");
+    sandbox.write_settings(
+        "provider: deepseek\nmodel: deepseek-chat\ncredentials:\n  deepseek_api_key: \"sk-vlab-SECRET-MARKER\"\n",
+    );
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -64,7 +66,6 @@ fn a_question_targets_the_lead_and_is_sanitized() {
     let outcome = Outcome::from(
         sandbox
             .command()
-            .env("DEEPSEEK_API_KEY", support::SECRET_MARKER)
             .env(
                 "VLAB_DEEPSEEK_ENDPOINT",
                 format!("{}/chat/completions", server.uri()),
@@ -99,20 +100,22 @@ fn a_question_targets_the_lead_and_is_sanitized() {
 fn a_non_member_target_is_not_found_and_missing_key_is_configuration() {
     let sandbox = Sandbox::new();
     seed(&sandbox);
-    sandbox.write_settings("provider: deepseek\nmodel: deepseek-chat\n");
+    sandbox.write_settings(
+        "provider: deepseek\nmodel: deepseek-chat\ncredentials:\n  deepseek_api_key: \"dummy\"\n",
+    );
     sandbox
         .command()
-        .env("DEEPSEEK_API_KEY", "dummy")
         .args(["--ask", "Why?", "--to-agent", "ffffffff"])
         .output()
         .map(Outcome::from)
         .unwrap()
         .assert_failure(3, "no agent with identifier `ffffffff` exists.");
+    sandbox.write_settings("provider: deepseek\nmodel: deepseek-chat\n");
     sandbox
         .command()
         .args(["--ask", "Why?"])
         .output()
         .map(Outcome::from)
         .unwrap()
-        .assert_failure(2, "DEEPSEEK_API_KEY");
+        .assert_failure(2, "credentials.deepseek_api_key");
 }

@@ -1,0 +1,15 @@
+# VLab settings example.
+#
+# Copy this file to settings.yaml in the same directory and replace the
+# placeholders. settings.yaml contains credentials: keep it private and out of
+# version control. VLab creates and edits it with mode 0600.
+provider: deepseek
+model: deepseek-chat
+# Optional source-control configuration. GitHub is the only supported provider.
+source_control:
+  provider: github
+credentials:
+  # Required for planning and questions.
+  deepseek_api_key: "sk-replace-with-your-deepseek-key"
+  # Optional. Required only for projects created with --github-source.
+  github_api_key: "ghp-replace-with-your-github-token"

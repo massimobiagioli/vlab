@@ -43,7 +43,7 @@ revises a technical decision must keep it current.
 | ADR-0012 | GitHub Actions CI and supply-chain policy | Superseded | 2026-11-12 | — | [adr-0012.md](adr-0012.md) |
 | ADR-0013 | Local quality gates until Go-Live; hosted CI deferred | Superseded | 2026-11-12 | ADR-0012 | [adr-0013.md](adr-0013.md) |
 | ADR-0014 | Makefile task runner and project-local development data | Accepted | 2026-11-12 | — | [adr-0014.md](adr-0014.md) |
-| ADR-0015 | Strict settings file and atomic in-place editing | Accepted | 2026-11-12 | — | [adr-0015.md](adr-0015.md) |
+| ADR-0015 | Strict settings file and atomic in-place editing | Superseded | 2026-11-12 | — | [adr-0015.md](adr-0015.md) |
 | ADR-0016 | SQLite schema v1 and the synchronous database adapter | Accepted | 2026-11-12 | — | [adr-0016.md](adr-0016.md) |
 | ADR-0017 | Temporary vendored sqlx-sqlite patch for RUSTSEC-2026-0459 | Accepted | 2026-11-12 | — | [adr-0017.md](adr-0017.md) |
 | ADR-0018 | Allow the BSD-3-Clause and Zlib transitive licenses | Accepted | 2026-11-12 | — | [adr-0018.md](adr-0018.md) |
@@ -58,6 +58,7 @@ revises a technical decision must keep it current.
 | ADR-0027 | Allow ISC and CDLA-Permissive-2.0 for the TLS dependency graph | Accepted | 2026-11-12 | — | [adr-0027.md](adr-0027.md) |
 | ADR-0028 | Content-free interaction metadata (schema v5) | Accepted | 2026-11-12 | — | [adr-0028.md](adr-0028.md) |
 | ADR-0029 | Activate hosted CI before the release tag | Accepted | 2026-11-12 | ADR-0013 | [adr-0029.md](adr-0029.md) |
+| ADR-0030 | Credentials in the private settings file | Accepted | 2026-11-12 | ADR-0015 | [adr-0030.md](adr-0030.md) |
 
 ## Supersession map
 
@@ -66,3 +67,4 @@ revises a technical decision must keep it current.
 | ADR-0006 | ADR-0007 |
 | ADR-0012 | ADR-0013 |
 | ADR-0013 | ADR-0029 |
+| ADR-0015 | ADR-0030 |

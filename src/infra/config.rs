@@ -1,4 +1,4 @@
-//! The `settings.yaml` adapter (ADR-0015).
+//! The `settings.yaml` adapter (ADR-0015, ADR-0030).
 //!
 //! Parsing is strict and bounded, and error reasons are built from typed
 //! parser information only, so no text from the file can reach the user.
@@ -18,8 +18,6 @@ use crate::infra::paths::{create_private_file, ensure_private_dir};
 /// Largest accepted settings file.
 pub const MAX_SETTINGS_BYTES: usize = 64 * 1024;
 
-const CREDENTIAL_VAR: &str = "DEEPSEEK_API_KEY";
-const GITHUB_CREDENTIAL_VAR: &str = "GITHUB_API_KEY";
 const DRAFT_PREFIX: &str = ".settings.yaml.";
 const DRAFT_SUFFIX: &str = ".tmp";
 
@@ -32,10 +30,13 @@ pub const TEMPLATE: &str = "\
 # model:    a model identifier accepted by the provider, taken from the
 #           DeepSeek API documentation. Replace the placeholder below.
 #
-# Never put credentials in this file: set DEEPSEEK_API_KEY in your
-# environment instead.
+# This file contains credentials. Keep it private and outside version
+# control. VLab writes it with mode 0600.
 provider: deepseek
 model: \"<supported-model-id>\"
+credentials:
+  deepseek_api_key: \"sk-your-deepseek-key\"
+  github_api_key: \"ghp-your-github-token\"
 ";
 
 #[derive(Deserialize)]
@@ -44,6 +45,14 @@ struct RawSettings {
     provider: String,
     model: String,
     source_control: Option<RawSourceControl>,
+    credentials: Option<RawCredentials>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawCredentials {
+    deepseek_api_key: Option<String>,
+    github_api_key: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -73,17 +82,21 @@ pub fn parse_settings(bytes: &[u8]) -> Result<Settings, String> {
             yaml_reason(inner)
         }
     })?;
-    let settings = Settings::parse(&raw.provider, &raw.model).map_err(|error| error.to_string())?;
-    match raw.source_control {
-        Some(raw_source) => Settings::with_source_control(
-            &raw.provider,
-            &raw.model,
-            crate::domain::settings::SourceControl::parse(&raw_source.provider)
-                .map_err(|error| error.to_string())?,
+    let source_control = match raw.source_control {
+        Some(raw_source) => crate::domain::settings::SourceControl::parse(&raw_source.provider)
+            .map_err(|error| error.to_string())?,
+        None => crate::domain::settings::SourceControl::default(),
+    };
+    let credentials = match raw.credentials {
+        Some(raw_credentials) => crate::domain::settings::Credentials::parse(
+            raw_credentials.deepseek_api_key,
+            raw_credentials.github_api_key,
         )
-        .map_err(|error| error.to_string()),
-        None => Ok(settings),
-    }
+        .map_err(|error| error.to_string())?,
+        None => crate::domain::settings::Credentials::default(),
+    };
+    Settings::with_credentials(&raw.provider, &raw.model, source_control, credentials)
+        .map_err(|error| error.to_string())
 }
 
 /// Explains a schema/type mismatch in a syntactically valid document.
@@ -117,7 +130,7 @@ fn yaml_reason(error: &YamlError) -> String {
     };
     match error {
         YamlError::SerdeUnknownField { .. } => format!(
-            "it contains an unknown field{}; only `provider`, `model`, and `source_control` are allowed",
+            "it contains an unknown field{}; only `provider`, `model`, `source_control`, and `credentials` are allowed",
             at(line)
         ),
         YamlError::SerdeMissingField { field, .. } => {
@@ -131,16 +144,6 @@ fn yaml_reason(error: &YamlError) -> String {
         YamlError::Budget { .. } => "it exceeds the YAML complexity limits".to_owned(),
         _ => format!("it is not valid YAML{}", at(line)),
     }
-}
-
-/// Whether the provider credential is set. The value is never read.
-pub fn credential_present() -> bool {
-    std::env::var_os(CREDENTIAL_VAR).is_some_and(|value| !value.is_empty())
-}
-
-/// Whether the GitHub credential is set. The value is never read.
-pub fn github_credential_present() -> bool {
-    std::env::var_os(GITHUB_CREDENTIAL_VAR).is_some_and(|value| !value.is_empty())
 }
 
 /// `settings.yaml` in the configuration directory.
@@ -184,11 +187,31 @@ impl SettingsFile {
 }
 
 fn load_from(path: &Path) -> Result<Settings, LoadError> {
-    let bytes = SettingsFile::read_bounded(path).map_err(|error| match error.kind() {
-        io::ErrorKind::NotFound => LoadError::Missing,
-        kind => LoadError::Unreadable(kind),
-    })?;
+    // The file may hold credentials: fail closed when group or other users can
+    // read it. A missing file is reported separately so the user gets the
+    // create-it hint.
+    match fs::metadata(path) {
+        Ok(metadata) => verify_private_file(path, &metadata)?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Err(LoadError::Missing),
+        Err(error) => return Err(LoadError::Unreadable(error.kind())),
+    }
+    let bytes =
+        SettingsFile::read_bounded(path).map_err(|error| LoadError::Unreadable(error.kind()))?;
     parse_settings(&bytes).map_err(LoadError::Invalid)
+}
+
+#[cfg(unix)]
+fn verify_private_file(_path: &Path, metadata: &fs::Metadata) -> Result<(), LoadError> {
+    use std::os::unix::fs::PermissionsExt;
+    if metadata.permissions().mode() & 0o077 != 0 {
+        return Err(LoadError::Exposed);
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn verify_private_file(_path: &Path, _metadata: &fs::Metadata) -> Result<(), LoadError> {
+    Ok(())
 }
 
 impl SettingsStore for SettingsFile {
@@ -318,11 +341,24 @@ mod tests {
 
     #[test]
     fn valid_fixtures_load() {
-        for name in ["settings-valid.yaml", "settings-valid-quoted.yaml"] {
+        for name in [
+            "settings-valid.yaml",
+            "settings-valid-quoted.yaml",
+            "settings-credentials.yaml",
+        ] {
             let settings = parse_settings(&fixture(name)).unwrap();
             assert_eq!(settings.provider.as_str(), "deepseek");
             assert_eq!(settings.model.as_str(), "deepseek-chat");
         }
+        let with_keys = parse_settings(&fixture("settings-credentials.yaml")).unwrap();
+        assert_eq!(
+            with_keys.credentials.deepseek_api_key.as_deref(),
+            Some("sk-test-deepseek")
+        );
+        assert_eq!(
+            with_keys.credentials.github_api_key.as_deref(),
+            Some("ghp-test-github")
+        );
     }
 
     #[test]
@@ -330,7 +366,7 @@ mod tests {
         let cases = [
             (
                 "settings-unknown-field.yaml",
-                "it contains an unknown field (line 3); only `provider`, `model`, and `source_control` are allowed",
+                "it contains an unknown field (line 3); only `provider`, `model`, `source_control`, and `credentials` are allowed",
             ),
             ("settings-malformed.yaml", "it is not valid YAML"),
             (

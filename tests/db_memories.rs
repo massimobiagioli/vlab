@@ -71,7 +71,7 @@ fn lab_project_and_agent_memories_round_trip() {
         MemoryScope::Project(project),
         MemoryScope::Agent(AgentId::parse("1c2d3e4f").unwrap()),
     ] {
-        memories::create(&db, &db, scope.clone(), "Keep work small.").unwrap();
+        memories::create(&db, &db, scope.clone(), "Keep work small.", None).unwrap();
         assert_eq!(memories::list_checked(&db, &db, scope).unwrap().len(), 1);
     }
 }
@@ -82,9 +82,9 @@ fn the_twenty_first_memory_in_a_scope_is_rejected() {
     seed_lab(&db, "a3f91c07", "Payments");
     let scope = MemoryScope::Lab(LabId::parse("a3f91c07").unwrap());
     for index in 0..MEMORY_MAX_PER_SCOPE {
-        memories::create(&db, &db, scope.clone(), &format!("note {index}")).unwrap();
+        memories::create(&db, &db, scope.clone(), &format!("note {index}"), None).unwrap();
     }
-    let error = memories::create(&db, &db, scope, "one too many").unwrap_err();
+    let error = memories::create(&db, &db, scope, "one too many", None).unwrap_err();
     assert!(
         matches!(error, vlab::app::AppError::Validation { .. }),
         "{error:?}"
@@ -98,7 +98,7 @@ fn project_scope_is_bound_to_the_active_laboratory() {
     seed_lab(&db, "1c2d3e4f", "B");
     save_active_lab(&db, &LabId::parse("a3f91c07").unwrap()).unwrap();
     let project = seed_project(&db, "0b1c2d3e", &LabId::parse("1c2d3e4f").unwrap(), "Other");
-    let error = memories::create(&db, &db, MemoryScope::Project(project), "x").unwrap_err();
+    let error = memories::create(&db, &db, MemoryScope::Project(project), "x", None).unwrap_err();
     assert!(
         matches!(error, vlab::app::AppError::NotFound { .. }),
         "{error:?}"
@@ -113,7 +113,7 @@ fn archived_agent_memories_remain_listable_but_new_ones_are_rejected() {
     save_active_lab(&db, &lab).unwrap();
     seed_agent(&db, "1c2d3e4f", std::slice::from_ref(&lab));
     let scope = MemoryScope::Agent(AgentId::parse("1c2d3e4f").unwrap());
-    memories::create(&db, &db, scope.clone(), "Historical note").unwrap();
+    memories::create(&db, &db, scope.clone(), "Historical note", None).unwrap();
     db.execute("UPDATE agents SET archived_at = '2026-01-01T00:00:00Z'")
         .unwrap();
     assert_eq!(
@@ -122,7 +122,7 @@ fn archived_agent_memories_remain_listable_but_new_ones_are_rejected() {
             .len(),
         1
     );
-    let error = memories::create(&db, &db, scope, "new").unwrap_err();
+    let error = memories::create(&db, &db, scope, "new", None).unwrap_err();
     assert!(
         matches!(error, vlab::app::AppError::Validation { .. }),
         "{error:?}"
@@ -138,8 +138,8 @@ fn deleting_a_laboratory_or_project_removes_its_memories() {
     let project = seed_project(&db, "0b1c2d3e", &lab, "Portal");
     let lab_scope = MemoryScope::Lab(lab.clone());
     let project_scope = MemoryScope::Project(project.clone());
-    memories::create(&db, &db, lab_scope.clone(), "lab note").unwrap();
-    memories::create(&db, &db, project_scope.clone(), "project note").unwrap();
+    memories::create(&db, &db, lab_scope.clone(), "lab note", None).unwrap();
+    memories::create(&db, &db, project_scope.clone(), "project note", None).unwrap();
     db.execute("DELETE FROM projects WHERE id = '0b1c2d3e'")
         .unwrap();
     assert!(db.memories(&project_scope).unwrap().is_empty());

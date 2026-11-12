@@ -62,7 +62,8 @@ submit a revised request and keep the previous record for traceability.
 - DeepSeek chat-completions endpoint:
   `https://api.deepseek.com/chat/completions`.
 - Model identifier comes from `settings.yaml`; no default model is hardcoded.
-- Credential: `DEEPSEEK_API_KEY`, sent only in the `Authorization` header.
+- Credential: `credentials.deepseek_api_key` from `settings.yaml`, sent only in
+  the `Authorization` header.
 - Attempt timeout 60 s, connect timeout 10 s, total planning deadline 240 s,
   response body cap 256 KiB, max output tokens 4096.
 - At most one logical invocation and two retries. Only rate-limit, timeout,
@@ -99,7 +100,8 @@ memories, and the Tech Lead's agent memories, in that order, newest first within
 each scope. At most 8 KiB of memory text is included; memories that do not fit
 are omitted whole. Every block is delimited with scope and memory ID and marked
 as data. Archived-agent memories are excluded. A memory or request containing
-the configured `DEEPSEEK_API_KEY` value is rejected before the provider call.
+the configured `credentials.deepseek_api_key` value is rejected before the
+provider call.
 
 ## Security
 

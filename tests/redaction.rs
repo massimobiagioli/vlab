@@ -8,8 +8,11 @@ use vlab::cli::exit::render;
 use vlab::obs::Redacted;
 
 #[test]
-fn provider_key_in_the_environment_never_reaches_output_even_with_tracing() {
+fn provider_key_in_settings_never_reaches_output_even_with_tracing() {
     let sandbox = Sandbox::new();
+    sandbox.write_settings(&format!(
+        "provider: deepseek\nmodel: deepseek-chat\ncredentials:\n  deepseek_api_key: \"{SECRET_MARKER}\"\n"
+    ));
     let cases: &[&[&str]] = &[
         &[],
         &["--help"],
@@ -20,7 +23,6 @@ fn provider_key_in_the_environment_never_reaches_output_even_with_tracing() {
     for args in cases {
         let output = sandbox
             .command()
-            .env("DEEPSEEK_API_KEY", SECRET_MARKER)
             .env("RUST_LOG", "trace")
             .args(*args)
             .output()

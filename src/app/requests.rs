@@ -21,11 +21,8 @@ use crate::obs::{ActionId, RunId};
 
 pub const STALE_PLANNING_SECONDS: i64 = 240;
 
-fn contains_configured_secret(value: &str) -> bool {
-    std::env::var("DEEPSEEK_API_KEY")
-        .ok()
-        .filter(|secret| !secret.is_empty())
-        .is_some_and(|secret| value.contains(&secret))
+fn contains_secret(value: &str, secret: Option<&str>) -> bool {
+    secret.is_some_and(|secret| !secret.is_empty() && value.contains(secret))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,7 +66,10 @@ pub fn plan(
             message: "a request must contain non-empty text.".to_owned(),
         });
     }
-    if contains_configured_secret(request_text) {
+    if contains_secret(
+        request_text,
+        settings.credentials.deepseek_api_key.as_deref(),
+    ) {
         return Err(AppError::Validation {
             problem: "the request contains a value that looks like the provider credential."
                 .to_owned(),
@@ -159,7 +159,12 @@ pub fn plan(
         .iter()
         .chain(project_memories.iter())
         .chain(lead_memories.iter())
-        .any(|record| contains_configured_secret(&record.memory.content))
+        .any(|record| {
+            contains_secret(
+                &record.memory.content,
+                settings.credentials.deepseek_api_key.as_deref(),
+            )
+        })
     {
         finish_failed(
             store,
@@ -286,7 +291,10 @@ pub fn plan(
         }
     };
 
-    if contains_configured_secret(&response.content) {
+    if contains_secret(
+        &response.content,
+        settings.credentials.deepseek_api_key.as_deref(),
+    ) {
         finish_failed(
             store,
             &request_id,
@@ -454,7 +462,10 @@ fn record(
 
 fn provider_failure(error: &ProviderError) -> (&'static str, &'static str) {
     match error {
-        ProviderError::Authentication => ("provider_authentication", "check DEEPSEEK_API_KEY."),
+        ProviderError::Authentication => (
+            "provider_authentication",
+            "check credentials.deepseek_api_key in settings.yaml.",
+        ),
         ProviderError::RateLimited { .. } => ("provider_rate_limited", "retry later."),
         ProviderError::Timeout => ("provider_timeout", "retry later."),
         ProviderError::Transport => ("provider_transport", "check the network connection."),

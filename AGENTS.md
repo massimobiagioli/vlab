@@ -79,6 +79,7 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0027.md`](.docs/adr/adr-0027.md) | Allow ISC and CDLA-Permissive-2.0 for the TLS dependency graph. |
 | [`.docs/adr/adr-0028.md`](.docs/adr/adr-0028.md) | Content-free interaction metadata (schema v5). |
 | [`.docs/adr/adr-0029.md`](.docs/adr/adr-0029.md) | Activate hosted CI before the release tag. |
+| [`.docs/adr/adr-0030.md`](.docs/adr/adr-0030.md) | Credentials in the private settings file. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
 
 ### Precedence
@@ -193,7 +194,7 @@ unless it actually happened.
   filesystem, network, or code execution through the model.
 - **Persistence:** SQLite through SQLx, one connection initially, foreign keys
   enabled, parameterized queries, versioned migrations.
-- **Provider:** DeepSeek only, credentials from `DEEPSEEK_API_KEY`, bounded
+- **Provider:** DeepSeek only, credentials from the private `settings.yaml`, bounded
   timeouts and sizes, strict structured output, no automatic repair loop.
 - **Secrets:** never in source, arguments, prompts, logs, errors, database, test
   fixtures, or command output.
@@ -246,6 +247,7 @@ Makefile                        developer tasks; `make` lists them (ADR-0014)
 .docs/adr/                      architecture decisions and registry
 .agents/skills/                 reusable, tool-portable procedures
 .project/IMPLEMENTATION-PLAN.md ordered implementation plan
+.data/settings.example.yaml     tracked settings placeholder; other data ignored
 Cargo.toml, Cargo.lock          crate manifest and committed lockfile
 rust-toolchain.toml             pinned toolchain (ADR-0008)
 deny.toml                       cargo-deny policy (ADR-0012, ADR-0013)
@@ -267,8 +269,9 @@ introduce rules or decisions that are not recorded in `.docs/` or an accepted
 ADR. Local scratch directories, including `.tmp/` and any other content
 under `.project/`, are outside version control. They are not authoritative
 sources and must not be referenced by tracked guidance, skills, ADRs, or the
-plan. The development data folder `.data/`, written by `make run`, is also
-outside version control (ADR-0014).
+plan. The development data folder `.data/`, written by `make run`, is outside
+version control except for the tracked `settings.example.yaml` placeholder
+(ADR-0014, ADR-0030).
 
 ---
 

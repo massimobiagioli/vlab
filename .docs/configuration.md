@@ -6,10 +6,13 @@
 
 ```yaml
 provider: deepseek
-model: "<supported-model-id>"
+model: "deepseek-chat"
 # Optional; GitHub is the only supported source-control provider.
 source_control:
   provider: github
+credentials:
+  deepseek_api_key: "sk-..."
+  github_api_key: "ghp-..."   # optional
 ```
 
 | Field | Rule |
@@ -17,19 +20,34 @@ source_control:
 | `provider` | `deepseek` only. |
 | `model` | 1–64 characters of letters, digits, `.`, `_`, `:`, `-`; taken from the provider documentation. No default is hardcoded. |
 | `source_control.provider` | Optional; `github` only; omitted means GitHub. |
+| `credentials.deepseek_api_key` | Optional token, required for planning and questions; at most 512 bytes. |
+| `credentials.github_api_key` | Optional token, required only for `--github-source`; at most 512 bytes. |
 
 Unknown fields, duplicate keys, multiple documents, and non-scalar values are
-rejected. The file is capped at 64 KiB and never contains credentials.
+rejected. The file is capped at 64 KiB.
 
 ## Credentials
 
-| Variable | Use |
-|---|---|
-| `DEEPSEEK_API_KEY` | Planning and questions; sent only in the Authorization header. |
-| `GITHUB_API_KEY` | Required when creating a project with `--github-source`; never stored or displayed. |
+`settings.yaml` is the only credential source. VLab never reads
+`DEEPSEEK_API_KEY` or `GITHUB_API_KEY` from the environment. The key is sent
+only in the Authorization header of the provider request; the GitHub key is
+used only to confirm that a GitHub-backed project may be created. Neither is
+written to the database, events, interaction metadata, prompts, logs, errors,
+or command output, and `--show-settings` reports only `set`/`unset`.
 
-Both are read from the environment and are never written to settings, the
-database, events, interaction metadata, prompts, logs, or command output.
+Because the file contains secrets:
+
+- keep it outside version control; it is already ignored by `.gitignore`;
+- keep it private: VLab writes it with mode `0600`, refuses an unsafe
+  directory (`0700` is created and verified), and on Unix refuses to load a
+  file readable by group or other users;
+- do not copy it into backups, tickets, chats, or screenshots without
+  protection.
+
+A placeholder example is tracked at `.data/settings.example.yaml` for the
+development data directory. Create the private file with
+`install -m 600 .data/settings.example.yaml .data/settings.yaml`, or let
+`--edit-settings` create it.
 
 ## Paths
 

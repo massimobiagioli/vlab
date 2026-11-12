@@ -1,8 +1,10 @@
 # Build output
 /target/
 
-# Local databases and secrets
-/.data/
+# Local databases and secrets. The settings example stays tracked so a fresh
+# clone can copy it to settings.yaml.
+/.data/*
+!/.data/settings.example.yaml
 *.db
 *.db-wal
 *.db-shm

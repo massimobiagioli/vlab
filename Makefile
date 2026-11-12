@@ -70,5 +70,5 @@ snapshot: build-debug ## Regenerate the reviewed help snapshot
 clean: ## Remove build output
 	$(CARGO) clean
 
-clean-data: ## Delete the development data in .data/
-	rm -rf "$(DATA_DIR)"
+clean-data: ## Delete the development data in .data/, keeping the example
+	@find "$(DATA_DIR)" -mindepth 1 ! -name settings.example.yaml -exec rm -rf {} + 2>/dev/null || true

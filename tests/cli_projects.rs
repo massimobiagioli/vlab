@@ -97,7 +97,7 @@ fn a_github_source_requires_a_settings_file_and_a_global_key() {
     sandbox.write_settings("provider: deepseek\nmodel: deepseek-chat\n");
     sandbox
         .run(&args)
-        .assert_failure(2, "`GITHUB_API_KEY` is not set.");
+        .assert_failure(2, "`credentials.github_api_key` is not set.");
 }
 
 #[test]
@@ -105,11 +105,13 @@ fn a_github_backed_project_stores_the_canonical_source() {
     let sandbox = Sandbox::new();
     let lab = seed_lab(&sandbox, "a3f91c07", "Payments");
     activate(&sandbox, &lab);
-    sandbox.write_settings("provider: deepseek\nmodel: deepseek-chat\n");
+    sandbox.write_settings(&format!(
+        "provider: deepseek\nmodel: deepseek-chat\ncredentials:\n  github_api_key: \"{}\"\n",
+        support::SECRET_MARKER
+    ));
     let outcome = support::Outcome::from(
         sandbox
             .command()
-            .env("GITHUB_API_KEY", support::SECRET_MARKER)
             .args([
                 "--new-project",
                 "Portal",

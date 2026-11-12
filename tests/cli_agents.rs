@@ -228,7 +228,7 @@ fn agent_commands_perform_no_provider_call() {
     let sandbox = Sandbox::new();
     let lab = seed_lab(&sandbox, "a3f91c07", "Payments");
     seed_agent(&sandbox, "0b1c2d3e", "Ada", Role::Lead, &[lab], None);
-    // The sandbox has no DEEPSEEK_API_KEY and no settings file; both commands
+    // The sandbox has no settings file; both commands
     // still succeed, so no provider-backed path is reachable from them.
     let outcome = sandbox.run(&["--show-agent-detail", "0b1c2d3e"]);
     outcome.assert_success();

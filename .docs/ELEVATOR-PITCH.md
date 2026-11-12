@@ -13,7 +13,7 @@ scriptable development environment. Laboratories, projects, and agent profiles
 can carry user-authored memories that the Tech Lead considers as bounded,
 delimited context; memories are data and never grant capabilities or act as
 instructions. A project may reference one GitHub repository; the GitHub key
-remains a global environment secret, never project or database content.
+remains a global settings-file secret, never project or database content.
 
 ## Status
 

@@ -9,9 +9,9 @@ the schema; they must update this document before adding durable data.
 
 - Data is local to the operating-system user. VLab runs no server and has no
   account or synchronization model.
-- Provider credentials are read from `DEEPSEEK_API_KEY` and are never stored in
-  `settings.yaml`, the database, logs, errors, or command output
-  ([ADR-0002](adr/adr-0002.md), [ADR-0015](adr/adr-0015.md)).
+- Provider credentials are stored only in the private `settings.yaml`. They are
+  never stored in the database, logs, errors, events, prompts, or command
+  output ([ADR-0030](adr/adr-0030.md)).
 - Prompts, provider response bodies, full chat transcripts, and CVs of people
   outside the laboratory are not stored.
 - SQLite is **not encrypted at rest**. Use full-disk encryption (FileVault on
@@ -30,10 +30,16 @@ Stored in the per-user configuration directory with mode `0600`.
 |---|---|
 | `provider` | Selects the only supported provider; needed on every provider-backed command. |
 | `model` | The provider model identifier the user has chosen. It is not a credential. |
+| `source_control.provider` | Selects the source-control provider; currently GitHub only. |
+| `credentials.deepseek_api_key` | Credential for planning and questions; sent only in the provider Authorization header. |
+| `credentials.github_api_key` | Optional credential used only to authorize GitHub-backed project creation. |
 
-The file contains no API key, token, password, or other secret. A misplaced
-credential is rejected by the strict parser, and the error repeats only the
-offending field name, never its value.
+The file is the only place where credentials are stored. It is retained until
+the user edits or deletes it; it is not copied into the database, events, or
+logs. Its directory is mode `0700` and the file mode `0600`. The tracked
+`.data/settings.example.yaml` contains placeholders only, never a real secret.
+Errors from the strict parser repeat only the offending field name, never its
+value.
 
 ### SQLite database (`vlab.db`)
 

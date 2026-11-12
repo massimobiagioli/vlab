@@ -116,8 +116,9 @@ content. It is added by WP-6.
 - Archives are additive: archived agents remain resolvable; deletion of
   laboratories/projects is a cascade.
 - Timestamps are UTC; due dates are calendar dates computed locally.
-- Credentials (`DEEPSEEK_API_KEY`, `GITHUB_API_KEY`) are **not entities** and
-  are never stored in this model.
+- Credentials are **not entities**. They live only in the private
+  `settings.yaml` (`credentials.deepseek_api_key`, optional
+  `credentials.github_api_key`) and are never stored in the database.
 
 ## Identifier and lifecycle conventions
 
@@ -132,7 +133,7 @@ The model stores user-provided project content and bounded memories. It never
 stores provider credentials, prompts, response bodies, or interaction content.
 Retention, cascade behavior, and the lack of encryption at rest are documented
 in [`data-retention.md`](data-retention.md). The GitHub source URL is not a
-secret; the GitHub key remains an environment credential.
+secret; the GitHub key remains a private settings credential.
 
 ## Keeping this document aligned
 

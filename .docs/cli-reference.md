@@ -8,7 +8,7 @@ Run `vlab` or `vlab --help` for the grouped help.
 
 | Command | Behavior |
 |---|---|
-| `--show-settings` | Print the resolved settings path, provider, model, source-control provider, and whether `DEEPSEEK_API_KEY`/`GITHUB_API_KEY` are set. No key value is shown. |
+| `--show-settings` | Print the resolved settings path, provider, model, source-control provider, and whether the DeepSeek/GitHub keys in `settings.yaml` are set. No key value is shown. |
 | `--edit-settings` | Edit a private copy in `VISUAL`/`EDITOR`, validate it, and atomically replace the file only on success. |
 
 ## Laboratories
@@ -26,7 +26,7 @@ Run `vlab` or `vlab --help` for the grouped help.
 | Command | Behavior |
 |---|---|
 | `--list-projects` | Projects in the active laboratory with request/story/state counts. |
-| `--new-project <name> [--github-source <url>]` | Create a project; the optional URL must be `https://github.com/<owner>/<repository>` and requires `GITHUB_API_KEY`. |
+| `--new-project <name> [--github-source <url>]` | Create a project; the optional URL must be `https://github.com/<owner>/<repository>` and requires `credentials.github_api_key` in `settings.yaml`. |
 | `--show-project-kanban <project-id>` | Read-only five-column board plus counts and pending intake. |
 | `--delete-project <project-id>` | Confirm, then cascade requests/stories/memories. |
 | `--new-request <project-id> [text]` | Plan a request from literal text or piped stdin. |
