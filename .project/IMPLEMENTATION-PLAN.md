@@ -47,7 +47,7 @@ The plan is designed so that:
 | WP-4 | Projects, read-only Kanban, safe deletion, scoped memories, schema v3 | Done (local gates) | 10.6 |
 | WP-5 | End-to-end Tech Lead planning via DeepSeek with bounded execution, memory context, and GitHub source configuration | Done (local gates) | 11.6 |
 | WP-6 | Direct questions with memory context, hardening, deterministic acceptance suite | Done (local gates) | 12.6 |
-| Go-Live | Hosted CI, live-provider verification and evaluation, release gate, tag | Not started | GL.6 |
+| Go-Live | Hosted CI, live-provider verification and evaluation, release gate, tag | In progress (CI activated; manual protection pending) | GL.6 |
 
 ---
 

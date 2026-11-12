@@ -253,6 +253,8 @@ budget.
 - [`.docs/`](.docs/) — authoritative project documentation and ADRs.
 - [`.docs/cli-reference.md`](.docs/cli-reference.md) — every command, modifier,
   and exit code.
+- [`.docs/PLAYBOOK.md`](.docs/PLAYBOOK.md) — step-by-step setup and first
+  planning walkthrough.
 - [`.docs/configuration.md`](.docs/configuration.md) — settings, credentials,
   paths, and the editor.
 - [`.docs/planning.md`](.docs/planning.md) — request intake, provider bounds,

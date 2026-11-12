@@ -47,7 +47,8 @@ over convenience or delivery speed.
 | [`.docs/configuration.md`](.docs/configuration.md) | Settings, credentials, paths, and the editor. |
 | [`.docs/planning.md`](.docs/planning.md) | Request planning, provider bounds, outcomes, and memory context. |
 | [`.docs/security-review.md`](.docs/security-review.md) | Trust boundaries, secret handling, and residual risks. |
-| [`.docs/CI.md`](.docs/CI.md) | Local gate commands; CI workflows (disabled until Go-Live) and manual repository settings. |
+| [`.docs/PLAYBOOK.md`](.docs/PLAYBOOK.md) | Step-by-step setup and first planning walkthrough. |
+| [`.docs/CI.md`](.docs/CI.md) | Local gate commands, active CI workflows, and manual repository settings. |
 | [`.docs/adr/registry.md`](.docs/adr/registry.md) | Authoritative index of all architecture decisions. |
 | [`.docs/adr/adr-0001.md`](.docs/adr/adr-0001.md) | Rust modular monolith with explicit layer boundaries. |
 | [`.docs/adr/adr-0002.md`](.docs/adr/adr-0002.md) | Local SQLite persistence and per-user configuration storage. |
@@ -77,6 +78,7 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0026.md`](.docs/adr/adr-0026.md) | Bounded synchronous provider port and planning contract. |
 | [`.docs/adr/adr-0027.md`](.docs/adr/adr-0027.md) | Allow ISC and CDLA-Permissive-2.0 for the TLS dependency graph. |
 | [`.docs/adr/adr-0028.md`](.docs/adr/adr-0028.md) | Content-free interaction metadata (schema v5). |
+| [`.docs/adr/adr-0029.md`](.docs/adr/adr-0029.md) | Activate hosted CI before the release tag. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
 
 ### Precedence
@@ -217,7 +219,8 @@ cargo deny check
 ```
 
 `make check` runs the same five commands in order (ADR-0014). Hosted CI is
-disabled until Go-Live, so these local runs are the gate (ADR-0013).
+active and supplements these local runs (ADR-0029); local gate evidence remains
+mandatory.
 
 Additional requirements:
 
@@ -250,7 +253,7 @@ migrations/                     embedded, forward-only schema migrations (ADR-00
 vendor/                         temporary patched dependencies; provenance recorded (ADR-0017)
 src/                            cli, app, domain, infra, obs (ADR-0001)
 tests/                          integration tests; tests/support/ shared harness
-.github/                        CI and Dependabot, commented out until Go-Live (ADR-0013)
+.github/                        active CI and Dependabot (ADR-0029)
 ```
 
 Project documentation, including documents the implementation plan places
