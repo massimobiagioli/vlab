@@ -3,14 +3,12 @@
 
 mod support;
 
-use vlab::app::context::save_active_lab;
+use vlab::app::context::{save_active_lab, save_active_project};
 use vlab::app::directory::Directory;
-use vlab::app::memories::MemoryStore;
 use vlab::app::projects::ProjectStore;
 use vlab::domain::agent::{AgentProfile, Description, Role};
-use vlab::domain::ids::{AgentId, LabId, MemoryId, ProjectId};
+use vlab::domain::ids::{AgentId, LabId, ProjectId};
 use vlab::domain::lab::Lab;
-use vlab::domain::memory::{Memory, MemoryScope};
 use vlab::domain::name::Name;
 use vlab::domain::project::Project;
 use vlab::domain::settings::{ModelId, ProviderId};
@@ -32,13 +30,15 @@ fn a_non_interactive_invocation_without_yes_fails_closed() {
     let sandbox = Sandbox::new();
     let db = seed_lab(&sandbox);
     let lab = LabId::parse("a3f91c07").unwrap();
+    let project = ProjectId::parse("0b1c2d3e").unwrap();
     db.insert_project(&Project::new(
-        ProjectId::parse("0b1c2d3e").unwrap(),
+        project.clone(),
         lab.clone(),
         Name::parse("Portal").unwrap(),
         None,
     ))
     .unwrap();
+    save_active_project(&db, &project).unwrap();
     let agent = AgentId::parse("1c2d3e4f").unwrap();
     db.insert_agent(
         &AgentProfile::new(
@@ -55,27 +55,14 @@ fn a_non_interactive_invocation_without_yes_fails_closed() {
         std::slice::from_ref(&lab),
     )
     .unwrap();
-    db.insert_memory(
-        &Memory::new(
-            MemoryId::parse("2d3e4f50").unwrap(),
-            MemoryScope::Agent(agent),
-            "history",
-        )
-        .unwrap(),
-    )
-    .unwrap();
-
     sandbox
         .run(&["--delete-lab", "a3f91c07"])
         .assert_failure(4, "requires confirmation");
     sandbox
-        .run(&["--delete-project", "0b1c2d3e"])
+        .run(&["--delete-project"])
         .assert_failure(4, "requires confirmation");
     sandbox
         .run(&["--delete-agent", "1c2d3e4f"])
-        .assert_failure(4, "requires confirmation");
-    sandbox
-        .run(&["--delete-memory", "2d3e4f50"])
         .assert_failure(4, "requires confirmation");
 }
 
@@ -92,6 +79,7 @@ fn yes_executes_and_changes_only_the_target() {
         None,
     ))
     .unwrap();
+    save_active_project(&db, &project).unwrap();
     let agent = AgentId::parse("1c2d3e4f").unwrap();
     db.insert_agent(
         &AgentProfile::new(
@@ -108,19 +96,7 @@ fn yes_executes_and_changes_only_the_target() {
         std::slice::from_ref(&lab),
     )
     .unwrap();
-    let memory = MemoryId::parse("2d3e4f50").unwrap();
-    db.insert_memory(
-        &Memory::new(memory.clone(), MemoryScope::Agent(agent.clone()), "history").unwrap(),
-    )
-    .unwrap();
-
-    sandbox
-        .run(&["--delete-memory", memory.as_str(), "--yes"])
-        .assert_success();
-    assert!(db.memory(&memory).unwrap().is_none());
-    sandbox
-        .run(&["--delete-project", project.as_str(), "--yes"])
-        .assert_success();
+    sandbox.run(&["--delete-project", "--yes"]).assert_success();
     assert!(db.project(&project).unwrap().is_none());
     let archived = sandbox.run(&["--delete-agent", agent.as_str(), "--yes"]);
     assert_eq!(archived.code, 0, "{archived:#?}");

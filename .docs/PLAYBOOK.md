@@ -107,56 +107,53 @@ vlab --new-project "Customer Portal" --github-source https://github.com/acme/por
 ```
 
 If the clone fails, no project is created. The token is passed through a
-private askpass helper, never in the URL or arguments. List projects and open
-the read-only board:
+private askpass helper, never in the URL or arguments.
+
+`--new-project` selects the new project. Assign the agents that should work on
+it (repeat for each agent):
+
+```sh
+vlab --assign-agent <agent-id>
+```
+
+Use `--open-project <project-id>` to switch project later. List projects and
+open the read-only board:
 
 ```sh
 vlab --list-projects
-vlab --show-project-kanban <project-id>
+vlab --show-project-kanban
 ```
 
-## 7. Add memories (optional)
+## 7. Automatic memories
 
-Memories give the Tech Lead or an agent extra context. One scope per command.
-
-```sh
-vlab --new-memory "Prefer small pull requests." --for-lab <lab-id>
-vlab --new-memory "The API is versioned." --for-project <project-id>
-vlab --new-memory "Ask before changing shared schemas." --for-agent <agent-id>
-
-vlab --list-memories --for-lab <lab-id>
-```
-
-List and delete:
-
-```sh
-vlab --list-memories --for-project <project-id>
-vlab --delete-memory <memory-id>          # asks for confirmation
-vlab --delete-memory <memory-id> --yes    # non-interactive
-```
+Memories are generated automatically when a laboratory, agent, or project is
+created, and when a request is planned successfully. There are no memory
+commands. Existing memories remain in the planning context within the 8 KiB
+bound.
 
 ## 8. Submit a request
 
 ```sh
-vlab --new-request <project-id> "Add password reset"
+vlab --new-request "Add password reset"
 ```
 
 Or pipe a file:
 
 ```sh
-vlab --new-request <project-id> < request.md
+vlab --new-request < request.md
 ```
 
 VLab stores the request first, calls DeepSeek with bounded retries, validates
-the JSON proposal, assigns only real laboratory members, computes due dates
-locally, and saves all stories in one transaction. It prints the request ID,
-status, and story table. If it returns questions, the status is
+the JSON proposal, assigns only the project's agents (or laboratory members
+when none is assigned), computes due dates locally, and saves all stories in
+one transaction. It then stores a short planning-summary memory. It prints the
+request ID, status, and story table. If it returns questions, the status is
 `NEEDS_CLARIFICATION`; submit a revised request if needed.
 
 ## 9. Read the result
 
 ```sh
-vlab --show-project-kanban <project-id>
+vlab --show-project-kanban
 ```
 
 The board shows `TODO`, `IN PROGRESS`, `IN REVIEW`, `BLOCKED`, and `DONE`,
@@ -178,6 +175,7 @@ is never executed or stored.
 |---|---|---|
 | Settings | per-user config dir + `vlab/settings.yaml` | `VLAB_CONFIG_DIR` |
 | Database | per-user data dir + `vlab/vlab.db` | `VLAB_DATA_DIR`, `VLAB_DB_PATH` |
+| Project checkouts | `<repo>/.workspace/` for the debug layout, otherwise `<data dir>/workspace/` | — |
 
 A debug build from this checkout uses `.data/` automatically (ADR-0031). It
 contains `settings.yaml` once you create it, and that file holds your keys;
@@ -198,7 +196,7 @@ backups of `settings.yaml` as secrets.
 | Code | Meaning | Action |
 |---|---|---|
 | 2 | Invalid input/settings | Read the hint; run `--show-settings` or fix the argument. |
-| 3 | Missing active laboratory or entity | Run `--list-labs`, then `--open-lab <lab-id>`. |
+| 3 | Missing active laboratory, project, or entity | Run `--list-labs`/`--list-projects`, then `--open-lab`/`--open-project`. |
 | 4 | Laboratory not ready / validation failed / confirmation needed | Run `--check-lab`; add a lead/skills; use a terminal or `--yes` for deletion. |
 | 1 | Provider or storage failure | Check the key, network, and hint; retry later. |
 | 130 | Interrupted | Run the command again; the request is preserved. |
@@ -213,8 +211,8 @@ vlab --open-lab <lab-id>
 vlab --new-agent                     # create the lead, then other agents
 vlab --check-lab <lab-id>
 vlab --new-project "My Project"
-vlab --new-request <project-id> "Add the first feature"
-vlab --show-project-kanban <project-id>
+vlab --new-request "Add the first feature"
+vlab --show-project-kanban
 vlab --ask "What should we do next?"
 ```
 

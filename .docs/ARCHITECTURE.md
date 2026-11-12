@@ -27,7 +27,7 @@ The initial architecture does not include:
 - Distributed execution.
 - Autonomous permission escalation.
 - Arbitrary shell execution.
-- Autonomous or model-written persistent memory across tasks; user-authored scoped memories are supported as bounded, untrusted context (ADR-0022).
+- Autonomous memory decisions or model-chosen retention; scoped memories are application-managed, including a bounded planning summary, and remain untrusted context (ADR-0022, ADR-0036).
 - A general-purpose plugin framework.
 - Unrequested background activity.
 
@@ -42,11 +42,13 @@ The application owns control flow, permissions, execution budgets, and state.
 The model proposes actions or produces answers; it does not grant authority,
 enforce security policy, or determine whether external effects actually occurred.
 
-Scoped memories are user-authored text attached to a laboratory, project, or
-agent. They are stored as project data and treated as untrusted context: the
-application selects a bounded subset for planning or questions, delimit them
-in the prompt, and never interprets them as instructions or authorization.
-The model cannot create, edit, or delete a memory.
+Scoped memories are application-managed text attached to a laboratory,
+project, or agent. Structural facts are deterministic; a successful plan stores
+one bounded model-generated summary. They are stored as project data and
+treated as untrusted context: the application selects a bounded subset for
+planning or questions, delimits them in the prompt, and never interprets them
+as instructions or authorization. The model cannot choose what to store, edit,
+or delete.
 
 Projects may carry an optional GitHub source URL. The GitHub credential is a
 global secret stored in `settings.yaml`, separate from the DeepSeek planning

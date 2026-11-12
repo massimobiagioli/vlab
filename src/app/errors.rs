@@ -27,6 +27,10 @@ pub enum AppError {
     #[error("no active laboratory is selected.")]
     NoActiveLab,
 
+    /// A project-scoped command ran without a current project (ADR-0033).
+    #[error("no active project is selected.")]
+    NoActiveProject,
+
     /// Local validation of an entity or of model output failed.
     #[error("{problem}")]
     Validation { problem: String, hint: String },
@@ -86,6 +90,9 @@ impl AppError {
             Self::NoActiveLab => {
                 "Run `vlab --list-labs`, then `vlab --open-lab <lab-id>`.".to_owned()
             }
+            Self::NoActiveProject => {
+                "Run `vlab --list-projects`, then `vlab --open-project <project-id>`.".to_owned()
+            }
             Self::ConfirmationRequired { command } => {
                 format!("Run `{command}` from a terminal, or add `--yes` to confirm explicitly.")
             }
@@ -110,6 +117,7 @@ impl AppError {
             Self::Configuration { .. } => "configuration",
             Self::NotFound { .. } => "not_found",
             Self::NoActiveLab => "no_active_lab",
+            Self::NoActiveProject => "no_active_project",
             Self::Validation { .. } => "validation",
             Self::Precondition { .. } => "precondition",
             Self::ConfirmationRequired { .. } => "confirmation_required",

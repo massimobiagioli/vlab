@@ -185,6 +185,58 @@ fn a_failed_clone_creates_no_project_row_or_checkout() {
 }
 
 #[test]
+fn open_project_switches_the_current_project() {
+    let sandbox = Sandbox::new();
+    let lab = seed_lab(&sandbox, "a3f91c07", "Payments");
+    activate(&sandbox, &lab);
+    let first = sandbox.run(&["--new-project", "First"]);
+    first.assert_success();
+    let first_id = first
+        .stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("ID:   "))
+        .unwrap()
+        .trim()
+        .to_owned();
+    sandbox.run(&["--new-project", "Second"]).assert_success();
+
+    sandbox.run(&["--open-project", &first_id]).assert_success();
+    let board = sandbox.run(&["--show-project-kanban"]);
+    board.assert_success();
+    assert!(board.stdout.contains("First"), "{}", board.stdout);
+}
+
+#[test]
+fn project_scoped_commands_require_a_current_project() {
+    let sandbox = Sandbox::new();
+    let lab = seed_lab(&sandbox, "a3f91c07", "Payments");
+    activate(&sandbox, &lab);
+    sandbox
+        .run(&["--show-project-kanban"])
+        .assert_failure(3, "no active project");
+    sandbox
+        .run(&["--delete-project", "--yes"])
+        .assert_failure(3, "no active project");
+    sandbox
+        .run(&["--assign-agent", "ffffffff"])
+        .assert_failure(3, "no active project");
+}
+
+#[test]
+fn opening_a_laboratory_clears_the_current_project() {
+    let sandbox = Sandbox::new();
+    let lab = seed_lab(&sandbox, "a3f91c07", "Payments");
+    activate(&sandbox, &lab);
+    sandbox.run(&["--new-project", "Portal"]).assert_success();
+    sandbox.run(&["--show-project-kanban"]).assert_success();
+    let reopened = sandbox.run(&["--open-lab", lab.as_str()]);
+    assert_eq!(reopened.code, 0, "{reopened:#?}");
+    sandbox
+        .run(&["--show-project-kanban"])
+        .assert_failure(3, "no active project");
+}
+
+#[test]
 fn an_invalid_github_url_or_modifier_is_a_usage_error() {
     let sandbox = Sandbox::new();
     sandbox
@@ -204,7 +256,7 @@ fn an_invalid_github_url_or_modifier_is_a_usage_error() {
 fn malformed_project_ids_are_usage_errors_before_storage() {
     let sandbox = Sandbox::new();
     sandbox
-        .run(&["--show-project-kanban", "BAD"])
+        .run(&["--open-project", "BAD"])
         .assert_failure(2, "must be 8 lowercase hexadecimal characters");
     assert!(!sandbox.data_dir().exists());
 }
@@ -232,6 +284,6 @@ fn a_project_from_another_laboratory_is_not_found_or_shown() {
     let db = sandbox.seed_database();
     let first_id = db.projects(&first).unwrap()[0].id.clone();
     sandbox
-        .run(&["--show-project-kanban", first_id.as_str()])
+        .run(&["--open-project", first_id.as_str()])
         .assert_failure(3, "no project with identifier");
 }

@@ -19,20 +19,14 @@ Laboratories:
       --check-lab <lab-id>   Validate a laboratory's agents and Tech Lead
 
 Projects:
-      --list-projects                            List projects in the active laboratory
-      --new-project <name>                       Create a project in the active laboratory
-      --github-source <url>                      Optional GitHub repository URL for the new project
-      --show-project-kanban <project-id>         Show a project's read-only Kanban board
-      --delete-project <project-id>              Delete a project (asks for confirmation)
-      --new-request <project-id> [request-text]  Submit a request for Tech Lead planning
-
-Memories:
-      --list-memories              List memories for one laboratory, project, or agent
-      --new-memory <text>          Create a memory (use exactly one --for-* selector)
-      --delete-memory <memory-id>  Delete a memory (asks for confirmation)
-      --for-lab <lab-id>           Scope a memory command to a laboratory
-      --for-project <project-id>   Scope a memory command to a project in the active laboratory
-      --for-agent <agent-id>       Scope a memory command to an agent
+      --list-projects                 List projects in the active laboratory
+      --new-project <name>            Create a project in the active laboratory
+      --github-source <url>           Optional GitHub repository URL for the new project
+      --open-project <project-id>     Select the current project
+      --show-project-kanban           Show the current project's read-only Kanban board
+      --delete-project                Delete the current project (asks for confirmation)
+      --new-request [<request-text>]  Submit a request for the current project
+      --assign-agent <agent-id>       Assign an agent to the current project
 
 Agents:
       --list-agents                   List agents in the active laboratory

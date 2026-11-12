@@ -4,7 +4,7 @@ use crate::app::AppError;
 use crate::app::directory::Directory;
 use crate::app::storage::AppStateStore;
 use crate::app::workspace::{ProjectWorkspace, WorkspaceError};
-use crate::domain::ids::{LabId, ProjectId, UniqueIdError, unique_short_id};
+use crate::domain::ids::{AgentId, LabId, ProjectId, UniqueIdError, unique_short_id};
 use crate::domain::name::Name;
 use crate::domain::project::Project;
 
@@ -45,6 +45,23 @@ pub trait ProjectStore {
         id: &ProjectId,
         lab: &LabId,
     ) -> Result<Option<ProjectOverview>, crate::app::storage::StorageError>;
+
+    /// Adds an agent to the project roster. Repeating is idempotent.
+    fn assign_project_agent(
+        &self,
+        _: &ProjectId,
+        _: &AgentId,
+    ) -> Result<(), crate::app::storage::StorageError> {
+        Err(crate::app::storage::StorageError::Operation)
+    }
+
+    /// Project roster; an empty list means "use the laboratory roster".
+    fn project_agent_ids(
+        &self,
+        _: &ProjectId,
+    ) -> Result<Vec<AgentId>, crate::app::storage::StorageError> {
+        Ok(Vec::new())
+    }
 }
 
 /// A created project and its optional checkout.
@@ -92,6 +109,65 @@ pub fn create(
         project,
         workspace: checkout,
     })
+}
+
+/// `--open-project`: validates that the project belongs to the active
+/// laboratory and makes it current (ADR-0033).
+pub fn open(
+    store: &impl ProjectStore,
+    state: &impl AppStateStore,
+    raw_id: &str,
+) -> Result<ProjectOverview, AppError> {
+    let id = parse_project_id(raw_id)?;
+    let lab = crate::app::context::active_lab(state)?.require()?;
+    let project = store
+        .project_in_lab(&id, &lab)?
+        .ok_or_else(|| AppError::NotFound {
+            entity: crate::app::EntityKind::Project,
+            id: id.to_string(),
+        })?;
+    crate::app::context::save_active_project(state, &id)?;
+    Ok(project)
+}
+
+/// `--assign-agent`: assigns an active laboratory member to the current
+/// project. Repeating the same assignment is idempotent.
+pub fn assign_agent(
+    store: &(impl ProjectStore + Directory),
+    state: &impl AppStateStore,
+    raw_agent: &str,
+) -> Result<ProjectOverview, AppError> {
+    let project = crate::app::context::active_project(state)?.require()?;
+    let lab = crate::app::context::active_lab(state)?.require()?;
+    let overview = store
+        .project_in_lab(&project, &lab)?
+        .ok_or_else(|| AppError::NotFound {
+            entity: crate::app::EntityKind::Project,
+            id: project.to_string(),
+        })?;
+    let agent = crate::app::agents::parse_agent_id(raw_agent)?;
+    let record = store.agent(&agent)?.ok_or_else(|| AppError::NotFound {
+        entity: crate::app::EntityKind::Agent,
+        id: agent.to_string(),
+    })?;
+    if record.archived {
+        return Err(AppError::Precondition {
+            problem: "the agent is archived and cannot be assigned to a project.".to_owned(),
+            hint: "Choose an active agent.".to_owned(),
+        });
+    }
+    let member = store
+        .agent_memberships(&agent)?
+        .iter()
+        .any(|membership| membership.id == lab);
+    if !member {
+        return Err(AppError::Precondition {
+            problem: "the agent is not a member of the project's laboratory.".to_owned(),
+            hint: "Add the agent to the laboratory first, then assign it.".to_owned(),
+        });
+    }
+    store.assign_project_agent(&project, &agent)?;
+    Ok(overview)
 }
 
 /// `--list-projects`.

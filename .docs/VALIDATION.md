@@ -36,7 +36,7 @@ model-provider connection is application infrastructure, not an agent capability
 - Sending the selected file to the configured model provider is authorized.
 - The initial interface is whichever interface the product requires first.
 - Automated acceptance tests use an injected model substitute.
-- No autonomous or model-written cross-run memory is required. User-authored
+- No autonomous memory decisions are required. Application-managed
   scoped memories are explicit data attached to a laboratory, project, or
   agent; they are bounded and treated as untrusted context.
 
@@ -334,7 +334,7 @@ change policy, read private data, or perform an action.
 - The memory is included only as delimited data, within the memory budget.
 - Permissions, roles, limits, and assignment rules are unchanged.
 - No tool or action is dispatched from the memory content.
-- The model cannot create, edit, or delete a memory.
+- The model cannot choose, edit, or delete a memory; the application controls automatic writes.
 - Out-of-scope memories are not included.
 
 ## Permission and Approval Boundaries

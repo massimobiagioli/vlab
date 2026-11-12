@@ -11,6 +11,14 @@
 
 This plan converts the VLab technical specification into six sequential working packages. Each package is independently reviewable and ends at a gate that must pass before the next package starts.
 
+> **Later decisions override the command details below.** ADR-0033 makes
+> `--open-project` select a current project for `--show-project-kanban`,
+> `--delete-project`, `--new-request`, and `--assign-agent`. ADR-0034 adds
+> project agent rosters. ADR-0035 removes the memory commands. ADR-0036 makes
+> memories automatic. Historical task text that still shows project
+> identifiers or memory commands is retained for traceability; the ADRs and
+> the current specification are authoritative.
+
 Normative language follows `CONSTITUTION.md` §2: **MUST**, **SHOULD**, **MAY**.
 
 ---
@@ -71,7 +79,7 @@ The plan is designed so that:
 | ID | Conflict | Resolution | Affected |
 |---|---|---|---|
 | D-1 | `VALIDATION.md` defines a "summarize one authorized file" slice, while the VLab specification defines planning workflows. | Adopt the VLab planning slice as the product workflow. `VALIDATION.md` authorizes this ("Replace it if it does not deliver value…"). Retain its security-boundary, execution-limit, cancellation, and evidence-integrity test patterns, adapted in §13.4. | WP-5, WP-6 |
-| D-2 | The elevator pitch describes agents collaborating autonomously; `ARCHITECTURE.md` lists multi-agent orchestration as a non-goal and the specification excludes autonomous lifecycle execution. | Agent profiles are persisted data used as planning context. Exactly two model-backed operations exist: Tech Lead planning and direct questions. No agent-to-agent delegation, no background execution, no automatic story transitions. | WP-3, WP-5, WP-6 |
+| D-2 | The elevator pitch describes agents collaborating autonomously; `ARCHITECTURE.md` lists multi-agent orchestration as a non-goal and the specification excludes autonomous lifecycle execution. | Agent profiles are persisted data used as planning context. Model-backed operations are Tech Lead planning, direct questions, and a bounded automatic planning-summary memory. No agent-to-agent delegation, no background execution, no automatic story transitions. | WP-3, WP-5, WP-6 |
 | D-3 | `TECHNICAL-SPECIFICATIONS.md` §12 allows two transient retries; `VALIDATION.md` uses zero retries. | Retry policy is a typed, configurable component. Product default: at most two retries for retryable transport, 429, and 5xx failures. Security tests may set zero. No retry after cancellation, after an unknown external outcome, or for validation errors. | WP-5 |
 | D-4 | `VALIDATION.md` budgets (30 s run, 10 s request) differ from §12 (60 s per attempt). | Limits are injected constants. Production defaults follow §12 and Appendix D; deterministic tests use small values. | WP-5 |
 | D-5 | `STACK.md` asks for structured JSON output "where useful"; the product command surface does not define a JSON mode. | Deferred. Text output is the only required interface in the initial release. Recorded as open question Q-03. | WP-6 |
@@ -81,13 +89,13 @@ The plan is designed so that:
 
 ### 2.3 Product goal
 
-A Rust CLI named `vlab` that lets a user create laboratories staffed by AI agent profiles, organize projects, attach scoped memories to laboratories, projects, and agents, submit natural-language requests, and have the Tech Lead produce validated user stories with assignments and due dates, plus a read-only Kanban view and direct questions to agents. Memory content is bounded, user-authored context: never model-written, never an instruction, and never logged. All model output is treated as untrusted data; no model output is executed.
+A Rust CLI named `vlab` that lets a user create laboratories staffed by AI agent profiles, organize projects, assign agents to a project, submit natural-language requests, and have the Tech Lead produce validated user stories with assignments and due dates, plus a read-only Kanban view and direct questions to agents. Memories are application-managed: deterministic structural facts and a bounded planning summary. Memory content is never an instruction and never logged. All model output is treated as untrusted data; no model output is executed.
 
 ### 2.4 Out of scope for the initial release
 
 - Autonomous source-code execution or modification, deployment, or full lifecycle execution.
 - Story state transitions and execution commands; the Kanban is read-only and only `TODO` stories are created.
-- Automatic memory capture, model-written memories, and memory editing; memories are user-authored, immutable, and explicitly scoped.
+- Manual memory management commands and memory editing; memories are application-managed, immutable, and explicitly scoped.
 - Agent-to-agent delegation, background jobs, distributed or multi-user operation.
 - Providers other than DeepSeek; a web UI; an HTTP server; PostgreSQL; a TUI framework; an agent framework.
 - Database encryption at rest; automatic backup/restore; data export.
@@ -148,7 +156,7 @@ Ports (traits) are declared where the application consumes them and implemented 
 | AD-9 | Rendering is width-injectable, emits no ANSI color, sanitizes control characters | Meets §10 and `NO_COLOR` with minimal complexity. |
 | AD-10 | All persistent timestamps are RFC 3339 UTC; story dates are `YYYY-MM-DD` | §9.5, §11.2. |
 | AD-11 | Settings and model-output parsing are strict (unknown fields rejected) | Catches typos and malformed model output early (§5.1, §9.3). |
-| AD-12 | Memories are user-authored, scoped, bounded, and delimited untrusted context; the model cannot write them | Preserves the authority boundary while allowing lab/project/agent context (§3.5, ADR-0022). |
+| AD-12 | Memories are application-managed, scoped, bounded, and delimited untrusted context; the application controls writes | Preserves the authority boundary while allowing lab/project/agent context (§3.5, ADR-0022). |
 
 ### 3.4 Model interaction contract
 
@@ -341,10 +349,10 @@ Assumptions are decisions this plan must make to remain executable. **Blocking**
 | A-28 | Model output uses `schema_version: 1`; unknown fields are rejected. Provider transport envelopes tolerate unknown fields. | Provider, validation | No |
 | A-29 | Unknown fields in `settings.yaml` are rejected to catch typos. | Settings | No |
 | A-30 | A planned request is excluded from the pending-intake count; `TODO`, `PLANNING`, `NEEDS_CLARIFICATION`, and `FAILED` requests are counted. | Kanban | No |
-| A-31 | Memories are user-authored, immutable text attached to exactly one laboratory, project, or agent profile. The model never creates, updates, or deletes one; there is no automatic capture. | Memory storage and commands | No |
+| A-31 | Memories are application-managed, immutable text attached to exactly one laboratory, project, or agent profile. The application writes structural facts and a bounded planning summary; there are no memory commands. | Memory storage | No |
 | A-32 | Planning includes project-laboratory, project, and Tech Lead agent memories; questions include active-laboratory and responding-agent memories. Ordering is lab, project, agent, newest first, with an 8 KiB total cap and whole-memory omission. | Prompt context, privacy | No |
 | A-33 | A memory is 1–2,000 characters and a scope holds at most 20 memories. Memories are global to an agent profile, not per membership. | Storage, prompt bounds | No |
-| A-34 | `--for-project` requires the active laboratory and never switches context; `--for-lab` and `--for-agent` use their explicit IDs. | Memory CLI | No |
+| A-34 | Superseded: memories have no CLI; project and agent selectors were removed with the manual commands. | Memory CLI | No |
 
 ### 5.2 Open questions
 
@@ -2081,7 +2089,7 @@ The opt-in live-provider evaluation is GL-T3. The ID is kept so that references 
 **Depends on:** T1–T6.
 
 **Work**
-- Finalize `README.md` (quickstart, requirements, commands, memory walkthrough), `docs/cli-reference.md`, `docs/configuration.md`, `docs/data-retention.md`, `docs/security.md`, `docs/architecture.md`, ADRs, and a limitations section covering: no encryption at rest, no backups, no story transitions, no JSON output, no Windows hardening, semantic assignment quality not verifiable, immutable memories, no automatic memory capture, and no model-written memory.
+- Finalize `README.md` (quickstart, requirements, commands, memory walkthrough), `docs/cli-reference.md`, `docs/configuration.md`, `docs/data-retention.md`, `docs/security.md`, `docs/architecture.md`, ADRs, and a limitations section covering: no encryption at rest, no backups, no story transitions, no JSON output, no Windows hardening, semantic assignment quality not verifiable, immutable automatic memories, no manual memory commands, and bounded planning-summary generation.
 - Update the traceability matrix in this plan with the actual test names that validate each row.
 
 **Deliverables**

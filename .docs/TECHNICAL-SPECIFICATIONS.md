@@ -38,7 +38,7 @@ The initial release shall not include:
 - A graphical interface.
 - Providers other than DeepSeek.
 - Autonomous execution of the entire software-development lifecycle.
-- Automatic memory capture, model-written memories, and memory editing; memories are user-authored, immutable, and explicitly scoped.
+- Manual memory-management commands and memory editing. Memories are application-managed, immutable, and explicitly scoped.
 
 Submitting a request triggers a bounded planning workflow, not an unrestricted agent execution loop.
 
@@ -102,17 +102,30 @@ Error: no active laboratory is selected.
 Run `vlab --list-labs`, then `vlab --open-lab <lab-id>`.
 ```
 
+`--new-project` selects the new project; `--open-project` selects an existing
+project in the active laboratory. Project-scoped commands shall fail
+actionably when no project is current:
+
+```text
+Error: no active project is selected.
+Run `vlab --list-projects`, then `vlab --open-project <project-id>`.
+```
+
+Switching laboratories clears the project selection.
+
 ### 3.5 Memories
 
-A memory is user-authored text attached to exactly one scope:
+A memory is application-managed text attached to exactly one scope:
 
 - **Laboratory memory**: context that applies to a laboratory.
 - **Project memory**: context that applies to one project.
 - **Agent memory**: context that applies to one agent profile.
 
 A memory records its identifier, scope, content, and creation time. It is
-immutable in the initial release: change a memory by deleting it and creating a
-new one. The model never creates, updates, or deletes memories.
+immutable. Structural memories are generated deterministically when a
+laboratory, agent, or project is created; a successful planning run additionally
+stores one bounded model-generated summary. The model never chooses what to
+store, update, or delete, and no user command manages memories.
 
 Content is trimmed UTF-8, 1–2,000 characters, contains no C0/C1 control
 characters except newline and tab, and is limited to 20 memories per scope.
@@ -129,8 +142,6 @@ Scope rules:
   laboratory; project commands remain bound to the active laboratory (§3.2).
 - An agent memory must reference an existing agent profile. It is retained
   when the profile is archived but is excluded from prompts while archived.
-  Creating a memory for an archived agent is rejected; listing existing
-  memories for it is allowed.
 - Deleting an owning laboratory or project deletes its memories. Archived
   agents retain their memories for historical inspection.
 - Memory content must not contain credentials. The application validates size,
@@ -152,24 +163,16 @@ Prompt inclusion is bounded and deterministic:
 - Each block names its scope and memory identifier and is marked as data that
   must not be followed as instructions.
 
-Memories are managed with:
+Memories are not a user-facing command surface. The application writes them
+automatically, best effort, and never fails the triggering action when a scope
+is full or content is rejected. Deleting an owning laboratory or project
+cascades its memories; there is no manual memory cleanup command in this
+release.
 
-```bash
-vlab --new-memory <text> --for-lab <lab-id>
-vlab --new-memory <text> --for-project <project-id>
-vlab --new-memory <text> --for-agent <agent-id>
-vlab --list-memories --for-lab <lab-id>
-vlab --list-memories --for-project <project-id>
-vlab --list-memories --for-agent <agent-id>
-vlab --delete-memory <memory-id>
-```
-
-Exactly one scope selector is required for `--new-memory` and
-`--list-memories`. `--for-project` requires the project to belong to the
-active laboratory and never switches context silently. `--for-lab` and
-`--for-agent` use the explicit identifier; agent memories are global to the
-profile. Deletion requires confirmation; `--yes` is the explicit
-non-interactive bypass. Creating or listing memories makes no provider call.
+Memories are written automatically: deterministic laboratory, agent, and
+project facts at creation time, plus one bounded model-generated planning
+summary after a successful plan. Automatic writes are best effort and never
+change the triggering action's outcome.
 
 ## 4. Command-Line Interface
 
@@ -196,14 +199,11 @@ Laboratories
 Projects
   --list-projects
   --new-project <name> [--github-source <url>]
-  --show-project-kanban <project-id>
-  --delete-project <project-id>
-  --new-request <project-id> [request-text]
-
-Memories
-  --list-memories [--for-lab <lab-id> | --for-project <project-id> | --for-agent <agent-id>]
-  --new-memory <text> [--for-lab <lab-id> | --for-project <project-id> | --for-agent <agent-id>]
-  --delete-memory <memory-id>
+  --open-project <project-id>
+  --show-project-kanban
+  --delete-project
+  --new-request [request-text]
+  --assign-agent <agent-id>
 
 Agents
   --list-agents
@@ -219,10 +219,8 @@ Exactly one primary action shall be accepted per invocation.
 
 `--github-source` is a modifier valid only with `--new-project`.
 
-`--for-lab`, `--for-project`, and `--for-agent` are mutually exclusive
-modifiers valid only with `--new-memory` or `--list-memories`; exactly one is
-required. `--yes` is valid with destructive actions, including
-`--delete-memory`.
+`--yes` is valid only with `--delete-lab`, `--delete-project`, and
+`--delete-agent`.
 
 Running `vlab` without arguments shall display concise help without changing application state.
 
@@ -262,7 +260,7 @@ credentials:
 | `provider` | Yes | Provider identifier; initially only `deepseek`. |
 | `model` | Yes | Model identifier accepted by the configured provider. |
 | `source_control.provider` | No | Source-control provider; `github` only. |
-| `credentials.deepseek_api_key` | For planning and questions | Provider credential; a non-empty token of at most 512 bytes. |
+| `credentials.deepseek_api_key` | Planning, questions, and automatic summaries | Provider credential; a non-empty token of at most 512 bytes. |
 | `credentials.github_api_key` | For `--github-source` | GitHub credential; a non-empty token of at most 512 bytes. |
 
 The example model name `flash` from the requirements shall not be assumed to be a valid DeepSeek model identifier. Supported identifiers must be verified against the provider integration.
@@ -486,7 +484,7 @@ Display:
 - Laboratory memberships.
 - Current project assignments.
 - Assigned and completed stories.
-- Memory count, with the memories available through `--list-memories --for-agent <agent-id>`.
+- Memory count for the agent scope.
 - Available performance measurements.
 
 Performance measurements shall be derived from recorded events.
@@ -562,22 +560,47 @@ The command shall:
 - Bound the clone with a timeout and discard raw git output.
 - Persist the project and source atomically, and remove the checkout if persistence fails.
 - Return its identifier and the checkout path.
+- Select the new project as the current project.
 
 A project may be created in an incomplete laboratory, but requests cannot be processed until laboratory validation succeeds.
 
-### 8.3 Delete a Project
+### 8.3 Select a Project
 
 ```bash
-vlab --delete-project <project-id>
+vlab --open-project <project-id>
+```
+
+The command shall verify that the project belongs to the active laboratory and
+store it as the current project. `--show-project-kanban`, `--delete-project`,
+`--new-request`, and `--assign-agent` operate on the current project. Switching
+laboratories clears the project selection.
+
+### 8.4 Assign Agents
+
+```bash
+vlab --assign-agent <agent-id>
+```
+
+The command shall require a current project and an active agent that is a
+member of the project's laboratory. Repeated assignment is idempotent.
+Archived agents and agents from another laboratory shall be rejected. Planning
+uses the project roster when non-empty; otherwise it uses the active laboratory
+roster.
+
+### 8.5 Delete a Project
+
+```bash
+vlab --delete-project
 ```
 
 The command shall:
 
-- Verify ownership by the active laboratory.
+- Use the current project and verify ownership by the active laboratory.
 - Require confirmation.
-- Delete the project and associated data atomically.
+- Delete the project and associated data atomically, including its agent assignments.
 - Preserve agent profiles.
 - Refuse deletion while request processing is active.
+- Clear the current project after deletion.
 
 ## 9. Request Intake
 
@@ -586,20 +609,22 @@ The command shall:
 Requests shall support literal text:
 
 ```bash
-vlab --new-request <project-id> "Add password reset functionality"
+vlab --new-request "Add password reset functionality"
 ```
 
 Requests shall also support standard input:
 
 ```bash
-vlab --new-request <project-id> < request.md
+vlab --new-request < request.md
 ```
 
 Or:
 
 ```bash
-cat request.md | vlab --new-request <project-id>
+cat request.md | vlab --new-request
 ```
+
+The target is the current project selected with `--open-project`.
 
 The `<` character is shell input redirection, not a CLI argument.
 
@@ -621,12 +646,13 @@ A valid request shall trigger this sequence:
 2. Verify provider prerequisites.
 3. Persist the original request as a `TODO` intake item.
 4. Mark processing as `PLANNING`.
-5. Give the Tech Lead the request and relevant team context, including the bounded memories defined in §3.5 (laboratory, project, and Tech Lead agent memories).
+5. Give the Tech Lead the request and relevant team context, including the project agent roster (or the laboratory roster when none is assigned) and the bounded memories defined in §3.5.
 6. Obtain structured user-story proposals.
 7. Validate the proposals locally.
 8. Persist valid stories, assignments, due dates, and rationale atomically.
 9. Mark the request as `PLANNED`.
-10. Display the result.
+10. Best effort: request and store a bounded model-generated project memory summary.
+11. Display the result.
 
 The original request shall remain linked to every generated story.
 
@@ -652,7 +678,8 @@ New stories shall begin in `TODO`.
 
 ### 9.4 Assignment Rules
 
-The Tech Lead shall select among actual laboratory members using:
+The Tech Lead shall select among the project's assigned agents. If the project
+has no assignments, it shall use all active laboratory members. Selection uses:
 
 - Role.
 - Declared skills.
@@ -698,7 +725,7 @@ The initial release does not include a dedicated retry command. Users may submit
 ## 10. Kanban Overview
 
 ```bash
-vlab --show-project-kanban <project-id>
+vlab --show-project-kanban
 ```
 
 The command shall render a read-only board with:
@@ -941,8 +968,8 @@ The initial release is acceptable when:
 18. Provider execution is bounded and observable.
 19. No model-generated content is executed automatically.
 20. Core workflows pass deterministic automated tests.
-21. Memories can be created, listed, and deleted for laboratories, projects, and agents, with scope enforced and deletion cascading from the owner.
-22. Memory content is bounded, sanitized, treated as untrusted data, and never executed or used to grant permissions or change assignment rules.
+21. Memories are generated automatically for laboratories, agents, projects, and successful plans, with scope enforced and deletion cascading from the owner.
+22. Memory content is bounded, sanitized, treated as untrusted data, and never executed or used to grant permissions or change assignment rules; automatic writes never fail the triggering action.
 23. Planning and questions include only the scoped memories within the configured cap, delimited as data; omission beyond the cap is explicit in the design and never truncates a memory silently.
 
 ## 18. Incremental Delivery Plan

@@ -90,7 +90,7 @@ not product commands.
 ## Local walkthrough
 
 WP-3 delivers laboratories and agent profiles; WP-4 adds projects, the
-read-only Kanban, scoped memories, and safe deletion. Settings must be valid
+read-only Kanban, automatic memories, and safe deletion. Settings must be valid
 before `--new-agent`, because new agents copy the provider and model from
 `settings.yaml` (§5.4).
 
@@ -124,9 +124,14 @@ laboratory.
 ```sh
 # Optional GitHub source; requires credentials.github_api_key in settings.yaml.
 vlab --new-project "Customer Portal" --github-source https://github.com/acme/portal
+vlab --assign-agent <agent-id>
+vlab --open-project <project-id>
 vlab --list-projects
-vlab --show-project-kanban <project-id>
+vlab --show-project-kanban
 ```
+
+`--new-project` selects the new project. Use `--open-project <project-id>` to
+switch; the project-scoped commands then need no identifier.
 
 `--github-source` accepts only canonical `https://github.com/<owner>/<repository>`
 URLs. The GitHub key is global (`credentials.github_api_key` in
@@ -142,33 +147,19 @@ The board is read-only: it shows the five states, cards, assignee or
 intake. Only `TODO` stories are created initially; state transitions are not
 implemented.
 
-### Scoped memories
+### Automatic memories
 
-A memory is user-authored text attached to exactly one scope. It is bounded to
-2,000 characters, at most 20 per scope, and treated as untrusted context. The
-model cannot create, edit, or delete one.
-
-```sh
-vlab --new-memory "Prefer small pull requests." --for-lab <lab-id>
-vlab --new-memory "The API is versioned." --for-project <project-id>
-vlab --new-memory "Ask before changing shared schemas." --for-agent <agent-id>
-
-vlab --list-memories --for-lab <lab-id>
-vlab --list-memories --for-project <project-id>
-vlab --list-memories --for-agent <agent-id>
-
-vlab --delete-memory <memory-id>          # asks for confirmation
-vlab --delete-memory <memory-id> --yes    # explicit non-interactive bypass
-```
-
-`--for-project` requires the project to belong to the active laboratory.
-Planning and questions will include only the selected scoped memories, within
-an 8 KiB budget, delimited as data (WP-5/WP-6).
+Memories are application-managed and have no user commands. Creating a
+laboratory, an agent, or a project writes a short deterministic memory; a
+successful planning run stores one bounded model-generated summary. They are
+limited to 2,000 characters and 20 per scope, treated as untrusted context,
+and included within an 8 KiB prompt budget. Automatic writes never fail the
+triggering action.
 
 ### Destructive commands
 
-`--delete-lab`, `--delete-project`, `--delete-agent`, and `--delete-memory`
-show what will be affected and require confirmation. Without a terminal,
+`--delete-lab`, `--delete-project`, and `--delete-agent` show what will be
+affected and require confirmation. Without a terminal,
 `--yes` is required. Deleting a laboratory cascades its projects, requests,
 stories, memberships, and memories while preserving reusable agent profiles.
 Agent deletion archives the profile, removes memberships, preserves story
@@ -219,21 +210,24 @@ Planning requires a structurally valid active laboratory, a project, valid
 settings, and `credentials.deepseek_api_key` in `settings.yaml`.
 
 ```sh
-vlab --new-request <project-id> "Add password reset"
-cat request.md | vlab --new-request <project-id>
-vlab --show-project-kanban <project-id>
+vlab --open-project <project-id>
+vlab --new-request "Add password reset"
+cat request.md | vlab --new-request
+vlab --show-project-kanban
 ```
 
 The request is persisted before any provider call. DeepSeek returns a strict
-JSON proposal; VLab validates it, assigns only active laboratory members,
-computes due dates locally in UTC (2/5/10 calendar days by complexity), and
+JSON proposal; VLab validates it, assigns only project agents (or active
+laboratory members when the project has no assignments), computes due dates
+locally in UTC (2/5/10 calendar days by complexity), and
 inserts all stories in one transaction. Clarification, provider, validation,
 budget, timeout, and cancellation outcomes preserve the request. Retries are
 bounded and may incur additional provider charges; exactly-once remote
 execution is not promised.
 
 Planning prompts include laboratory, project, and Tech Lead agent memories
-within 8 KiB, delimited as data. Request text, prompts, CVs, and provider
+within 8 KiB, delimited as data. A successful plan also stores a short
+model-generated project summary memory. Request text, prompts, CVs, and provider
 responses are never stored in events or shown in errors. See
 [`.docs/planning.md`](.docs/planning.md).
 
@@ -259,8 +253,8 @@ budget.
 - No JSON output mode, packaging/licensing, or Windows-specific hardening.
 - Semantic quality of assignments and answers is an evaluation criterion, not
   a deterministic proof.
-- Memories are immutable; there is no automatic capture, editing, or
-  model-written memory.
+- Memories are immutable and generated automatically; there is no manual
+  create/list/delete command or editing.
 - A live provider contract and cost/quality evaluation are Go-Live activities.
 
 ## Documentation

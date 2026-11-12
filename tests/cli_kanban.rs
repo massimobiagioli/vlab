@@ -2,7 +2,7 @@
 
 mod support;
 
-use vlab::app::context::save_active_lab;
+use vlab::app::context::{save_active_lab, save_active_project};
 use vlab::app::directory::Directory;
 use vlab::app::projects::ProjectStore;
 use vlab::domain::agent::{AgentProfile, Description, Role};
@@ -16,7 +16,6 @@ use vlab::domain::skills;
 use support::Sandbox;
 
 struct Fixture {
-    project: ProjectId,
     lead: AgentId,
 }
 
@@ -34,6 +33,7 @@ fn fixture(sandbox: &Sandbox) -> Fixture {
         None,
     ))
     .unwrap();
+    save_active_project(&db, &project).unwrap();
     let lead = AgentId::parse("1c2d3e4f").unwrap();
     let profile = AgentProfile::new(
         lead.clone(),
@@ -48,7 +48,7 @@ fn fixture(sandbox: &Sandbox) -> Fixture {
     .unwrap();
     db.insert_agent(&profile, std::slice::from_ref(&lab))
         .unwrap();
-    Fixture { project, lead }
+    Fixture { lead }
 }
 
 fn exec(db: &vlab::infra::db::Database, sql: String) {
@@ -92,8 +92,8 @@ fn insert_story(
 #[test]
 fn an_empty_board_explains_what_to_expect() {
     let sandbox = Sandbox::new();
-    let fixture = fixture(&sandbox);
-    let outcome = sandbox.run(&["--show-project-kanban", fixture.project.as_str()]);
+    fixture(&sandbox);
+    let outcome = sandbox.run(&["--show-project-kanban"]);
     outcome.assert_success().assert_no_escape_bytes();
     assert!(outcome.stdout.contains("Project 0b1c2d3e — Portal"));
     assert!(outcome.stdout.contains("Laboratory: Payments"));
@@ -123,7 +123,7 @@ fn the_board_shows_all_five_states_cards_and_pending_intake() {
     insert_story(&db, "8d94a5b6", "Blocked", "BLOCKED", None);
     insert_story(&db, "9ea5b6c7", "Done", "DONE", None);
 
-    let outcome = sandbox.run(&["--show-project-kanban", fixture.project.as_str()]);
+    let outcome = sandbox.run(&["--show-project-kanban"]);
     outcome.assert_success().assert_no_escape_bytes();
     for label in [
         "TODO (1)",
@@ -153,11 +153,11 @@ fn the_board_shows_all_five_states_cards_and_pending_intake() {
 #[test]
 fn story_titles_are_sanitized() {
     let sandbox = Sandbox::new();
-    let fixture = fixture(&sandbox);
+    fixture(&sandbox);
     let db = sandbox.seed_database();
     insert_request(&db, "2d3e4f50", "TODO");
     insert_story(&db, "5a617283", "evil\u{1b}[31mtitle", "TODO", None);
-    let outcome = sandbox.run(&["--show-project-kanban", fixture.project.as_str()]);
+    let outcome = sandbox.run(&["--show-project-kanban"]);
     outcome.assert_success().assert_no_escape_bytes();
     assert!(outcome.stdout.contains("eviltitle"), "{}", outcome.stdout);
 }
@@ -165,14 +165,14 @@ fn story_titles_are_sanitized() {
 #[test]
 fn a_project_from_another_laboratory_is_not_found() {
     let sandbox = Sandbox::new();
-    let fixture = fixture(&sandbox);
+    fixture(&sandbox);
     let db = sandbox.seed_database();
     let other = LabId::parse("1c2d3e4f").unwrap();
     db.insert_lab(&Lab::new(other.clone(), Name::parse("Other").unwrap()))
         .unwrap();
     save_active_lab(&db, &other).unwrap();
     sandbox
-        .run(&["--show-project-kanban", fixture.project.as_str()])
+        .run(&["--show-project-kanban"])
         .assert_failure(3, "no project with identifier");
 }
 

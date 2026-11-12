@@ -58,11 +58,10 @@ pub fn preflight_lab(
 pub fn preflight_project(
     store: &impl DeletionStore,
     state: &impl AppStateStore,
-    raw_id: &str,
+    id: &ProjectId,
 ) -> Result<ProjectDeletionPlan, AppError> {
-    let id = crate::app::projects::parse_project_id(raw_id)?;
     let lab = crate::app::context::active_lab(state)?.require()?;
-    store.project_plan(&id, &lab)
+    store.project_plan(id, &lab)
 }
 
 pub fn preflight_agent(

@@ -10,7 +10,7 @@ coordinate their work, and advance tasks across projects, while the user
 remains in control through a small set of precise, composable commands. vlab
 brings the structure of a software team into a lightweight, observable, and
 scriptable development environment. Laboratories, projects, and agent profiles
-can carry user-authored memories that the Tech Lead considers as bounded,
+can carry application-managed memories that the Tech Lead considers as bounded,
 delimited context; memories are data and never grant capabilities or act as
 instructions. A project may reference one GitHub repository; the GitHub key
 remains a global settings-file secret, never project or database content.

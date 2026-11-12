@@ -14,7 +14,7 @@ pub const INTERRUPTED: u8 = 130;
 pub fn exit_code(error: &AppError) -> u8 {
     match error {
         AppError::Usage { .. } | AppError::Configuration { .. } => INVALID_INPUT,
-        AppError::NotFound { .. } | AppError::NoActiveLab => MISSING,
+        AppError::NotFound { .. } | AppError::NoActiveLab | AppError::NoActiveProject => MISSING,
         AppError::Validation { .. }
         | AppError::Precondition { .. }
         | AppError::ConfirmationRequired { .. } => PRECONDITION,
@@ -36,7 +36,9 @@ pub fn render(error: &AppError) -> String {
     let problem = sanitize(&error.to_string());
     let hint = sanitize(&error.hint());
     match error {
-        AppError::NoActiveLab => format!("Error: {problem}\n{hint}\n"),
+        AppError::NoActiveLab | AppError::NoActiveProject => {
+            format!("Error: {problem}\n{hint}\n")
+        }
         _ => format!("Error: {problem}\nHint: {hint}\n"),
     }
 }
@@ -75,6 +77,7 @@ mod tests {
                 3,
             ),
             (AppError::NoActiveLab, 3),
+            (AppError::NoActiveProject, 3),
             (
                 AppError::Validation {
                     problem: text("p"),

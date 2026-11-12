@@ -112,8 +112,9 @@ before exposure.
 
 Retrieved documents, repository files, tool outputs, and memory content may
 contain malicious instructions. Their apparent source or formatting does not
-grant authority. The model cannot create, edit, or delete memories, and memory
-content is never executed.
+grant authority. The application decides which automatic memories to store;
+the model cannot choose, edit, or delete them, and memory content is never
+executed.
 
 ### Authorization and Approval
 
@@ -190,7 +191,7 @@ case. Model-generated URLs are never implicitly trusted.
 - Confirm provider retention and processing requirements before transmitting
   sensitive information.
 - Treat scoped memories as data sent to the model provider for planning and
-  questions; warn users not to store credentials in them.
+  questions; automatic content is checked against the configured credential.
 - Do not log memory content; audit only identifiers, scope, and outcomes.
 - Define retention and deletion rules before adding durable task storage;
   memories follow their owning laboratory or project and are retained for

@@ -54,6 +54,7 @@ fn schema_v3_contains_only_the_documented_application_tables() {
             "lab_memberships",
             "labs",
             "memories",
+            "project_agents",
             "projects",
             "requests",
             "stories"

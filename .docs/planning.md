@@ -9,8 +9,9 @@ context, and the security model. The conceptual entities are in
 ## Input
 
 ```bash
-vlab --new-request <project-id> "Add password reset"
-cat request.md | vlab --new-request <project-id>
+vlab --open-project <project-id>
+vlab --new-request "Add password reset"
+cat request.md | vlab --new-request
 ```
 
 - Literal positional text is **always text**, never a file path.
@@ -31,7 +32,7 @@ cat request.md | vlab --new-request <project-id>
    selected scoped memories (laboratory, project, Tech Lead agent).
 5. One logical provider invocation through the bounded retry policy.
 6. Parse and validate JSON schema version 1 locally.
-7. Apply membership and due-date rules locally.
+7. Apply project-roster and due-date rules locally.
 8. In one transaction, insert all stories as `TODO` and set the terminal status.
 9. Record `planning_started`, `provider_attempt`, and `planning_completed` or
    `planning_failed` events with no content.
@@ -88,7 +89,8 @@ assignment rationale. Unknown fields (including model-supplied due dates),
 wrong enums, empty arrays, more than 20 stories, and malformed IDs are rejected.
 Validation errors name a field and rule but never echo the model response.
 
-Assignments must reference active laboratory members. Unassigned stories are
+Assignments must reference active agents in the project roster. If the project
+has no assignments, the active laboratory roster is used. Unassigned stories are
 allowed and retain an explanation. Due dates are never taken from the model:
 `small=2`, `medium=5`, `large=10` calendar days from the request creation date
 in UTC, formatted `YYYY-MM-DD`.
@@ -102,6 +104,10 @@ are omitted whole. Every block is delimited with scope and memory ID and marked
 as data. Archived-agent memories are excluded. A memory or request containing
 the configured `credentials.deepseek_api_key` value is rejected before the
 provider call.
+
+After a successful plan, VLab makes one additional bounded provider call for a
+short project-memory summary. Its failure or cancellation does not change the
+`PLANNED` outcome. Memories are generated automatically; see ADR-0036.
 
 ## Security
 

@@ -179,7 +179,63 @@ fn the_request_is_persisted_before_the_provider_call() {
     )
     .unwrap();
     assert!(matches!(outcome, PlanningOutcome::Planned { .. }));
-    assert_eq!(provider.calls.get(), 1);
+    assert_eq!(provider.calls.get(), 2, "planning plus memory summary");
+}
+
+#[test]
+fn a_successful_plan_stores_a_model_summary_memory() {
+    let fixture = fixture();
+    let provider = ScriptedProvider::new(vec![
+        Ok(ProviderResponse {
+            content: valid_plan(),
+            model: "deepseek-chat".to_owned(),
+            usage: None,
+            finish_reason: None,
+            request_id: None,
+        }),
+        Ok(ProviderResponse {
+            content: "The team will add a password reset flow.".to_owned(),
+            model: "deepseek-chat".to_owned(),
+            usage: None,
+            finish_reason: None,
+            request_id: None,
+        }),
+    ]);
+    let outcome = run(&fixture, &provider, "Add password reset");
+    assert!(matches!(outcome, PlanningOutcome::Planned { .. }));
+    let content: Vec<String> = fixture.db.block_on(async {
+        sqlx::query_scalar("SELECT content FROM memories WHERE scope_type = 'project'")
+            .fetch_all(fixture.db.pool())
+            .await
+            .unwrap()
+    });
+    assert_eq!(content.len(), 1);
+    assert_eq!(
+        content[0],
+        "Planning summary: The team will add a password reset flow."
+    );
+}
+
+#[test]
+fn planning_uses_only_the_assigned_project_roster_when_present() {
+    let fixture = fixture();
+    let dev = AgentId::parse("2d3e4f50").unwrap();
+    fixture
+        .db
+        .assign_project_agent(&fixture.project, &dev)
+        .unwrap();
+    let provider = ScriptedProvider::new(vec![Ok(ProviderResponse {
+        content: valid_plan(),
+        model: "deepseek-chat".to_owned(),
+        usage: None,
+        finish_reason: None,
+        request_id: None,
+    })]);
+    let outcome = run(&fixture, &provider, "Add password reset");
+    assert!(matches!(outcome, PlanningOutcome::Planned { .. }));
+    let prompt = &provider.requests()[0].system;
+    assert!(prompt.contains("2d3e4f50"), "{prompt}");
+    assert!(!prompt.contains("1c2d3e4f"), "{prompt}");
 }
 
 #[test]

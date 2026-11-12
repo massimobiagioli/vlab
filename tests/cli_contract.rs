@@ -81,6 +81,6 @@ fn a_command_never_waits_for_input_when_stdin_is_not_a_terminal() {
         .run(&["--ask", "Why?"])
         .assert_failure(2, "credentials.deepseek_api_key");
     sandbox
-        .run(&["--new-request", "a3f91c07"])
+        .run(&["--new-request"])
         .assert_failure(2, "must contain non-empty text");
 }

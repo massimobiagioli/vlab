@@ -28,19 +28,20 @@ cargo deny check
 ## Walkthrough (local, no provider)
 
 1. Create a laboratory, open it, create a project, and see it in
-   `--list-projects` with zero request/story counts.
-2. `--show-project-kanban` prints the project and laboratory names, the Tech
-   Lead, five state counts, completed count, pending intake, and an actionable
-   empty state. Fixtures with stories in all five states render as five
-   side-by-side columns at width 100; widths below 100 use stacked sections.
-3. `--new-memory "…" --for-lab|--for-project|--for-agent` creates a memory;
-   `--list-memories` shows ID, scope, owner, a sanitized preview, and creation
-   time; `--delete-memory` requires confirmation or `--yes`.
-4. A project memory is rejected when the project belongs to another
-   laboratory. An archived agent's existing memories remain listable, but new
-   ones are rejected.
-5. `--delete-project --yes` removes the project, its requests, stories, and
-   memories, and preserves agent profiles.
+   `--list-projects` with zero request/story counts. `--new-project` also
+   selects the project as current.
+2. `--show-project-kanban` prints the current project and laboratory names, the
+   Tech Lead, five state counts, completed count, pending intake, and an
+   actionable empty state. Fixtures with stories in all five states render as
+   five side-by-side columns at width 100; widths below 100 use stacked
+   sections.
+3. Creating a laboratory or project writes a short automatic memory; later
+   ADRs add agent memories and a planning summary. There are no memory
+   commands.
+4. `--assign-agent <agent-id>` adds an active laboratory member to the current
+   project roster; planning uses that roster when it is non-empty.
+5. `--delete-project --yes` removes the current project, its requests, stories,
+   memories, and assignments, and preserves agent profiles.
 6. `--delete-lab --yes` removes projects, requests, stories, memories, and
    memberships, preserves agents, and clears the active selection.
 7. `--delete-agent --yes` blocks while an assigned story is not `DONE`;

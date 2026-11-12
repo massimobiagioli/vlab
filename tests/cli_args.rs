@@ -21,11 +21,13 @@ fn invalid_combinations_are_usage_errors() {
         ("ask without question", &["--ask"]),
         ("new-lab without name", &["--new-lab"]),
         ("open-lab without id", &["--open-lab"]),
-        ("new-request without project", &["--new-request"]),
+        ("open-project without id", &["--open-project"]),
+        ("assign-agent without id", &["--assign-agent"]),
         (
             "new-request with three values",
-            &["--new-request", ID, "text", "more"],
+            &["--new-request", "text", "more"],
         ),
+        ("removed memory command", &["--list-memories"]),
         ("repeated action", &["--list-labs", "--list-labs"]),
     ];
 

@@ -1,8 +1,9 @@
 //! Scoped memories (specification §3.5, ADR-0022).
 //!
-//! Memories are user-authored, immutable text attached to exactly one
-//! laboratory, project, or agent. The model never writes one; they are
-//! untrusted context and are never executed.
+//! Memories are application-managed, immutable text attached to exactly one
+//! laboratory, project, or agent. Structural memories are deterministic;
+//! planning summaries are model output. Both are untrusted context and are
+//! never executed (ADR-0035, ADR-0036).
 
 use crate::domain::ids::{AgentId, LabId, MemoryId, ProjectId};
 

@@ -1,11 +1,14 @@
-//! Scoped memory use cases (specification §3.5, ADR-0022).
+//! Scoped memory use cases (specification §3.5, ADR-0022/0035/0036).
 
 use crate::app::AppError;
 use crate::app::directory::Directory;
 use crate::app::projects::ProjectStore;
 use crate::app::storage::AppStateStore;
-use crate::domain::ids::{MemoryId, UniqueIdError, unique_short_id};
+use crate::domain::agent::AgentProfile;
+use crate::domain::ids::{LabId, MemoryId, UniqueIdError, unique_short_id};
+use crate::domain::lab::Lab;
 use crate::domain::memory::{MEMORY_MAX_PER_SCOPE, Memory, MemoryScope};
+use crate::domain::project::Project;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryRecord {
@@ -73,6 +76,58 @@ pub fn create(
     let memory = Memory::new(id, memory.scope, &memory.content).map_err(|_| AppError::Internal)?;
     store.insert_memory(&memory)?;
     Ok(memory)
+}
+
+/// Best-effort automatic memory. A full scope or invalid content is ignored so
+/// that the action that triggered it still succeeds (ADR-0036).
+pub fn remember(
+    store: &(impl MemoryStore + Directory + ProjectStore),
+    state: &impl AppStateStore,
+    scope: MemoryScope,
+    content: &str,
+    secret: Option<&str>,
+) -> Option<Memory> {
+    create(store, state, scope, content, secret).ok()
+}
+
+pub fn lab_created_content(lab: &Lab) -> String {
+    format!("Laboratory '{}' was created.", lab.name)
+}
+
+pub fn agent_created_content(profile: &AgentProfile, labs: &[LabId]) -> String {
+    let skills = if profile.skills.is_empty() {
+        "none".to_owned()
+    } else {
+        profile
+            .skills
+            .iter()
+            .map(|skill| skill.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let memberships = if labs.is_empty() {
+        "no laboratory".to_owned()
+    } else {
+        labs.iter()
+            .map(|lab| lab.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    format!(
+        "Agent '{}' joined as {} with skills: {}. Laboratories: {}.",
+        profile.name,
+        profile.role.as_str(),
+        skills,
+        memberships
+    )
+}
+
+pub fn project_created_content(project: &Project) -> String {
+    let mut content = format!("Project '{}' was created.", project.name);
+    if let Some(source) = &project.github_source {
+        content.push_str(&format!(" GitHub source: {source}."));
+    }
+    content
 }
 
 /// Lists memories for one scope, newest first.
@@ -202,9 +257,13 @@ mod tests {
     use crate::app::directory::LabOverview;
     use crate::app::projects::ProjectOverview;
     use crate::app::storage::StorageError;
-    use crate::domain::agent::AgentProfile;
+    use crate::domain::agent::{AgentProfile, Description, Role};
     use crate::domain::ids::{AgentId, LabId, MemoryId, ProjectId};
     use crate::domain::lab::Lab;
+    use crate::domain::name::Name;
+    use crate::domain::project::GithubSource;
+    use crate::domain::settings::{ModelId, ProviderId};
+    use crate::domain::skills;
     use std::cell::RefCell;
 
     #[derive(Default)]
@@ -384,6 +443,46 @@ mod tests {
         let record = preflight(&store, memory.id.as_str()).unwrap();
         delete(&store, &record).unwrap();
         assert!(list(&store, scope).unwrap().is_empty());
+    }
+
+    #[test]
+    fn automatic_contents_are_deterministic_and_exclude_cv() {
+        let lab = Lab::new(
+            LabId::parse("a3f91c07").unwrap(),
+            Name::parse("Payments").unwrap(),
+        );
+        assert_eq!(
+            lab_created_content(&lab),
+            "Laboratory 'Payments' was created."
+        );
+
+        let profile = AgentProfile::new(
+            AgentId::parse("0b1c2d3e").unwrap(),
+            Name::parse("Ada").unwrap(),
+            Role::Dev,
+            Description::parse("Writes code").unwrap(),
+            skills::parse_list("rust, api").unwrap(),
+            ProviderId::DeepSeek,
+            ModelId::parse("deepseek-chat").unwrap(),
+            Some("private CV".to_owned()),
+        )
+        .unwrap();
+        let content = agent_created_content(&profile, std::slice::from_ref(&lab.id));
+        assert!(content.contains("Ada"));
+        assert!(content.contains("dev"));
+        assert!(content.contains("rust, api"));
+        assert!(content.contains("a3f91c07"));
+        assert!(!content.contains("private CV"));
+
+        let project = Project::new(
+            ProjectId::parse("1c2d3e4f").unwrap(),
+            lab.id,
+            Name::parse("Portal").unwrap(),
+            Some(GithubSource::parse("https://github.com/acme/portal").unwrap()),
+        );
+        let content = project_created_content(&project);
+        assert!(content.contains("Portal"));
+        assert!(content.contains("https://github.com/acme/portal"));
     }
 
     #[test]

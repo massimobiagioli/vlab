@@ -3,7 +3,7 @@
 
 mod support;
 
-use vlab::app::context::save_active_lab;
+use vlab::app::context::{save_active_lab, save_active_project};
 use vlab::app::deletions::DeletionStore;
 use vlab::app::directory::Directory;
 use vlab::app::memories::MemoryStore;
@@ -44,6 +44,7 @@ fn seed(sandbox: &Sandbox) -> (LabId, ProjectId, AgentId) {
         None,
     ))
     .unwrap();
+    save_active_project(&db, &project).unwrap();
     let agent = AgentId::parse("1c2d3e4f").unwrap();
     db.insert_agent(
         &AgentProfile::new(
@@ -102,7 +103,7 @@ fn laboratory_deletion_is_atomic_cascading_and_clears_the_selection() {
 #[test]
 fn project_deletion_is_scoped_and_cascades_its_data() {
     let sandbox = Sandbox::new();
-    let (_lab, project, _agent) = seed(&sandbox);
+    let (_lab, _project, _agent) = seed(&sandbox);
     let db = sandbox.seed_database();
     exec(
         &db,
@@ -110,9 +111,7 @@ fn project_deletion_is_scoped_and_cascades_its_data() {
          VALUES ('2d3e4f50', 'project', '0b1c2d3e', 'note', '2026-01-01T00:00:00Z')"
             .to_owned(),
     );
-    sandbox
-        .run(&["--delete-project", project.as_str(), "--yes"])
-        .assert_success();
+    sandbox.run(&["--delete-project", "--yes"]).assert_success();
     assert_eq!(count(&db, "SELECT count(*) FROM projects"), 0);
     assert_eq!(count(&db, "SELECT count(*) FROM memories"), 0);
     assert_eq!(count(&db, "SELECT count(*) FROM agents"), 1);
@@ -121,14 +120,14 @@ fn project_deletion_is_scoped_and_cascades_its_data() {
 #[test]
 fn a_second_laboratory_cannot_delete_the_first_projects() {
     let sandbox = Sandbox::new();
-    let (_lab, project, _agent) = seed(&sandbox);
+    let (_lab, _project, _agent) = seed(&sandbox);
     let db = sandbox.seed_database();
     let other = LabId::parse("ffffffff").unwrap();
     db.insert_lab(&Lab::new(other.clone(), Name::parse("Other").unwrap()))
         .unwrap();
     save_active_lab(&db, &other).unwrap();
     sandbox
-        .run(&["--delete-project", project.as_str(), "--yes"])
+        .run(&["--delete-project", "--yes"])
         .assert_failure(3, "no project with identifier");
 }
 
@@ -178,7 +177,7 @@ fn agent_deletion_blocks_unfinished_stories_and_archives_otherwise() {
 #[test]
 fn active_planning_blocks_deletion_and_stale_planning_does_not() {
     let sandbox = Sandbox::new();
-    let (lab, project, agent) = seed(&sandbox);
+    let (lab, _project, agent) = seed(&sandbox);
     let db = sandbox.seed_database();
     exec(
         &db,
@@ -186,7 +185,7 @@ fn active_planning_blocks_deletion_and_stale_planning_does_not() {
          VALUES ('2d3e4f50', '0b1c2d3e', 'R', 'PLANNING', strftime('%Y-%m-%dT%H:%M:%fZ','now'), '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')".to_owned(),
     );
     sandbox
-        .run(&["--delete-project", project.as_str(), "--yes"])
+        .run(&["--delete-project", "--yes"])
         .assert_failure(4, "planning operation is active");
     sandbox
         .run(&["--delete-lab", lab.as_str(), "--yes"])
@@ -199,9 +198,7 @@ fn active_planning_blocks_deletion_and_stale_planning_does_not() {
         &db,
         "UPDATE requests SET planning_started_at = '2000-01-01T00:00:00Z'".to_owned(),
     );
-    sandbox
-        .run(&["--delete-project", project.as_str(), "--yes"])
-        .assert_success();
+    sandbox.run(&["--delete-project", "--yes"]).assert_success();
 }
 
 #[test]

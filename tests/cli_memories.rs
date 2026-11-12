@@ -1,212 +1,158 @@
-//! Scoped memory commands (WP4-AC10).
+//! Automatic memory creation (ADR-0035, ADR-0036).
 
 mod support;
 
-use vlab::app::context::save_active_lab;
+use vlab::app::context::{save_active_lab, save_active_project};
 use vlab::app::directory::Directory;
-use vlab::app::memories::MemoryStore;
 use vlab::app::projects::ProjectStore;
-use vlab::domain::ids::{LabId, MemoryId, ProjectId};
+use vlab::domain::agent::{AgentProfile, Description, Role};
+use vlab::domain::ids::{AgentId, LabId, ProjectId};
 use vlab::domain::lab::Lab;
-use vlab::domain::memory::{Memory, MemoryScope};
 use vlab::domain::name::Name;
 use vlab::domain::project::Project;
+use vlab::domain::settings::{ModelId, ProviderId};
+use vlab::domain::skills;
 
 use support::Sandbox;
 
-fn seed_lab(sandbox: &Sandbox, raw: &str, name: &str) -> LabId {
+fn seed_lab(sandbox: &Sandbox) -> LabId {
     let db = sandbox.seed_database();
-    let id = LabId::parse(raw).unwrap();
-    db.insert_lab(&Lab::new(id.clone(), Name::parse(name).unwrap()))
+    let lab = LabId::parse("a3f91c07").unwrap();
+    db.insert_lab(&Lab::new(lab.clone(), Name::parse("Payments").unwrap()))
         .unwrap();
-    id
+    save_active_lab(&db, &lab).unwrap();
+    lab
 }
 
-fn activate(sandbox: &Sandbox, lab: &LabId) {
+fn seed_agent(sandbox: &Sandbox, lab: &LabId, id: &str, archived: bool) {
     let db = sandbox.seed_database();
-    save_active_lab(&db, lab).unwrap();
+    let profile = AgentProfile::new(
+        AgentId::parse(id).unwrap(),
+        Name::parse("Ada").unwrap(),
+        Role::Lead,
+        Description::parse("Leads").unwrap(),
+        skills::parse_list("").unwrap(),
+        ProviderId::DeepSeek,
+        ModelId::parse("deepseek-chat").unwrap(),
+        None,
+    )
+    .unwrap();
+    db.insert_agent(&profile, std::slice::from_ref(lab))
+        .unwrap();
+    if archived {
+        db.block_on(async {
+            sqlx::query("UPDATE agents SET archived_at = '2026-01-01T00:00:00Z' WHERE id = ?1")
+                .bind(profile.id.as_str())
+                .execute(db.pool())
+                .await
+                .unwrap();
+        });
+    }
 }
 
-fn seed_project(sandbox: &Sandbox, raw: &str, lab: &LabId) -> ProjectId {
+#[test]
+fn creating_a_laboratory_writes_a_lab_memory() {
+    let sandbox = Sandbox::new();
+    let outcome = sandbox.run(&["--new-lab", "Payments"]);
+    outcome.assert_success();
     let db = sandbox.seed_database();
-    let id = ProjectId::parse(raw).unwrap();
+    let (scope, content): (String, String) = db.block_on(async {
+        sqlx::query_as("SELECT scope_type, content FROM memories")
+            .fetch_one(db.pool())
+            .await
+            .unwrap()
+    });
+    assert_eq!(scope, "lab");
+    assert_eq!(content, "Laboratory 'Payments' was created.");
+}
+
+#[test]
+fn creating_a_project_writes_a_project_memory_and_selects_it() {
+    let sandbox = Sandbox::new();
+    seed_lab(&sandbox);
+    let created = sandbox.run(&["--new-project", "Portal"]);
+    created.assert_success();
+    let id = created
+        .stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("ID:   "))
+        .unwrap()
+        .trim()
+        .to_owned();
+    let db = sandbox.seed_database();
+    let (scope, content): (String, String) = db.block_on(async {
+        sqlx::query_as("SELECT scope_type, content FROM memories")
+            .fetch_one(db.pool())
+            .await
+            .unwrap()
+    });
+    assert_eq!(scope, "project");
+    assert_eq!(content, "Project 'Portal' was created.");
+
+    // --new-project selected the project, so the board works without --open-project.
+    sandbox.run(&["--show-project-kanban"]).assert_success();
+    let count: i64 = db.block_on(async {
+        sqlx::query_scalar("SELECT count(*) FROM projects WHERE id = ?1")
+            .bind(&id)
+            .fetch_one(db.pool())
+            .await
+            .unwrap()
+    });
+    assert_eq!(count, 1);
+}
+
+#[test]
+fn assign_agent_is_idempotent_and_requires_a_member() {
+    let sandbox = Sandbox::new();
+    let lab = seed_lab(&sandbox);
+    let project = ProjectId::parse("0b1c2d3e").unwrap();
+    let db = sandbox.seed_database();
     db.insert_project(&Project::new(
-        id.clone(),
+        project.clone(),
         lab.clone(),
         Name::parse("Portal").unwrap(),
         None,
     ))
     .unwrap();
-    id
-}
-
-fn created_id(stdout: &str) -> String {
-    stdout
-        .lines()
-        .find_map(|line| line.strip_prefix("ID:    "))
-        .expect("memory id")
-        .trim()
-        .to_owned()
-}
-
-#[test]
-fn lab_memories_can_be_created_listed_and_deleted() {
-    let sandbox = Sandbox::new();
-    let lab = seed_lab(&sandbox, "a3f91c07", "Payments");
-    let created = sandbox.run(&[
-        "--new-memory",
-        "Prefer small pull requests.",
-        "--for-lab",
-        lab.as_str(),
-    ]);
-    created.assert_success();
-    assert!(created.stdout.contains("Scope: lab a3f91c07"));
-    let id = created_id(&created.stdout);
-
-    let listed = sandbox.run(&["--list-memories", "--for-lab", lab.as_str()]);
-    listed.assert_success();
-    assert!(listed.stdout.contains(&id));
-    assert!(listed.stdout.contains("Prefer small pull requests."));
+    save_active_project(&db, &project).unwrap();
+    seed_agent(&sandbox, &lab, "1c2d3e4f", false);
 
     sandbox
-        .run(&["--delete-memory", &id])
-        .assert_failure(4, "requires confirmation");
-    sandbox
-        .run(&["--delete-memory", &id, "--yes"])
-        .assert_success();
-    let empty = sandbox.run(&["--list-memories", "--for-lab", lab.as_str()]);
-    empty.assert_success();
-    assert!(empty.stdout.contains("No memories for this scope."));
-}
-
-#[test]
-fn project_and_agent_scopes_are_checked() {
-    let sandbox = Sandbox::new();
-    let lab = seed_lab(&sandbox, "a3f91c07", "Payments");
-    let project = seed_project(&sandbox, "0b1c2d3e", &lab);
-
-    sandbox
-        .run(&["--new-memory", "x", "--for-project", project.as_str()])
-        .assert_failure(3, "no active laboratory is selected.");
-    activate(&sandbox, &lab);
-    sandbox
-        .run(&["--new-memory", "x", "--for-project", project.as_str()])
+        .run(&["--assign-agent", "1c2d3e4f"])
         .assert_success();
     sandbox
-        .run(&["--new-memory", "x", "--for-agent", "ffffffff"])
-        .assert_failure(3, "no agent with identifier `ffffffff` exists.");
-}
-
-#[test]
-fn exactly_one_scope_selector_is_required() {
-    let sandbox = Sandbox::new();
-    sandbox
-        .run(&["--new-memory", "x"])
-        .assert_failure(2, "needs exactly one of");
-    sandbox
-        .run(&["--list-memories"])
-        .assert_failure(2, "needs exactly one of");
-    sandbox
-        .run(&[
-            "--new-memory",
-            "x",
-            "--for-lab",
-            "a3f91c07",
-            "--for-project",
-            "0b1c2d3e",
-        ])
-        .assert_failure(2, "needs exactly one of");
-    sandbox
-        .run(&["--new-memory", "x", "--for-agent", "BAD"])
-        .assert_failure(2, "must be 8 lowercase hexadecimal characters");
-}
-
-#[test]
-fn malformed_scope_ids_are_usage_errors_before_storage() {
-    for args in [
-        &["--new-memory", "x", "--for-lab", "BAD"][..],
-        &["--list-memories", "--for-project", "BAD"],
-        &["--delete-memory", "BAD"],
-    ] {
-        let sandbox = Sandbox::new();
-        sandbox
-            .run(args)
-            .assert_failure(2, "must be 8 lowercase hexadecimal characters");
-        assert!(!sandbox.data_dir().exists(), "{args:?}");
-    }
-}
-
-#[test]
-fn memory_content_is_bounded_and_control_free() {
-    let sandbox = Sandbox::new();
-    let lab = seed_lab(&sandbox, "a3f91c07", "Payments");
-    sandbox
-        .run(&[
-            "--new-memory",
-            &"a".repeat(2_001),
-            "--for-lab",
-            lab.as_str(),
-        ])
-        .assert_failure(4, "at most 2000 characters");
-    sandbox
-        .run(&["--new-memory", "bad\u{7}value", "--for-lab", lab.as_str()])
-        .assert_failure(4, "must not contain control characters");
-    sandbox
-        .run(&[
-            "--new-memory",
-            &"a".repeat(2_000),
-            "--for-lab",
-            lab.as_str(),
-        ])
+        .run(&["--assign-agent", "1c2d3e4f"])
         .assert_success();
-}
-
-#[test]
-fn the_twenty_first_memory_is_rejected() {
-    let sandbox = Sandbox::new();
-    let lab = seed_lab(&sandbox, "a3f91c07", "Payments");
-    let db = sandbox.seed_database();
-    let scope = MemoryScope::Lab(lab.clone());
-    for index in 0..20 {
-        db.insert_memory(
-            &Memory::new(
-                MemoryId::generate(),
-                scope.clone(),
-                &format!("note {index}"),
-            )
-            .unwrap(),
-        )
-        .unwrap();
-    }
-    sandbox
-        .run(&["--new-memory", "one too many", "--for-lab", lab.as_str()])
-        .assert_failure(4, "already has 20 memories");
-}
-
-#[test]
-fn memory_content_never_appears_in_audit_events() {
-    let sandbox = Sandbox::new();
-    let lab = seed_lab(&sandbox, "a3f91c07", "Payments");
-    let secret = support::SECRET_MARKER;
-    let created = sandbox.run(&["--new-memory", secret, "--for-lab", lab.as_str()]);
-    created.assert_success();
-    let id = created_id(&created.stdout);
-    let db = sandbox.seed_database();
-    let events: Vec<(String, String, String)> = db.block_on(async {
-        sqlx::query_as(
-            "SELECT kind, entity_type, entity_id FROM events WHERE kind = 'memory_created'",
-        )
-        .fetch_all(db.pool())
-        .await
-        .unwrap()
+    let count: i64 = db.block_on(async {
+        sqlx::query_scalar("SELECT count(*) FROM project_agents")
+            .fetch_one(db.pool())
+            .await
+            .unwrap()
     });
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].0, "memory_created");
-    assert_eq!(events[0].1, "memory");
-    assert_eq!(events[0].2, id);
-    assert!(
-        !events
-            .iter()
-            .any(|row| row.0.contains(secret) || row.2.contains(secret))
-    );
+    assert_eq!(count, 1);
+
+    sandbox
+        .run(&["--assign-agent", "ffffffff"])
+        .assert_failure(3, "no agent with identifier");
+}
+
+#[test]
+fn an_archived_agent_cannot_be_assigned() {
+    let sandbox = Sandbox::new();
+    let lab = seed_lab(&sandbox);
+    let project = ProjectId::parse("0b1c2d3e").unwrap();
+    let db = sandbox.seed_database();
+    db.insert_project(&Project::new(
+        project.clone(),
+        lab.clone(),
+        Name::parse("Portal").unwrap(),
+        None,
+    ))
+    .unwrap();
+    save_active_project(&db, &project).unwrap();
+    seed_agent(&sandbox, &lab, "1c2d3e4f", true);
+
+    sandbox
+        .run(&["--assign-agent", "1c2d3e4f"])
+        .assert_failure(4, "archived");
 }

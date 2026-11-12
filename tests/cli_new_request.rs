@@ -3,7 +3,7 @@
 
 mod support;
 
-use vlab::app::context::save_active_lab;
+use vlab::app::context::{save_active_lab, save_active_project};
 use vlab::app::directory::Directory;
 use vlab::app::projects::ProjectStore;
 use vlab::domain::agent::{AgentProfile, Description, Role};
@@ -30,6 +30,7 @@ fn seed(sandbox: &Sandbox) -> ProjectId {
         None,
     ))
     .unwrap();
+    save_active_project(&db, &project).unwrap();
     for (id, role, skills_text) in [
         ("1c2d3e4f", Role::Lead, ""),
         ("2d3e4f50", Role::Dev, "rust"),
@@ -62,7 +63,7 @@ fn settings(sandbox: &Sandbox) {
 #[test]
 fn the_input_matrix_rejects_dual_empty_invalid_and_oversized_input() {
     let sandbox = Sandbox::new();
-    let project = seed(&sandbox);
+    seed(&sandbox);
     settings(&sandbox);
 
     // Literal text plus a non-terminal stdin is ambiguous.
@@ -70,7 +71,6 @@ fn the_input_matrix_rejects_dual_empty_invalid_and_oversized_input() {
         sandbox
             .command()
             .arg("--new-request")
-            .arg(project.as_str())
             .arg("literal")
             .write_stdin("piped")
             .output()
@@ -82,7 +82,6 @@ fn the_input_matrix_rejects_dual_empty_invalid_and_oversized_input() {
         sandbox
             .command()
             .arg("--new-request")
-            .arg(project.as_str())
             .write_stdin("   ")
             .output()
             .unwrap(),
@@ -93,7 +92,6 @@ fn the_input_matrix_rejects_dual_empty_invalid_and_oversized_input() {
         sandbox
             .command()
             .arg("--new-request")
-            .arg(project.as_str())
             .write_stdin(vec![0xff, 0xfe])
             .output()
             .unwrap(),
@@ -104,7 +102,6 @@ fn the_input_matrix_rejects_dual_empty_invalid_and_oversized_input() {
         sandbox
             .command()
             .arg("--new-request")
-            .arg(project.as_str())
             .write_stdin("a".repeat(64 * 1024 + 1))
             .output()
             .unwrap(),
@@ -115,7 +112,7 @@ fn the_input_matrix_rejects_dual_empty_invalid_and_oversized_input() {
 #[test]
 fn an_end_to_end_request_creates_linked_stories() {
     let sandbox = Sandbox::new();
-    let project = seed(&sandbox);
+    seed(&sandbox);
     settings(&sandbox);
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -158,7 +155,6 @@ fn an_end_to_end_request_creates_linked_stories() {
                 format!("{}/chat/completions", server.uri()),
             )
             .arg("--new-request")
-            .arg(project.as_str())
             .write_stdin("Add password reset")
             .output()
             .unwrap(),

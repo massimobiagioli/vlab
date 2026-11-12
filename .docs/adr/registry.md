@@ -61,6 +61,10 @@ revises a technical decision must keep it current.
 | ADR-0030 | Credentials in the private settings file | Accepted | 2026-11-12 | ADR-0015 | [adr-0030.md](adr-0030.md) |
 | ADR-0031 | Repository-local data for debug builds | Accepted | 2026-11-12 | — | [adr-0031.md](adr-0031.md) |
 | ADR-0032 | Clone GitHub projects into .workspace | Accepted | 2026-11-12 | — | [adr-0032.md](adr-0032.md) |
+| ADR-0033 | Current project context and project-scoped commands | Accepted | 2026-11-12 | — | [adr-0033.md](adr-0033.md) |
+| ADR-0034 | Project agent assignments and planning roster | Accepted | 2026-11-12 | — | [adr-0034.md](adr-0034.md) |
+| ADR-0035 | Remove manual memory commands | Accepted | 2026-11-12 | — | [adr-0035.md](adr-0035.md) |
+| ADR-0036 | Automatic memory generation | Accepted | 2026-11-12 | — | [adr-0036.md](adr-0036.md) |
 
 ## Supersession map
 

@@ -64,17 +64,18 @@ computed due date. The initial release creates `TODO` stories only.
 
 ### Memory
 
-User-authored context attached to exactly one scope:
+Application-managed context attached to exactly one scope:
 
 - a laboratory;
 - a project;
 - an agent profile.
 
-A memory has bounded text and a creation timestamp. It is immutable in the
-initial release (delete and recreate to change it). Memories are untrusted
-data: they are selected and delimitated for prompts, never executed and never
-treated as permission. Agent memories survive archival but are excluded from
-prompts while the agent is archived.
+A memory has bounded text and a creation timestamp. It is immutable. Structural
+memories are deterministic facts written when a laboratory, agent, or project
+is created; a successful plan adds one bounded model-generated summary.
+Memories are untrusted data: they are selected and delimitated for prompts,
+never executed and never treated as permission. Agent memories survive
+archival but are excluded from prompts while the agent is archived.
 
 ### Event
 
@@ -95,6 +96,7 @@ content. It is added by WP-6.
 |---|---|---|
 | Laboratory → Project | one to many | Projects belong to exactly one laboratory; deleting the laboratory deletes its projects. |
 | Laboratory ↔ Agent | many to many | Memberships; deleting either side removes the membership. An archived agent has no active memberships. |
+| Project ↔ Agent | many to many | Project roster; deleting either side removes the assignment. Planning uses the roster when non-empty. |
 | Project → Request | one to many | Requests are scoped to one project; deleting the project deletes them. |
 | Request → Story | one to many | Stories retain the originating request; deleting the request cascades. |
 | Project → Story | one to many | A story belongs to the project of its request. |
@@ -109,7 +111,7 @@ content. It is added by WP-6.
   silently.
 - A request belongs to exactly one project; a story belongs to exactly one
   project and one request.
-- A story assignment is `NULL` or a member of the project's laboratory.
+- A story assignment is `NULL` or an agent in the project roster; without a roster, the laboratory roster applies.
 - A laboratory has at most one active `lead`; check-lab reports stored
   violations.
 - A memory has exactly one owner scope and a bounded, control-free content.

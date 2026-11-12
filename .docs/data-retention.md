@@ -167,7 +167,7 @@ WP-4 adds these tables ([ADR-0023](adr/adr-0023.md), [ADR-0022](adr/adr-0022.md)
 | `title`, `description` | Validated model proposal, locally checked | Project work item content. |
 | `acceptance_criteria_json`, `required_skills_json` | Bounded, validated arrays | Planning output used by the board and later work. |
 | `priority`, `complexity` | Constrained enums | Planning estimate and sorting. |
-| `assigned_agent_id` | Laboratory member or `NULL` | Assignment; references are validated locally. |
+| `assigned_agent_id` | Project roster member or `NULL` | Assignment; references are validated locally. |
 | `assignment_rationale` | Bounded explanation or `NULL` | Explains the assignment or why it is unassigned. |
 | `state` | Kanban state | Read-only board column. Only `TODO` is created initially. |
 | `due_date` | `YYYY-MM-DD` | Locally computed estimate, not a commitment. |
@@ -182,15 +182,17 @@ WP-4 adds the `memories` table ([ADR-0022](adr/adr-0022.md)).
 | `id` | 8-character identifier | Primary key and command operand. |
 | `scope_type` | `lab`, `project`, or `agent` | Selects the owner kind. |
 | `lab_id`, `project_id`, `agent_id` | Exactly one non-null foreign key | Identifies the owner and enables cascade deletion. |
-| `content` | Bounded user-authored text | Context the user wants planning or questions to consider. |
+| `content` | Bounded application-managed text | Deterministic structural facts or a planning summary; untrusted prompt context. |
 | `created_at` | RFC 3339 UTC timestamp | Ordering and diagnosis. |
 
-Memories are immutable in the initial release. `--delete-memory` removes one;
+Memories are immutable and application-managed. There is no memory command;
 deleting a laboratory or project removes its memories by cascade. Archiving an
 agent retains its memories for historical inspection but excludes them from
-prompts. Memory content is sent to the provider only when it is selected for a
-planning request or question (see §3.5 of the specification), never logged, and
-never written by the model. Users must not store credentials in a memory.
+prompts. Structural memories are deterministic. A successful plan makes one
+additional bounded provider call and stores its summary as a project memory;
+the summary is model output and therefore untrusted. Memory content is sent to
+the provider only when selected for a prompt, within 8 KiB, and is never
+logged. Credentials are rejected from memory content and are never stored.
 
 ### Schema v5: interaction metadata
 
@@ -200,7 +202,16 @@ counts, and a timestamp. It stores **no content**: no question, answer, prompt,
 request text, memory, CV, or provider body. This is operational metadata used
 for diagnostics and evaluation, not project data.
 
-### Later packages
+### Schema v6: project agent assignments
+
+ADR-0034 adds `project_agents`:
+
+| Column | Contents | Why it is stored |
+|---|---|---|
+| `project_id`, `agent_id` | Foreign keys | Many-to-many project roster; cascades with either owner. |
+| `created_at` | RFC 3339 UTC timestamp | Ordering and diagnosis. |
+
+The table contains identifiers only, no content or credentials.
 
 No further schema changes are planned in the deterministic release. Any future
 change must justify each stored field and update this document before the

@@ -13,12 +13,12 @@ use crate::app::directory::Directory;
 use crate::app::kanban::{self, Board, StoryState};
 use crate::app::lab_validation::{LabCheck, RuleResult};
 use crate::app::labs::{self, LabListItem, OpenSummary};
-use crate::app::memories::{self, MemoryRecord};
+use crate::app::memories;
 use crate::app::projects::{self, CreatedProject, ProjectOverview, ProjectStore};
 use crate::app::requests::{self, PlanningOutcome};
 use crate::app::settings::SettingsReport;
 use crate::app::{AppError, settings, settings_edit};
-use crate::cli::args::{Action, MemoryScopeArg};
+use crate::cli::args::Action;
 use crate::cli::confirm::{self, ConfirmationRequest};
 use crate::cli::input;
 use crate::cli::prompt::{TerminalEditor, TerminalPrompter};
@@ -28,7 +28,7 @@ use crate::cli::render::{
 use crate::cli::{write_stderr, write_stdout};
 use crate::domain::agent::AgentProfile;
 use crate::domain::budget::{CancelToken, ExecutionLimits};
-use crate::domain::memory::{Memory, MemoryScope};
+use crate::domain::memory::MemoryScope;
 use crate::infra::config::SettingsFile;
 use crate::infra::db::Database;
 use crate::infra::paths::Paths;
@@ -68,6 +68,21 @@ pub fn dispatch(
             labs::validated_name(&name)?;
             let mut db = open_database(run_id)?;
             let lab = labs::create(&db, &name)?;
+            if let Some(memory) = memories::remember(
+                &db,
+                &db,
+                MemoryScope::Lab(lab.id.clone()),
+                &memories::lab_created_content(&lab),
+                configured_secret().as_deref(),
+            ) {
+                record_event(
+                    &mut db,
+                    run_id,
+                    EventKind::MemoryCreated,
+                    EntityType::Memory,
+                    memory.id.as_str(),
+                );
+            }
             record_event(
                 &mut db,
                 run_id,
@@ -81,6 +96,7 @@ pub fn dispatch(
             labs::parse_lab_id(&lab_id)?;
             let mut db = open_database(run_id)?;
             let summary = labs::open(&db, &db, &lab_id)?;
+            context::clear_active_project(&db)?;
             record_event(
                 &mut db,
                 run_id,
@@ -111,17 +127,16 @@ pub fn dispatch(
                 })
             }
         }
-        Action::NewRequest { project_id, text } => {
-            projects::parse_project_id(&project_id)?;
+        Action::NewRequest { text } => {
             let limits = ExecutionLimits::default();
             let text = input::request_text(text.as_deref(), limits)?;
+            let db = open_database(run_id)?;
+            let project = context::active_project(&db)?.require()?;
             let settings = settings::show(&settings_file()?)?.settings;
             let provider = provider_from_settings(&settings, limits)?;
             let cancel = CancelToken::default();
             let handler_token = cancel.clone();
             let _ = ctrlc::set_handler(move || handler_token.cancel());
-            let db = open_database(run_id)?;
-            let project = projects::parse_project_id(&project_id)?;
             let outcome = requests::plan(
                 &db,
                 &db,
@@ -186,6 +201,22 @@ pub fn dispatch(
             );
             let mut db = open_database(run_id)?;
             let created = projects::create(&db, &db, &name, github_source.0, &workspace)?;
+            context::save_active_project(&db, &created.project.id)?;
+            if let Some(memory) = memories::remember(
+                &db,
+                &db,
+                MemoryScope::Project(created.project.id.clone()),
+                &memories::project_created_content(&created.project),
+                configured_secret().as_deref(),
+            ) {
+                record_event(
+                    &mut db,
+                    run_id,
+                    EventKind::MemoryCreated,
+                    EntityType::Memory,
+                    memory.id.as_str(),
+                );
+            }
             record_event(
                 &mut db,
                 run_id,
@@ -195,10 +226,16 @@ pub fn dispatch(
             );
             write_stdout(stdout, &render_created_project(&created))
         }
-        Action::ShowProjectKanban { project_id } => {
+        Action::OpenProject { project_id } => {
             projects::parse_project_id(&project_id)?;
             let db = open_database(run_id)?;
-            let board = kanban::show(&db, &db, &project_id)?;
+            let summary = projects::open(&db, &db, &project_id)?;
+            write_stdout(stdout, &render_opened_project(&summary))
+        }
+        Action::ShowProjectKanban => {
+            let db = open_database(run_id)?;
+            let project = context::active_project(&db)?.require()?;
+            let board = kanban::show(&db, &db, project.as_str())?;
             write_stdout(stdout, &render_board(&board, terminal_width()))
         }
         Action::DeleteLab { lab_id, assume_yes } => {
@@ -215,6 +252,7 @@ pub fn dispatch(
                 },
             )?;
             deletions::delete_lab(&db, &plan)?;
+            context::clear_active_project(&db)?;
             record_event(
                 &mut db,
                 run_id,
@@ -224,13 +262,23 @@ pub fn dispatch(
             );
             write_stdout(stdout, &render_deleted_lab(&plan))
         }
-        Action::DeleteProject {
-            project_id,
-            assume_yes,
-        } => {
-            projects::parse_project_id(&project_id)?;
+        Action::AssignAgent { agent_id } => {
+            let db = open_database(run_id)?;
+            let project = projects::assign_agent(&db, &db, &agent_id)?;
+            write_stdout(
+                stdout,
+                &format!(
+                    "Agent assigned.\nProject: {} — {}\nAgent:   {}\n",
+                    project.id,
+                    sanitize(&project.name),
+                    agent_id
+                ),
+            )
+        }
+        Action::DeleteProject { assume_yes } => {
             let mut db = open_database(run_id)?;
-            let plan = deletions::preflight_project(&db, &db, &project_id)?;
+            let project = context::active_project(&db)?.require()?;
+            let plan = deletions::preflight_project(&db, &db, &project)?;
             let mut prompter = TerminalPrompter;
             confirm::confirm(
                 &mut prompter,
@@ -241,6 +289,7 @@ pub fn dispatch(
                 },
             )?;
             deletions::delete_project(&db, &plan)?;
+            context::clear_active_project(&db)?;
             record_event(
                 &mut db,
                 run_id,
@@ -284,65 +333,6 @@ pub fn dispatch(
                 plan.id.as_str(),
             );
             write_stdout(stdout, &render_archived_agent(&plan))
-        }
-        Action::ListMemories { scope } => {
-            let scope = memory_scope(scope)?;
-            let db = open_database(run_id)?;
-            let records = memories::list_checked(&db, &db, scope)?;
-            write_stdout(stdout, &render_memories(&records))
-        }
-        Action::NewMemory { text, scope } => {
-            let scope = memory_scope(scope)?;
-            // Validate content before opening storage.
-            Memory::new(
-                crate::domain::ids::MemoryId::generate(),
-                scope.clone(),
-                &text,
-            )
-            .map_err(|error| AppError::Validation {
-                problem: error.to_string(),
-                hint: "Shorten or correct the memory and try again.".to_owned(),
-            })?;
-            let secret = settings_file()
-                .ok()
-                .and_then(|file| crate::app::settings::SettingsStore::load(&file).ok())
-                .and_then(|settings| settings.credentials.deepseek_api_key);
-            let mut db = open_database(run_id)?;
-            let memory = memories::create(&db, &db, scope, &text, secret.as_deref())?;
-            record_event(
-                &mut db,
-                run_id,
-                EventKind::MemoryCreated,
-                EntityType::Memory,
-                memory.id.as_str(),
-            );
-            write_stdout(stdout, &render_created_memory(&memory))
-        }
-        Action::DeleteMemory {
-            memory_id,
-            assume_yes,
-        } => {
-            memories::parse_memory_id(&memory_id)?;
-            let mut db = open_database(run_id)?;
-            let record = memories::preflight(&db, &memory_id)?;
-            let mut prompter = TerminalPrompter;
-            confirm::confirm(
-                &mut prompter,
-                &ConfirmationRequest {
-                    command: "--delete-memory",
-                    summary: memory_delete_summary(&record),
-                    assume_yes,
-                },
-            )?;
-            memories::delete(&db, &record)?;
-            record_event(
-                &mut db,
-                run_id,
-                EventKind::MemoryDeleted,
-                EntityType::Memory,
-                record.memory.id.as_str(),
-            );
-            write_stdout(stdout, &format!("Memory {} deleted.\n", record.memory.id))
         }
         Action::Ask { question, to_agent } => {
             if let Some(raw) = &to_agent {
@@ -403,6 +393,26 @@ pub fn dispatch(
             let settings = settings::show(&settings_file()?)?.settings;
             let mut db = open_database(run_id)?;
             let profile = wizard::run(&mut prompter, &db, &db, &settings)?;
+            let memberships: Vec<crate::domain::ids::LabId> = db
+                .agent_memberships(&profile.id)?
+                .into_iter()
+                .map(|lab| lab.id)
+                .collect();
+            if let Some(memory) = memories::remember(
+                &db,
+                &db,
+                MemoryScope::Agent(profile.id.clone()),
+                &memories::agent_created_content(&profile, &memberships),
+                settings.credentials.deepseek_api_key.as_deref(),
+            ) {
+                record_event(
+                    &mut db,
+                    run_id,
+                    EventKind::MemoryCreated,
+                    EntityType::Memory,
+                    memory.id.as_str(),
+                );
+            }
             record_event(
                 &mut db,
                 run_id,
@@ -419,6 +429,13 @@ pub fn dispatch(
             write_stdout(stdout, &render_agent_detail(&detail))
         }
     }
+}
+
+fn configured_secret() -> Option<String> {
+    settings_file()
+        .ok()
+        .and_then(|file| crate::app::settings::SettingsStore::load(&file).ok())
+        .and_then(|settings| settings.credentials.deepseek_api_key)
 }
 
 fn settings_file() -> Result<SettingsFile, AppError> {
@@ -735,14 +752,6 @@ fn render_created_agent(profile: &AgentProfile) -> String {
     )
 }
 
-fn memory_scope(arg: MemoryScopeArg) -> Result<MemoryScope, AppError> {
-    match arg {
-        MemoryScopeArg::Lab(raw) => memories::parse_lab(&raw),
-        MemoryScopeArg::Project(raw) => memories::parse_project(&raw),
-        MemoryScopeArg::Agent(raw) => memories::parse_agent(&raw),
-    }
-}
-
 fn lab_delete_summary(plan: &LabDeletionPlan) -> String {
     format!(
         "Delete laboratory {} — {}?\nProjects: {}\nMemberships: {}\nMemories: {}\nAgent profiles are preserved.",
@@ -792,21 +801,17 @@ fn agent_delete_summary(plan: &AgentDeletionPlan) -> String {
     )
 }
 
-fn memory_delete_summary(record: &MemoryRecord) -> String {
+fn render_opened_project(project: &ProjectOverview) -> String {
     format!(
-        "Delete memory {} ({} scope, owner {})?\nPreview: {}",
-        record.memory.id,
-        record.memory.scope.kind(),
-        record.memory.scope.owner_id(),
-        preview(&record.memory.content, 120)
+        "Project opened.\nID:   {}\nName: {}\n{}\n",
+        project.id,
+        sanitize(&project.name),
+        project
+            .github_source
+            .as_ref()
+            .map(|source| format!("GitHub: {}\n", sanitize(source)))
+            .unwrap_or_default()
     )
-}
-
-fn preview(content: &str, max: usize) -> String {
-    sanitize(&content.replace('\n', " "))
-        .chars()
-        .take(max)
-        .collect()
 }
 
 fn render_projects(projects: &[ProjectOverview]) -> String {
@@ -998,44 +1003,6 @@ fn render_board_sections(board: &Board) -> String {
         out.push('\n');
     }
     out
-}
-
-fn render_memories(records: &[MemoryRecord]) -> String {
-    if records.is_empty() {
-        return empty_state(
-            "No memories for this scope.",
-            "Run `vlab --new-memory <text>` with the same `--for-*` selector to add one.",
-        );
-    }
-    let columns = [
-        Column::identifier("ID"),
-        Column::text("Scope"),
-        Column::identifier("Owner"),
-        Column::text("Preview"),
-        Column::text("Created"),
-    ];
-    let rows: Vec<Vec<String>> = records
-        .iter()
-        .map(|record| {
-            vec![
-                record.memory.id.to_string(),
-                record.memory.scope.kind().to_owned(),
-                record.memory.scope.owner_id().to_owned(),
-                preview(&record.memory.content, 60),
-                record.created_at.clone(),
-            ]
-        })
-        .collect();
-    render_table(terminal_width(), &columns, &rows)
-}
-
-fn render_created_memory(memory: &Memory) -> String {
-    format!(
-        "Memory created.\nID:    {}\nScope: {} {}\n",
-        memory.id,
-        memory.scope.kind(),
-        memory.scope.owner_id()
-    )
 }
 
 fn provider_from_settings(

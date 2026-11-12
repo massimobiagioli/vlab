@@ -6,7 +6,7 @@
 
 use crate::app::AppError;
 use crate::app::storage::{AppStateKey, AppStateStore};
-use crate::domain::ids::LabId;
+use crate::domain::ids::{LabId, ProjectId};
 
 /// The active laboratory as read from storage.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,6 +44,56 @@ impl ActiveLab {
 /// The error for commands that need an active laboratory and have none.
 pub fn no_active_lab() -> AppError {
     AppError::NoActiveLab
+}
+
+/// The active project within the active laboratory (ADR-0033).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActiveProject {
+    Selected(ProjectId),
+    NotSelected,
+    Invalid,
+}
+
+impl ActiveProject {
+    pub fn from_stored(value: Option<&str>) -> Self {
+        match value {
+            None => Self::NotSelected,
+            Some(value) => ProjectId::parse(value).map_or(Self::Invalid, Self::Selected),
+        }
+    }
+
+    pub fn warning(&self) -> Option<&'static str> {
+        matches!(self, Self::Invalid)
+            .then_some("the stored active project is invalid and was ignored.")
+    }
+
+    pub fn require(self) -> Result<ProjectId, AppError> {
+        match self {
+            Self::Selected(id) => Ok(id),
+            Self::NotSelected | Self::Invalid => Err(no_active_project()),
+        }
+    }
+}
+
+pub fn no_active_project() -> AppError {
+    AppError::NoActiveProject
+}
+
+pub fn active_project(store: &impl AppStateStore) -> Result<ActiveProject, AppError> {
+    let stored = store.get(AppStateKey::ActiveProjectId)?;
+    Ok(ActiveProject::from_stored(stored.as_deref()))
+}
+
+pub fn save_active_project(store: &impl AppStateStore, id: &ProjectId) -> Result<(), AppError> {
+    store
+        .set(AppStateKey::ActiveProjectId, id.as_str())
+        .map_err(AppError::from)
+}
+
+pub fn clear_active_project(store: &impl AppStateStore) -> Result<(), AppError> {
+    store
+        .clear(AppStateKey::ActiveProjectId)
+        .map_err(AppError::from)
 }
 
 /// Reads the selection. A corrupt stored value becomes [`ActiveLab::Invalid`],
@@ -118,6 +168,30 @@ mod tests {
     #[test]
     fn the_helper_returns_the_missing_context_error() {
         assert!(matches!(no_active_lab(), AppError::NoActiveLab));
+        assert!(matches!(no_active_project(), AppError::NoActiveProject));
+    }
+
+    #[test]
+    fn the_project_selection_round_trips_and_interprets_corrupt_values() {
+        let store = MemoryStore::default();
+        assert_eq!(active_project(&store).unwrap(), ActiveProject::NotSelected);
+        let id = ProjectId::parse("1c2d3e4f").unwrap();
+        save_active_project(&store, &id).unwrap();
+        assert_eq!(
+            active_project(&store).unwrap(),
+            ActiveProject::Selected(id.clone())
+        );
+        clear_active_project(&store).unwrap();
+        assert_eq!(active_project(&store).unwrap(), ActiveProject::NotSelected);
+        assert_eq!(
+            ActiveProject::from_stored(Some("not-an-id")),
+            ActiveProject::Invalid
+        );
+        assert!(ActiveProject::Invalid.warning().is_some());
+        assert!(matches!(
+            ActiveProject::Invalid.require(),
+            Err(AppError::NoActiveProject)
+        ));
     }
 
     #[test]

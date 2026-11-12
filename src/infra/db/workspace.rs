@@ -4,7 +4,7 @@ use crate::app::kanban::{Board, BoardStore};
 use crate::app::memories::{MemoryRecord, MemoryStore};
 use crate::app::projects::{ProjectOverview, ProjectStore};
 use crate::app::storage::StorageError;
-use crate::domain::ids::{LabId, MemoryId, ProjectId};
+use crate::domain::ids::{AgentId, LabId, MemoryId, ProjectId};
 use crate::domain::memory::{MEMORY_MAX_PER_SCOPE, Memory, MemoryScope};
 use crate::domain::project::Project;
 use crate::infra::db::{Database, kanban, map_sqlx_error, memories, projects};
@@ -47,6 +47,36 @@ impl ProjectStore for Database {
                 .await
                 .map_err(|error| map_sqlx_error(self.path(), &error))?;
             projects::list(&mut connection, lab)
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))
+        })
+    }
+
+    fn assign_project_agent(
+        &self,
+        project: &ProjectId,
+        agent: &AgentId,
+    ) -> Result<(), StorageError> {
+        self.block_on(async {
+            let mut connection = self
+                .pool()
+                .acquire()
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))?;
+            crate::infra::db::project_agents::assign(&mut connection, project, agent)
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))
+        })
+    }
+
+    fn project_agent_ids(&self, project: &ProjectId) -> Result<Vec<AgentId>, StorageError> {
+        self.block_on(async {
+            let mut connection = self
+                .pool()
+                .acquire()
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))?;
+            crate::infra::db::project_agents::ids(&mut connection, project)
                 .await
                 .map_err(|error| map_sqlx_error(self.path(), &error))
         })

@@ -14,12 +14,15 @@ use crate::app::AppError;
 pub enum AppStateKey {
     /// The selected laboratory (specification §3.4).
     ActiveLabId,
+    /// The selected project within the active laboratory (ADR-0033).
+    ActiveProjectId,
 }
 
 impl AppStateKey {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::ActiveLabId => "active_lab_id",
+            Self::ActiveProjectId => "active_project_id",
         }
     }
 }

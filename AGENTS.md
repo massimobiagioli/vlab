@@ -83,6 +83,10 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0030.md`](.docs/adr/adr-0030.md) | Credentials in the private settings file. |
 | [`.docs/adr/adr-0031.md`](.docs/adr/adr-0031.md) | Repository-local data for debug builds. |
 | [`.docs/adr/adr-0032.md`](.docs/adr/adr-0032.md) | Clone GitHub projects into `.workspace`. |
+| [`.docs/adr/adr-0033.md`](.docs/adr/adr-0033.md) | Current project context and project-scoped commands. |
+| [`.docs/adr/adr-0034.md`](.docs/adr/adr-0034.md) | Project agent assignments and planning roster. |
+| [`.docs/adr/adr-0035.md`](.docs/adr/adr-0035.md) | Remove manual memory commands. |
+| [`.docs/adr/adr-0036.md`](.docs/adr/adr-0036.md) | Automatic memory generation. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
 
 ### Precedence

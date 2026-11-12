@@ -17,8 +17,8 @@ use crate::app::AppError;
     group(ArgGroup::new("action").multiple(false).args([
         "show_settings", "edit_settings",
         "list_labs", "new_lab", "open_lab", "delete_lab", "check_lab",
-        "list_projects", "new_project", "show_project_kanban", "delete_project", "new_request",
-        "list_memories", "new_memory", "delete_memory",
+        "list_projects", "new_project", "open_project", "show_project_kanban",
+        "delete_project", "new_request", "assign_agent",
         "list_agents", "new_agent", "delete_agent", "show_agent_detail", "ask",
     ])),
 )]
@@ -63,46 +63,31 @@ pub struct Cli {
     #[arg(long, value_name = "url", help_heading = "Projects")]
     github_source: Option<String>,
 
-    /// Show a project's read-only Kanban board
+    /// Select the current project
     #[arg(long, value_name = "project-id", help_heading = "Projects")]
-    show_project_kanban: Option<String>,
+    open_project: Option<String>,
 
-    /// Delete a project (asks for confirmation)
-    #[arg(long, value_name = "project-id", help_heading = "Projects")]
-    delete_project: Option<String>,
+    /// Show the current project's read-only Kanban board
+    #[arg(long, help_heading = "Projects")]
+    show_project_kanban: bool,
 
-    /// Submit a request for Tech Lead planning
+    /// Delete the current project (asks for confirmation)
+    #[arg(long, help_heading = "Projects")]
+    delete_project: bool,
+
+    /// Submit a request for the current project
     #[arg(
         long,
-        value_names = ["project-id", "request-text"],
-        num_args = 1..=2,
+        value_name = "request-text",
+        num_args = 0..=1,
+        default_missing_value = "",
         help_heading = "Projects"
     )]
-    new_request: Option<Vec<String>>,
+    new_request: Option<String>,
 
-    /// List memories for one laboratory, project, or agent
-    #[arg(long, help_heading = "Memories")]
-    list_memories: bool,
-
-    /// Create a memory (use exactly one --for-* selector)
-    #[arg(long, value_name = "text", help_heading = "Memories")]
-    new_memory: Option<String>,
-
-    /// Delete a memory (asks for confirmation)
-    #[arg(long, value_name = "memory-id", help_heading = "Memories")]
-    delete_memory: Option<String>,
-
-    /// Scope a memory command to a laboratory
-    #[arg(long, value_name = "lab-id", help_heading = "Memories")]
-    for_lab: Option<String>,
-
-    /// Scope a memory command to a project in the active laboratory
-    #[arg(long, value_name = "project-id", help_heading = "Memories")]
-    for_project: Option<String>,
-
-    /// Scope a memory command to an agent
-    #[arg(long, value_name = "agent-id", help_heading = "Memories")]
-    for_agent: Option<String>,
+    /// Assign an agent to the current project
+    #[arg(long, value_name = "agent-id", help_heading = "Projects")]
+    assign_agent: Option<String>,
 
     /// List agents in the active laboratory
     #[arg(long, help_heading = "Agents")]
@@ -133,14 +118,6 @@ pub struct Cli {
     yes: bool,
 }
 
-/// The scope selector supplied to a memory command.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MemoryScopeArg {
-    Lab(String),
-    Project(String),
-    Agent(String),
-}
-
 /// One validated primary action with its operands.
 ///
 /// Operands are raw user input; later packages validate them (identifiers per
@@ -168,27 +145,18 @@ pub enum Action {
         name: String,
         github_source: Option<String>,
     },
-    ShowProjectKanban {
+    OpenProject {
         project_id: String,
     },
+    ShowProjectKanban,
     DeleteProject {
-        project_id: String,
         assume_yes: bool,
     },
     NewRequest {
-        project_id: String,
         text: Option<String>,
     },
-    ListMemories {
-        scope: MemoryScopeArg,
-    },
-    NewMemory {
-        text: String,
-        scope: MemoryScopeArg,
-    },
-    DeleteMemory {
-        memory_id: String,
-        assume_yes: bool,
+    AssignAgent {
+        agent_id: String,
     },
     ListAgents,
     NewAgent,
@@ -218,12 +186,11 @@ impl Action {
             Self::CheckLab { .. } => "--check-lab",
             Self::ListProjects => "--list-projects",
             Self::NewProject { .. } => "--new-project",
-            Self::ShowProjectKanban { .. } => "--show-project-kanban",
+            Self::OpenProject { .. } => "--open-project",
+            Self::ShowProjectKanban => "--show-project-kanban",
             Self::DeleteProject { .. } => "--delete-project",
             Self::NewRequest { .. } => "--new-request",
-            Self::ListMemories { .. } => "--list-memories",
-            Self::NewMemory { .. } => "--new-memory",
-            Self::DeleteMemory { .. } => "--delete-memory",
+            Self::AssignAgent { .. } => "--assign-agent",
             Self::ListAgents => "--list-agents",
             Self::NewAgent => "--new-agent",
             Self::DeleteAgent { .. } => "--delete-agent",
@@ -243,44 +210,8 @@ impl Cli {
                 "`--to-agent` can only be used with `--ask`.",
             ));
         }
-        let memory_action =
-            self.list_memories || self.new_memory.is_some() || self.delete_memory.is_some();
-        let scope_count = self.for_lab.is_some() as u8
-            + self.for_project.is_some() as u8
-            + self.for_agent.is_some() as u8;
-        if (self.for_lab.is_some() || self.for_project.is_some() || self.for_agent.is_some())
-            && !memory_action
-        {
-            return Err(modifier_error(
-                "`--for-lab`, `--for-project`, and `--for-agent` can only be used with a memory command.",
-            ));
-        }
-        if (self.list_memories || self.new_memory.is_some()) && scope_count != 1 {
-            return Err(modifier_error(
-                "a memory command needs exactly one of `--for-lab`, `--for-project`, or `--for-agent`.",
-            ));
-        }
-        if self.delete_memory.is_some() && scope_count != 0 {
-            return Err(modifier_error(
-                "`--delete-memory` takes only the memory identifier.",
-            ));
-        }
-        let scope = || -> MemoryScopeArg {
-            if let Some(value) = self.for_lab.clone() {
-                MemoryScopeArg::Lab(value)
-            } else if let Some(value) = self.for_project.clone() {
-                MemoryScopeArg::Project(value)
-            } else if let Some(value) = self.for_agent.clone() {
-                MemoryScopeArg::Agent(value)
-            } else {
-                unreachable!("scope_count validated above")
-            }
-        };
-
-        let deletion = self.delete_lab.is_some()
-            || self.delete_project.is_some()
-            || self.delete_agent.is_some()
-            || self.delete_memory.is_some();
+        let deletion =
+            self.delete_lab.is_some() || self.delete_project || self.delete_agent.is_some();
         if self.github_source.is_some() && self.new_project.is_none() {
             return Err(modifier_error(
                 "`--github-source` can only be used with `--new-project`.",
@@ -288,7 +219,7 @@ impl Cli {
         }
         if self.yes && !deletion {
             return Err(modifier_error(
-                "`--yes` can only be used with `--delete-lab`, `--delete-project`, `--delete-agent`, or `--delete-memory`.",
+                "`--yes` can only be used with `--delete-lab`, `--delete-project`, or `--delete-agent`.",
             ));
         }
 
@@ -314,34 +245,18 @@ impl Cli {
                 name,
                 github_source: self.github_source,
             }
-        } else if let Some(project_id) = self.show_project_kanban {
-            Action::ShowProjectKanban { project_id }
-        } else if let Some(project_id) = self.delete_project {
-            Action::DeleteProject {
-                project_id,
-                assume_yes,
+        } else if let Some(project_id) = self.open_project {
+            Action::OpenProject { project_id }
+        } else if self.show_project_kanban {
+            Action::ShowProjectKanban
+        } else if self.delete_project {
+            Action::DeleteProject { assume_yes }
+        } else if let Some(text) = self.new_request {
+            Action::NewRequest {
+                text: (!text.is_empty()).then_some(text),
             }
-        } else if let Some(values) = self.new_request {
-            let mut values = values.into_iter();
-            match values.next() {
-                Some(project_id) => Action::NewRequest {
-                    project_id,
-                    text: values.next(),
-                },
-                None => return Ok(None),
-            }
-        } else if self.list_memories {
-            Action::ListMemories { scope: scope() }
-        } else if let Some(text) = self.new_memory {
-            Action::NewMemory {
-                text,
-                scope: scope(),
-            }
-        } else if let Some(memory_id) = self.delete_memory {
-            Action::DeleteMemory {
-                memory_id,
-                assume_yes,
-            }
+        } else if let Some(agent_id) = self.assign_agent {
+            Action::AssignAgent { agent_id }
         } else if self.list_agents {
             Action::ListAgents
         } else if self.new_agent {
@@ -402,18 +317,34 @@ mod tests {
     #[test]
     fn operands_are_captured() {
         assert_eq!(
-            parse(&["--new-request", "a3f91c07", "Add reset"]),
+            parse(&["--new-request", "Add reset"]),
             Some(Action::NewRequest {
-                project_id: "a3f91c07".into(),
                 text: Some("Add reset".into()),
             })
         );
         assert_eq!(
-            parse(&["--new-request", "a3f91c07"]),
-            Some(Action::NewRequest {
-                project_id: "a3f91c07".into(),
-                text: None
+            parse(&["--new-request"]),
+            Some(Action::NewRequest { text: None })
+        );
+        assert_eq!(
+            parse(&["--open-project", "a3f91c07"]),
+            Some(Action::OpenProject {
+                project_id: "a3f91c07".into()
             })
+        );
+        assert_eq!(
+            parse(&["--assign-agent", "0b1c2d3e"]),
+            Some(Action::AssignAgent {
+                agent_id: "0b1c2d3e".into()
+            })
+        );
+        assert_eq!(
+            parse(&["--show-project-kanban"]),
+            Some(Action::ShowProjectKanban)
+        );
+        assert_eq!(
+            parse(&["--delete-project", "--yes"]),
+            Some(Action::DeleteProject { assume_yes: true })
         );
         assert_eq!(
             parse(&["--ask", "Why?", "--to-agent", "0b1c2d3e"]),
@@ -422,71 +353,6 @@ mod tests {
                 to_agent: Some("0b1c2d3e".into())
             })
         );
-    }
-
-    #[test]
-    fn memory_commands_capture_exactly_one_scope() {
-        assert_eq!(
-            parse(&["--new-memory", "Keep it small", "--for-lab", "a3f91c07"]),
-            Some(Action::NewMemory {
-                text: "Keep it small".into(),
-                scope: MemoryScopeArg::Lab("a3f91c07".into())
-            })
-        );
-        assert_eq!(
-            parse(&["--list-memories", "--for-agent", "0b1c2d3e"]),
-            Some(Action::ListMemories {
-                scope: MemoryScopeArg::Agent("0b1c2d3e".into())
-            })
-        );
-        assert_eq!(
-            parse(&["--delete-memory", "1c2d3e4f", "--yes"]),
-            Some(Action::DeleteMemory {
-                memory_id: "1c2d3e4f".into(),
-                assume_yes: true
-            })
-        );
-    }
-
-    #[test]
-    fn memory_modifiers_require_the_right_action_and_scope() {
-        for args in [
-            &["--new-memory", "x"][..],
-            &[
-                "--new-memory",
-                "x",
-                "--for-lab",
-                "a3f91c07",
-                "--for-agent",
-                "0b1c2d3e",
-            ],
-            &["--list-memories"],
-            &["--delete-memory", "1c2d3e4f", "--for-lab", "a3f91c07"],
-        ] {
-            let error = match args[0] {
-                "--new-memory" | "--list-memories" if args.len() == 1 => {
-                    // parse the action first, then the modifier validation
-                    let argv = std::iter::once("vlab").chain(args.iter().copied());
-                    Cli::try_parse_from(argv)
-                        .unwrap()
-                        .into_action()
-                        .unwrap_err()
-                }
-                _ => {
-                    let argv = std::iter::once("vlab").chain(args.iter().copied());
-                    Cli::try_parse_from(argv)
-                        .unwrap()
-                        .into_action()
-                        .unwrap_err()
-                }
-            };
-            assert!(
-                error.to_string().contains("memory") || error.to_string().contains("exactly one"),
-                "{error}"
-            );
-        }
-        let error = modifier_misuse(&["--list-labs", "--for-lab", "a3f91c07"]);
-        assert!(error.to_string().contains("memory command"), "{error}");
     }
 
     #[test]
@@ -504,6 +370,10 @@ mod tests {
                 agent_id: "a3f91c07".into(),
                 assume_yes: false
             })
+        );
+        assert_eq!(
+            parse(&["--delete-project"]),
+            Some(Action::DeleteProject { assume_yes: false })
         );
     }
 
@@ -536,7 +406,7 @@ mod tests {
 
     #[test]
     fn a_flag_after_new_request_is_parsed_as_a_second_action() {
-        let argv = ["vlab", "--new-request", "a3f91c07", "--list-labs"];
+        let argv = ["vlab", "--new-request", "Add reset", "--list-labs"];
         assert!(Cli::try_parse_from(argv).is_err());
     }
 }

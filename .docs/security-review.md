@@ -2,7 +2,9 @@
 
 Date: 2026-11-12
 Scope: WP-6 secrets, privacy, redaction, the settings-file credential change
-(ADR-0030), and the project clone boundary (ADR-0032).
+(ADR-0030), the project clone boundary (ADR-0032), current-project commands
+(ADR-0033), project rosters (ADR-0034), and automatic memories (ADR-0035,
+ADR-0036).
 
 ## Trust boundaries and controls
 
@@ -13,8 +15,11 @@ Scope: WP-6 secrets, privacy, redaction, the settings-file credential change
 | Application → git/GitHub | Token leak, command injection, unbounded clone | `git` without a shell, validated HTTPS source, `--` separator, private askpass, `GIT_TERMINAL_PROMPT=0`, credential helpers disabled, 300 s timeout, output discarded | `src/infra/workspace.rs`, `tests/cli_projects.rs` |
 | Application → DeepSeek | Credential/data leak | `credentials.deepseek_api_key` from private `settings.yaml`, used only in the Authorization header; request size cap; no CV/unrelated data; TLS validation | `tests/provider_deepseek.rs`, `tests/security_planning.rs` |
 | Model → application | Prompt injection, fabricated IDs, unsafe content | Strict schema, local membership/date rules, no tools, no execution, sanitized display | `tests/security_planning.rs`, `src/app/planning/*` |
-| Memory → prompt | Injected instructions or secrets | Scoped selection, whole-memory 8 KiB cap, delimiters, configured-secret rejection | `src/app/planning/prompt.rs`, `src/app/memories.rs` |
+| Memory → prompt | Injected instructions or secrets | Scoped selection, whole-memory 8 KiB cap, delimiters, configured-secret rejection; automatic writes are best effort and deterministic except the bounded planning summary | `src/app/planning/prompt.rs`, `src/app/memories.rs`, `src/app/requests.rs` |
 | Application → storage | Secret/prompt retention | No prompt/response columns; content-free interactions/events; schema policy test | `tests/db_schema_policy.rs`, `tests/security_secrets.rs` |
+| Current project → commands | Stale or cross-laboratory project | Typed state reloaded per command; project must resolve in the active laboratory; switching labs clears it | `src/app/context.rs`, `tests/cli_kanban.rs`, `tests/cli_projects.rs` |
+| Project roster → planning | Unauthorized or unknown agent | Membership, archive, and laboratory checks; planning filters to the roster; empty result fails closed | `src/app/projects.rs`, `src/app/requests.rs`, `tests/cli_memories.rs`, `tests/planning_flow.rs` |
+| Automatic memory → prompt | Injected or secret content | Deterministic structural text; bounded model summary; secret check; 20-per-scope and 8 KiB prompt caps | `src/app/memories.rs`, `src/app/requests.rs`, `tests/planning_flow.rs` |
 | Settings file → application | Credential disclosure or malformed config | Strict bounded parser, token validation, content-free errors, `0600`/`0700`, Unix refusal of group/other-readable files | `tests/cli_settings_show.rs`, `src/infra/config.rs` |
 | Application → logs | Payload leakage | Typed events, `Redacted`, content-free diagnostics; marker tests with `RUST_LOG=trace` | `tests/redaction.rs`, `tests/security_secrets.rs` |
 | Application → confirmation | Bypass in scripts | Bound `y/N`, explicit `--yes`, non-TTY exit 4, snapshot re-check | `src/cli/confirm.rs`, `tests/cli_confirmation.rs` |
@@ -33,6 +38,9 @@ Scope: WP-6 secrets, privacy, redaction, the settings-file credential change
   requests/responses redact content.
 - The GitHub key is stored only in the private settings file; only `set`/`unset`
   is reported.
+- Automatic planning summaries use one bounded provider call; failure or a
+  secret-containing response skips the write and never changes the request
+  outcome.
 
 ## Filesystem and data
 
@@ -72,4 +80,7 @@ real credential values; `settings.yaml` is git-ignored, and the synthetic
   must use `make clean-workspace` for an explicit reset.
 - Killing a clone can leave a temporary directory under `.workspace/`; the
   next clone removes only its own temporary directory.
+- Automatic memories can accumulate model-generated summaries. They remain
+  untrusted and within the 20-per-scope and 8 KiB prompt caps; there is no
+  manual cleanup command, so a full scope stops further automatic writes.
 - Windows permission hardening is best effort and not tested here.

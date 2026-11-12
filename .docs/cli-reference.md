@@ -26,21 +26,18 @@ Run `vlab` or `vlab --help` for the grouped help.
 | Command | Behavior |
 |---|---|
 | `--list-projects` | Projects in the active laboratory with request/story/state counts. |
-| `--new-project <name> [--github-source <url>]` | Create a project; the optional URL must be `https://github.com/<owner>/<repository>` and requires `credentials.github_api_key`. A source is cloned into `.workspace/<project-id>` before the project row is saved; a failed clone creates no project. |
-| `--show-project-kanban <project-id>` | Read-only five-column board plus counts and pending intake. |
-| `--delete-project <project-id>` | Confirm, then cascade requests/stories/memories. |
-| `--new-request <project-id> [text]` | Plan a request from literal text or piped stdin. |
+| `--new-project <name> [--github-source <url>]` | Create a project and select it; the optional URL must be `https://github.com/<owner>/<repository>` and requires `credentials.github_api_key`. A source is cloned into `.workspace/<project-id>` before the project row is saved; a failed clone creates no project. |
+| `--open-project <project-id>` | Select a project in the active laboratory as the current project. |
+| `--assign-agent <agent-id>` | Assign an active laboratory member to the current project; repeated assignment is idempotent. |
+| `--show-project-kanban` | Read-only five-column board for the current project, plus counts and pending intake. |
+| `--delete-project` | Confirm, then delete the current project and cascade requests/stories/memories/assignments. |
+| `--new-request [text]` | Plan a request for the current project from literal text or piped stdin. |
 
 ## Memories
 
-| Command | Behavior |
-|---|---|
-| `--new-memory <text> --for-lab\|--for-project\|--for-agent <id>` | Create a bounded, immutable memory. |
-| `--list-memories --for-lab\|--for-project\|--for-agent <id>` | List ID, scope, owner, preview, creation time. |
-| `--delete-memory <memory-id>` | Confirm and delete one memory. |
-
-Exactly one `--for-*` selector is required. `--for-project` requires the project
-to belong to the active laboratory. `--yes` is valid on deletions only.
+Memories have no commands. VLab writes structural memories when a laboratory,
+agent, or project is created, and a bounded model summary after a successful
+plan. Deletion follows the owning laboratory or project.
 
 ## Agents
 
@@ -54,10 +51,8 @@ to belong to the active laboratory. `--yes` is valid on deletions only.
 
 ## Modifiers
 
-- `--yes`: skip confirmation for `--delete-lab`, `--delete-project`,
-  `--delete-agent`, `--delete-memory`.
-- `--for-lab`, `--for-project`, `--for-agent`: memory scope for
-  `--new-memory`/`--list-memories`.
+- `--yes`: skip confirmation for `--delete-lab`, `--delete-project`, and
+  `--delete-agent`.
 - `--to-agent`: target for `--ask`.
 - `--github-source`: optional project GitHub URL.
 

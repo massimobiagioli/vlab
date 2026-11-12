@@ -3,7 +3,7 @@
 mod support;
 
 use sqlx::Row;
-use vlab::app::context::save_active_lab;
+use vlab::app::context::{save_active_lab, save_active_project};
 use vlab::app::directory::Directory;
 use vlab::app::projects::ProjectStore;
 use vlab::domain::agent::{AgentProfile, Description, Role};
@@ -30,6 +30,7 @@ fn seed(sandbox: &Sandbox) -> ProjectId {
         None,
     ))
     .unwrap();
+    save_active_project(&db, &project).unwrap();
     for (id, role, text) in [
         ("1c2d3e4f", Role::Lead, ""),
         ("2d3e4f50", Role::Dev, "rust"),
@@ -59,49 +60,15 @@ fn settings_with_key(sandbox: &Sandbox) {
     ));
 }
 
-fn outcomes(sandbox: &Sandbox, args: &[&str]) -> Outcome {
-    Outcome::from(
-        sandbox
-            .command()
-            .env("RUST_LOG", "trace")
-            .args(args)
-            .output()
-            .unwrap(),
-    )
-}
-
-#[test]
-fn a_secret_in_a_memory_is_rejected_and_never_stored() {
-    let sandbox = Sandbox::new();
-    seed(&sandbox);
-    settings_with_key(&sandbox);
-    let outcome = outcomes(
-        &sandbox,
-        &["--new-memory", SECRET_MARKER, "--for-lab", "a3f91c07"],
-    );
-    outcome
-        .assert_failure(4, "provider credential")
-        .assert_absent(SECRET_MARKER);
-    let db = sandbox.seed_database();
-    let count: i64 = db.block_on(async {
-        sqlx::query_scalar("SELECT count(*) FROM memories")
-            .fetch_one(db.pool())
-            .await
-            .unwrap()
-    });
-    assert_eq!(count, 0);
-}
-
 #[test]
 fn a_secret_in_a_request_is_rejected_before_the_request_row() {
     let sandbox = Sandbox::new();
-    let project = seed(&sandbox);
+    seed(&sandbox);
     settings_with_key(&sandbox);
     let outcome = Outcome::from(
         sandbox
             .command()
             .arg("--new-request")
-            .arg(project.as_str())
             .write_stdin(SECRET_MARKER)
             .output()
             .unwrap(),
@@ -122,7 +89,7 @@ fn a_secret_in_a_request_is_rejected_before_the_request_row() {
 #[test]
 fn the_marker_is_absent_from_stored_metadata_and_settings() {
     let sandbox = Sandbox::new();
-    let project = seed(&sandbox);
+    seed(&sandbox);
     settings_with_key(&sandbox);
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -144,7 +111,6 @@ fn the_marker_is_absent_from_stored_metadata_and_settings() {
             )
             .env("RUST_LOG", "trace")
             .arg("--new-request")
-            .arg(project.as_str())
             .write_stdin("A harmless request")
             .output()
             .unwrap(),
