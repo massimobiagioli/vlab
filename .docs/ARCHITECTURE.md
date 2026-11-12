@@ -50,8 +50,10 @@ The model cannot create, edit, or delete a memory.
 
 Projects may carry an optional GitHub source URL. The GitHub credential is a
 global secret stored in `settings.yaml`, separate from the DeepSeek planning
-provider, and no GitHub network operation is part of the initial release. The
-source-control provider is configured separately from the AI provider.
+provider. Creating a project with a GitHub source clones it into `.workspace/`
+through the local `git` executable; no other GitHub operation is part of the
+initial release. The source-control provider is configured separately from the
+AI provider.
 
 Prefer a deterministic workflow without a model whenever it satisfies the
 requirement.

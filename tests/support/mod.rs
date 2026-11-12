@@ -42,7 +42,31 @@ impl Sandbox {
     pub fn new() -> Self {
         let root = tempfile::tempdir().expect("create sandbox root");
         fs::create_dir(root.path().join("home")).expect("create sandbox home");
+        let bin = root.path().join("bin");
+        fs::create_dir(&bin).expect("create sandbox bin");
+        let git = bin.join("git");
+        fs::write(
+            &git,
+            "#!/bin/sh\n             root=$(CDPATH= cd -- \"$(dirname -- \"$0\")/..\" && pwd)\n             { printf '%s\\n' \"$@\"; \n               if [ -n \"${VLAB_GIT_TOKEN:-}\" ]; then printf '%s\\n' 'token=set'; \n               else printf '%s\\n' 'token=unset'; fi; } >> \"$root/git.log\"\n             if [ -f \"$root/git.fail\" ]; then exit 1; fi\n             dest=\n             for arg in \"$@\"; do dest=$arg; done\n             mkdir -p \"$dest/.git\"\n",
+        )
+        .expect("write fake git");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&git, fs::Permissions::from_mode(0o755))
+                .expect("make fake git executable");
+        }
         Self { root }
+    }
+
+    /// Arguments recorded by the fake `git` executable.
+    pub fn git_log(&self) -> String {
+        fs::read_to_string(self.root().join("git.log")).unwrap_or_default()
+    }
+
+    /// Makes the next fake `git` invocation fail.
+    pub fn fail_git(&self) {
+        fs::write(self.root().join("git.fail"), b"").expect("write git failure marker");
     }
 
     pub fn root(&self) -> &Path {
@@ -131,8 +155,11 @@ impl Sandbox {
             .env("HOME", self.home())
             .env("VLAB_CONFIG_DIR", self.config_dir())
             .env("VLAB_DATA_DIR", self.data_dir())
+            .env(
+                "PATH",
+                format!("{}:/usr/bin:/bin", self.root().join("bin").display()),
+            )
             // Child processes such as the test editor need basic tools.
-            .env("PATH", "/usr/bin:/bin")
             .current_dir(self.home());
         command
     }
@@ -143,15 +170,17 @@ impl Sandbox {
 
     /// True when the binary created nothing: only the empty `home` exists.
     pub fn is_untouched(&self) -> bool {
-        let entries: Vec<_> = fs::read_dir(self.root())
+        let mut entries: Vec<_> = fs::read_dir(self.root())
             .expect("read sandbox root")
             .map(|entry| entry.expect("read entry").file_name())
             .collect();
+        entries.sort();
         let home_is_empty = fs::read_dir(self.home())
             .expect("read sandbox home")
             .next()
             .is_none();
-        entries == ["home"] && home_is_empty
+        // `bin` is harness infrastructure, not something vlab created.
+        entries == ["bin", "home"] && home_is_empty
     }
 }
 

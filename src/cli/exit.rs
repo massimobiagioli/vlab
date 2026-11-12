@@ -22,6 +22,7 @@ pub fn exit_code(error: &AppError) -> u8 {
         AppError::Interrupted => INTERRUPTED,
         AppError::Provider(_)
         | AppError::Storage { .. }
+        | AppError::Workspace { .. }
         | AppError::Io { .. }
         | AppError::Internal => FAILURE,
     }
@@ -106,6 +107,13 @@ mod tests {
             (AppError::Provider(ProviderFailure::Configuration), 1),
             (
                 AppError::Storage {
+                    problem: text("p"),
+                    hint: text("h"),
+                },
+                1,
+            ),
+            (
+                AppError::Workspace {
                     problem: text("p"),
                     hint: text("h"),
                 },

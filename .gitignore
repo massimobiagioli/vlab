@@ -1,10 +1,11 @@
 # Build output
 /target/
 
-# Local databases and secrets. The settings example stays tracked so a fresh
-# clone can copy it to settings.yaml.
+# Local databases, checkouts, and secrets. The settings example stays tracked so
+# a fresh clone can copy it to settings.yaml.
 /.data/*
 !/.data/settings.example.yaml
+/.workspace/
 *.db
 *.db-wal
 *.db-shm

@@ -26,3 +26,5 @@ pub mod settings_edit;
 pub mod storage;
 
 pub use errors::{AppError, EntityKind, ProviderFailure};
+
+pub mod workspace;

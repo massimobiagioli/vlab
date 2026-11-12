@@ -13,8 +13,9 @@ English.
 ## 1. Project
 
 VLab is a local, text-only Rust command-line application. It uses SQLite for
-local persistence and a single outbound AI provider integration. It does not
-run an HTTP server, expose a network API, or execute model-generated code.
+local persistence, a single outbound AI provider integration, and a clone-only
+GitHub operation for project checkouts. It does not run an HTTP server, expose a
+network API, or execute model-generated code.
 
 The tracked documentation defines engineering rules, architecture, security,
 technology constraints, and validation expectations. Product behavior must be
@@ -81,6 +82,7 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0029.md`](.docs/adr/adr-0029.md) | Activate hosted CI before the release tag. |
 | [`.docs/adr/adr-0030.md`](.docs/adr/adr-0030.md) | Credentials in the private settings file. |
 | [`.docs/adr/adr-0031.md`](.docs/adr/adr-0031.md) | Repository-local data for debug builds. |
+| [`.docs/adr/adr-0032.md`](.docs/adr/adr-0032.md) | Clone GitHub projects into `.workspace`. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
 
 ### Precedence
@@ -258,6 +260,9 @@ src/                            cli, app, domain, infra, obs (ADR-0001)
 tests/                          integration tests; tests/support/ shared harness
 .github/                        active CI and Dependabot (ADR-0029)
 ```
+
+Project checkouts live in the ignored `.workspace/` directory (ADR-0032);
+they are not tracked and are not part of the database.
 
 Project documentation, including documents the implementation plan places
 under `docs/`, lives in `.docs/`. Migrations follow the structure defined by

@@ -51,6 +51,10 @@ pub enum AppError {
     #[error("{problem}")]
     Storage { problem: String, hint: String },
 
+    /// A project checkout operation failed.
+    #[error("{problem}")]
+    Workspace { problem: String, hint: String },
+
     /// A local I/O operation failed. Only the error kind is kept, never the
     /// underlying message, which may embed paths or data.
     #[error("{context} failed: {kind}.")]
@@ -76,7 +80,8 @@ impl AppError {
             Self::Configuration { hint, .. }
             | Self::Validation { hint, .. }
             | Self::Precondition { hint, .. }
-            | Self::Storage { hint, .. } => hint.clone(),
+            | Self::Storage { hint, .. }
+            | Self::Workspace { hint, .. } => hint.clone(),
             Self::NotFound { entity, .. } => entity.listing_hint().to_owned(),
             Self::NoActiveLab => {
                 "Run `vlab --list-labs`, then `vlab --open-lab <lab-id>`.".to_owned()
@@ -111,6 +116,7 @@ impl AppError {
             Self::Cancelled => "cancelled",
             Self::Provider(failure) => failure.code(),
             Self::Storage { .. } => "storage",
+            Self::Workspace { .. } => "workspace",
             Self::Io { .. } => "io",
             Self::Interrupted => "interrupted",
             Self::Internal => "internal",

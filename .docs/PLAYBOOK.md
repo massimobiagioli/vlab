@@ -99,13 +99,16 @@ Exit 0 means it is ready. Exit 4 prints one line per failed rule.
 vlab --new-project "Customer Portal"
 ```
 
-With a GitHub repository (requires `credentials.github_api_key`):
+With a GitHub repository (requires `credentials.github_api_key`), VLab clones
+it into `.workspace/<project-id>` before saving the project:
 
 ```sh
 vlab --new-project "Customer Portal" --github-source https://github.com/acme/portal
 ```
 
-List projects and open the read-only board:
+If the clone fails, no project is created. The token is passed through a
+private askpass helper, never in the URL or arguments. List projects and open
+the read-only board:
 
 ```sh
 vlab --list-projects
@@ -182,9 +185,11 @@ contains `settings.yaml` once you create it, and that file holds your keys;
 
 ```sh
 make clean-data
+make clean-workspace
 ```
 
-There is no backup command; stop VLab before copying the database. SQLite is
+`make clean-workspace` deletes cloned checkouts; project deletion does not
+remove them automatically yet. There is no backup command; stop VLab before copying the database. SQLite is
 not encrypted at rest; use OS disk encryption for sensitive data. Protect
 backups of `settings.yaml` as secrets.
 

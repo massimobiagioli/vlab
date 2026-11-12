@@ -1,8 +1,8 @@
 # Security Review
 
 Date: 2026-11-12
-Scope: WP-6 secrets, privacy, redaction, and the settings-file credential change
-(ADR-0030).
+Scope: WP-6 secrets, privacy, redaction, the settings-file credential change
+(ADR-0030), and the project clone boundary (ADR-0032).
 
 ## Trust boundaries and controls
 
@@ -10,6 +10,7 @@ Scope: WP-6 secrets, privacy, redaction, and the settings-file credential change
 |---|---|---|---|
 | Executable layout → paths | Debug build selecting attacker-controlled data | Fallback derived from the executable path, never the working directory; explicit overrides win; release builds unaffected | `src/infra/paths.rs`, `tests/paths.rs` |
 | Caller → CLI | Oversized/invalid input, control characters | UTF-8 and size caps before use; structured command validation; rendering sanitization | `tests/cli_new_request.rs`, `tests/cli_contract.rs`, `src/cli/render.rs` |
+| Application → git/GitHub | Token leak, command injection, unbounded clone | `git` without a shell, validated HTTPS source, `--` separator, private askpass, `GIT_TERMINAL_PROMPT=0`, credential helpers disabled, 300 s timeout, output discarded | `src/infra/workspace.rs`, `tests/cli_projects.rs` |
 | Application → DeepSeek | Credential/data leak | `credentials.deepseek_api_key` from private `settings.yaml`, used only in the Authorization header; request size cap; no CV/unrelated data; TLS validation | `tests/provider_deepseek.rs`, `tests/security_planning.rs` |
 | Model → application | Prompt injection, fabricated IDs, unsafe content | Strict schema, local membership/date rules, no tools, no execution, sanitized display | `tests/security_planning.rs`, `src/app/planning/*` |
 | Memory → prompt | Injected instructions or secrets | Scoped selection, whole-memory 8 KiB cap, delimiters, configured-secret rejection | `src/app/planning/prompt.rs`, `src/app/memories.rs` |
@@ -66,4 +67,9 @@ real credential values; `settings.yaml` is git-ignored, and the synthetic
   operating-system keyring is deferred.
 - A debug build selects `.data` next to its `target/debug` directory. Debug
   binaries must not be distributed as release artifacts.
+- A clone writes a full checkout under `.workspace/`. The checkout is not
+  encrypted or backed up, and project deletion does not remove it yet; users
+  must use `make clean-workspace` for an explicit reset.
+- Killing a clone can leave a temporary directory under `.workspace/`; the
+  next clone removes only its own temporary directory.
 - Windows permission hardening is best effort and not tested here.

@@ -43,6 +43,7 @@ own prints the list.
 | `make snapshot` | Regenerate `tests/snapshots/help.txt` after an intended help change. |
 | `make clean` | Remove build output. |
 | `make clean-data` | Delete the development data in `.data/`, keeping the example settings. |
+| `make clean-workspace` | Delete cloned project checkouts in `.workspace/`. |
 
 Examples:
 
@@ -73,6 +74,7 @@ VLab never writes to the current working directory by default.
 | Settings | `<per-user config dir>/vlab/settings.yaml` | `VLAB_CONFIG_DIR` |
 | Data | `<per-user data dir>/vlab/` | `VLAB_DATA_DIR` |
 | Database | `<per-user data dir>/vlab/vlab.db`, or `$VLAB_DATA_DIR/vlab.db` when that override is set | `VLAB_DB_PATH` |
+| Project checkouts | `<repo>/.workspace/` for the repository debug layout, otherwise `<data dir>/workspace/` | — |
 
 The per-user directories are `~/Library/Application Support` on macOS and
 `$XDG_CONFIG_HOME` (default `~/.config`) and `$XDG_DATA_HOME` (default
@@ -129,8 +131,11 @@ vlab --show-project-kanban <project-id>
 `--github-source` accepts only canonical `https://github.com/<owner>/<repository>`
 URLs. The GitHub key is global (`credentials.github_api_key` in
 `settings.yaml`) and is never stored in the project, database, logs, or output.
-No GitHub network call is performed in this release; the source is
-configuration metadata for a future operation.
+Creating a GitHub-backed project clones the repository into
+`.workspace/<project-id>` before the project row is committed; the token is
+passed to `git` through a private short-lived askpass helper, never in the URL
+or arguments. If the clone fails, no project is created. `.workspace/` is
+ignored by git and can be reset with `make clean-workspace`.
 
 The board is read-only: it shows the five states, cards, assignee or
 `Unassigned`, priority, due date, story counts, completed count, and pending

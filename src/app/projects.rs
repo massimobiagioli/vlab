@@ -3,9 +3,12 @@
 use crate::app::AppError;
 use crate::app::directory::Directory;
 use crate::app::storage::AppStateStore;
+use crate::app::workspace::{ProjectWorkspace, WorkspaceError};
 use crate::domain::ids::{LabId, ProjectId, UniqueIdError, unique_short_id};
 use crate::domain::name::Name;
 use crate::domain::project::Project;
+
+use std::path::PathBuf;
 
 /// One project row with its planning counts.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,13 +47,24 @@ pub trait ProjectStore {
     ) -> Result<Option<ProjectOverview>, crate::app::storage::StorageError>;
 }
 
+/// A created project and its optional checkout.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreatedProject {
+    pub project: Project,
+    pub workspace: Option<PathBuf>,
+}
+
 /// `--new-project`: requires an active laboratory and a valid name.
+///
+/// A GitHub-backed project is cloned before the database insert; a failed
+/// clone creates no project row (ADR-0032).
 pub fn create(
     store: &(impl ProjectStore + Directory),
     state: &impl AppStateStore,
     raw_name: &str,
     github_source: Option<crate::domain::project::GithubSource>,
-) -> Result<Project, AppError> {
+    workspace: &impl ProjectWorkspace,
+) -> Result<CreatedProject, AppError> {
     let lab_id = crate::app::context::active_lab(state)?.require()?;
     let name = crate::app::labs::validated_name(raw_name)?;
     let generated = unique_short_id(|candidate| match ProjectId::parse(candidate) {
@@ -60,8 +74,24 @@ pub fn create(
     .map_err(map_unique)?;
     let id = ProjectId::parse(&generated).ok_or(AppError::Internal)?;
     let project = Project::new(id, lab_id, name, github_source);
-    store.insert_project(&project)?;
-    Ok(project)
+    let checkout = match &project.github_source {
+        Some(source) => Some(
+            workspace
+                .clone_project(source, &project.id)
+                .map_err(WorkspaceError::into_app_error)?,
+        ),
+        None => None,
+    };
+    if let Err(error) = store.insert_project(&project) {
+        if let Some(path) = &checkout {
+            workspace.remove_project(path);
+        }
+        return Err(error.into());
+    }
+    Ok(CreatedProject {
+        project,
+        workspace: checkout,
+    })
 }
 
 /// `--list-projects`.
@@ -103,6 +133,8 @@ mod tests {
     use crate::domain::agent::AgentProfile;
     use crate::domain::ids::{AgentId, LabId};
     use crate::domain::lab::Lab;
+    use crate::domain::project::GithubSource;
+    use std::path::Path;
 
     #[derive(Default)]
     struct Store {
@@ -223,14 +255,42 @@ mod tests {
         state
     }
 
+    #[derive(Default)]
+    struct Workspace {
+        cloned: RefCell<Vec<(String, String)>>,
+        removed: RefCell<Vec<PathBuf>>,
+        error: Option<WorkspaceError>,
+    }
+
+    impl ProjectWorkspace for Workspace {
+        fn clone_project(
+            &self,
+            source: &GithubSource,
+            id: &ProjectId,
+        ) -> Result<PathBuf, WorkspaceError> {
+            if let Some(error) = self.error {
+                return Err(error);
+            }
+            self.cloned
+                .borrow_mut()
+                .push((source.as_str().to_owned(), id.as_str().to_owned()));
+            Ok(PathBuf::from(format!("/ws/{}", id.as_str())))
+        }
+
+        fn remove_project(&self, path: &Path) {
+            self.removed.borrow_mut().push(path.to_path_buf());
+        }
+    }
+
     #[test]
     fn creating_a_project_requires_an_active_laboratory_and_valid_name() {
         let store = Store::default();
-        let error = create(&store, &State::default(), "Portal", None).unwrap_err();
+        let workspace = Workspace::default();
+        let error = create(&store, &State::default(), "Portal", None, &workspace).unwrap_err();
         assert!(matches!(error, AppError::NoActiveLab), "{error:?}");
         assert_eq!(*store.inserts.borrow(), 0);
 
-        let error = create(&store, &active(), "   ", None).unwrap_err();
+        let error = create(&store, &active(), "   ", None, &workspace).unwrap_err();
         assert!(matches!(error, AppError::Usage { .. }), "{error:?}");
         assert_eq!(*store.inserts.borrow(), 0);
     }
@@ -239,11 +299,51 @@ mod tests {
     fn creating_and_listing_projects_is_scoped_to_the_active_laboratory() {
         let store = Store::default();
         let state = active();
-        let project = create(&store, &state, "Customer Portal", None).unwrap();
-        assert_eq!(project.lab_id.as_str(), "a3f91c07");
+        let workspace = Workspace::default();
+        let created = create(&store, &state, "Customer Portal", None, &workspace).unwrap();
+        assert_eq!(created.project.lab_id.as_str(), "a3f91c07");
+        assert!(created.workspace.is_none());
+        assert!(workspace.cloned.borrow().is_empty());
         let listed = list(&store, &state).unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].name, "Customer Portal");
+    }
+
+    #[test]
+    fn a_github_source_is_cloned_before_the_project_row() {
+        let store = Store::default();
+        let state = active();
+        let workspace = Workspace::default();
+        let source = GithubSource::parse("https://github.com/acme/portal").unwrap();
+        let created = create(&store, &state, "Customer Portal", Some(source), &workspace).unwrap();
+        assert_eq!(
+            created.workspace,
+            Some(PathBuf::from(format!(
+                "/ws/{}",
+                created.project.id.as_str()
+            )))
+        );
+        assert_eq!(workspace.cloned.borrow().len(), 1);
+        assert_eq!(
+            workspace.cloned.borrow()[0].0,
+            "https://github.com/acme/portal"
+        );
+        assert_eq!(*store.inserts.borrow(), 1);
+    }
+
+    #[test]
+    fn a_clone_failure_creates_no_project_row() {
+        let store = Store::default();
+        let state = active();
+        let workspace = Workspace {
+            error: Some(WorkspaceError::Failed),
+            ..Workspace::default()
+        };
+        let source = GithubSource::parse("https://github.com/acme/portal").unwrap();
+        let error =
+            create(&store, &state, "Customer Portal", Some(source), &workspace).unwrap_err();
+        assert!(matches!(error, AppError::Workspace { .. }), "{error:?}");
+        assert_eq!(*store.inserts.borrow(), 0);
     }
 
     #[test]

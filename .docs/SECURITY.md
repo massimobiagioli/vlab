@@ -70,7 +70,7 @@ Prompts are behavioral guidance, not security boundaries.
 |---|---|
 | Caller → application | Validate inputs and establish caller identity and scope where applicable. |
 | Application → model provider | Minimize transmitted data and apply provider-specific privacy requirements. |
-| Application → GitHub (future) | Validate the project source; use the global credential only for the specific approved operation; no call is made in the initial release. |
+| Application → GitHub | Validate the project source; clone only the validated repository; pass the global credential through a short-lived askpass helper and child environment; bound time; discard output; no token in arguments or logs. |
 | Model → orchestrator | Validate responses; never interpret proposals as authorization. |
 | Tool output → orchestrator | Treat content as data, not instructions or policy. |
 | Memory content → orchestrator | Validate scope, encoding, and size; include only within the memory budget; delimit as data; never let it change policy, permissions, or assignment rules. |
@@ -184,6 +184,7 @@ case. Model-generated URLs are never implicitly trusted.
 - Prefer short-lived, narrowly scoped credentials.
 - Keep credentials out of prompts, tool results, errors, logs, database rows, and every file other than `settings.yaml`. The GitHub key comes only from `credentials.github_api_key`.
 - Validate the project GitHub source as a canonical HTTPS GitHub URL; it is metadata, not a credential.
+- For the clone, disable credential helpers, set `GIT_TERMINAL_PROMPT=0`, use a private short-lived `GIT_ASKPASS`, and never put the token in a URL or process argument.
 - Do not assume that the model can reliably redact secrets.
 - Send only necessary data to model providers.
 - Confirm provider retention and processing requirements before transmitting
@@ -251,7 +252,7 @@ Use deterministic model and tool substitutes for repeatable tests.
 Required scenarios include:
 
 - Prompt injection in tool output or memory content cannot grant permissions.
-- A missing or invalid GitHub credential blocks GitHub-backed project creation without creating a project row; the key never appears in output, events, or the database.
+- A missing or invalid GitHub credential blocks GitHub-backed project creation without creating a project row or checkout; the key never appears in arguments, output, events, or the database.
 - An invalid or non-GitHub source URL is rejected before persistence.
 - Unknown tools and malformed arguments are rejected before execution.
 - Denied actions never reach the tool implementation.

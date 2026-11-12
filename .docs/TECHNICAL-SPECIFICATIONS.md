@@ -63,8 +63,9 @@ A project belongs to exactly one laboratory and may reference one GitHub
 repository through an optional **GitHub source**. The source is a canonical
 `https://github.com/<owner>/<repository>` URL. The GitHub credential is global
 (`credentials.github_api_key` in `settings.yaml`) and is never stored in the
-project or the database. In the initial release the source is configuration
-metadata only; no GitHub network operation is performed.
+project or the database. When a project is created with a source, VLab clones
+the repository into `.workspace/<project-id>` and keeps no local path in the
+database. The workspace is outside version control.
 
 Project commands operate within the active laboratory. An identifier belonging to another laboratory shall produce an error rather than silently switching context.
 
@@ -556,9 +557,11 @@ The command shall:
 - Reject an empty name.
 - Accept an optional GitHub source in canonical `https://github.com/<owner>/<repository>` form and reject any other host or shape.
 - When a GitHub source is supplied, require a valid `source_control.provider: github` configuration and a present `credentials.github_api_key`; the key is read only from `settings.yaml` and is never stored in the project database or displayed.
-- Persist the project and source atomically.
-- Return its identifier.
-- Make no GitHub network call in the initial release.
+- Clone the repository into `.workspace/<project-id>` before persisting the project; a failed clone shall create no project row and leave no checkout.
+- Use the GitHub credential only through a short-lived askpass helper; never place it in a URL, argument, log, error, or output.
+- Bound the clone with a timeout and discard raw git output.
+- Persist the project and source atomically, and remove the checkout if persistence fails.
+- Return its identifier and the checkout path.
 
 A project may be created in an incomplete laboratory, but requests cannot be processed until laboratory validation succeeds.
 
@@ -765,7 +768,7 @@ Schema changes shall use versioned migrations.
 
 Timestamps shall use UTC.
 
-Original requests, memories, and validated planning results shall be retained as project data. Project GitHub sources are retained as project metadata; GitHub credentials are never stored.
+Original requests, memories, and validated planning results shall be retained as project data. Project GitHub sources are retained as project metadata; GitHub credentials are never stored. Cloned repositories under `.workspace/` are disposable local files, outside version control and outside the database; no local path is persisted.
 
 Full chat transcripts shall not be retained by default. Diagnostic logs shall omit request and response bodies.
 
@@ -809,7 +812,7 @@ It shall:
 - Treat memory content as untrusted data: validate its scope, encoding, and size, delimit it in prompts, and never let it change permissions, roles, limits, or assignment rules.
 - Never log or render memory content without sanitization, and never store credentials in it.
 - Treat the GitHub source as a validated URL and `credentials.github_api_key` as a credential: never log, persist in the database, or display the key.
-- Perform no GitHub network call until a concrete operation, permission scope, and failure policy are specified.
+- For the project clone, use the validated canonical URL, the global credential through a short-lived askpass helper, a bounded timeout, no shell, and no token in arguments or output. No other GitHub operation is permitted.
 - Include only the scoped memories selected by §3.5, within the configured memory budget.
 - Avoid sending unrelated project data to providers.
 - Redact credentials from logs and errors.

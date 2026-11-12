@@ -14,7 +14,7 @@ use crate::app::kanban::{self, Board, StoryState};
 use crate::app::lab_validation::{LabCheck, RuleResult};
 use crate::app::labs::{self, LabListItem, OpenSummary};
 use crate::app::memories::{self, MemoryRecord};
-use crate::app::projects::{self, ProjectOverview, ProjectStore};
+use crate::app::projects::{self, CreatedProject, ProjectOverview, ProjectStore};
 use crate::app::requests::{self, PlanningOutcome};
 use crate::app::settings::SettingsReport;
 use crate::app::{AppError, settings, settings_edit};
@@ -33,6 +33,7 @@ use crate::infra::config::SettingsFile;
 use crate::infra::db::Database;
 use crate::infra::paths::Paths;
 use crate::infra::provider::deepseek::{AdapterLimits, DEFAULT_ENDPOINT, DeepSeekProvider};
+use crate::infra::workspace::{DEFAULT_CLONE_TIMEOUT, GitWorkspace};
 use crate::obs::events::{AuditEvent, EntityRef, EntityType, EventKind, EventSink, Outcome};
 use crate::obs::{ActionId, RunId};
 
@@ -147,7 +148,7 @@ pub fn dispatch(
         } => {
             projects::validated_name(&name)?;
             let github_source = match github_source {
-                None => None,
+                None => (None, None),
                 Some(raw) => {
                     let source =
                         crate::domain::project::GithubSource::parse(&raw).map_err(|error| {
@@ -173,19 +174,26 @@ pub fn dispatch(
                                 .to_owned(),
                         });
                     }
-                    Some(source)
+                    let token = settings.credentials.github_api_key.clone();
+                    (Some(source), token)
                 }
             };
+            let paths = Paths::from_environment()?;
+            let workspace = GitWorkspace::new(
+                paths.workspace_dir(),
+                github_source.1,
+                DEFAULT_CLONE_TIMEOUT,
+            );
             let mut db = open_database(run_id)?;
-            let project = projects::create(&db, &db, &name, github_source)?;
+            let created = projects::create(&db, &db, &name, github_source.0, &workspace)?;
             record_event(
                 &mut db,
                 run_id,
                 EventKind::ProjectCreated,
                 EntityType::Project,
-                project.id.as_str(),
+                created.project.id.as_str(),
             );
-            write_stdout(stdout, &render_created_project(&project))
+            write_stdout(stdout, &render_created_project(&created))
         }
         Action::ShowProjectKanban { project_id } => {
             projects::parse_project_id(&project_id)?;
@@ -843,15 +851,21 @@ fn render_projects(projects: &[ProjectOverview]) -> String {
     render_table(terminal_width(), &columns, &rows)
 }
 
-fn render_created_project(project: &crate::domain::project::Project) -> String {
+fn render_created_project(created: &CreatedProject) -> String {
+    let project = &created.project;
     format!(
-        "Project created.\nID:   {}\nName: {}\n{}\n",
+        "Project created.\nID:   {}\nName: {}\n{}{}\n",
         project.id,
         sanitize(project.name.as_str()),
         project
             .github_source
             .as_ref()
             .map(|source| format!("GitHub: {source}\n"))
+            .unwrap_or_default(),
+        created
+            .workspace
+            .as_ref()
+            .map(|path| format!("Workspace: {}\n", sanitize(&path.display().to_string())))
             .unwrap_or_default()
     )
 }

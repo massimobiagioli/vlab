@@ -175,6 +175,21 @@ impl Paths {
     pub fn database_file(&self) -> &Path {
         &self.database_file
     }
+
+    /// Project checkouts root (ADR-0032).
+    ///
+    /// The repository-local development layout uses `<repo>/.workspace`,
+    /// next to `.data`; other layouts keep it under the data directory.
+    pub fn workspace_dir(&self) -> PathBuf {
+        if self.data_dir.file_name() == Some(std::ffi::OsStr::new(".data")) {
+            self.data_dir
+                .parent()
+                .unwrap_or(&self.data_dir)
+                .join(".workspace")
+        } else {
+            self.data_dir.join("workspace")
+        }
+    }
 }
 
 /// The repository `.data` directory for a Cargo debug executable.

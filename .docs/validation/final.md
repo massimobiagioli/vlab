@@ -56,7 +56,7 @@ are not averaged into a score.
 | 21 | Scoped memories create/list/delete and cascade | `tests/cli_memories.rs`, `tests/db_memories.rs` | pass |
 | 22 | Memory content bounded/untrusted/not executed | `tests/security_planning.rs`, memory tests | pass |
 | 23 | Planning/questions use scoped memories within cap | prompt and ask tests | pass |
-| 24 | Optional GitHub source with global key, no network | `tests/cli_projects.rs`, migration test | pass |
+| 24 | Optional GitHub source with global key, clone-only network operation | `tests/cli_projects.rs`, `src/infra/workspace.rs`, migration test | pass |
 
 ## Adapted VALIDATION.md scenarios
 

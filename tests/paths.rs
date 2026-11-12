@@ -38,6 +38,19 @@ fn defaults_are_per_user_platform_directories() {
 }
 
 #[test]
+fn workspace_is_next_to_dot_data_or_under_the_data_directory() {
+    let paths = Paths::resolve(env(&[]), platform()).unwrap();
+    assert_eq!(
+        paths.workspace_dir(),
+        Path::new("/base/data/vlab/workspace")
+    );
+
+    let lookup = env(&[("VLAB_DATA_DIR", "/repo/.data")]);
+    let paths = Paths::resolve(lookup, platform()).unwrap();
+    assert_eq!(paths.workspace_dir(), Path::new("/repo/.workspace"));
+}
+
+#[test]
 fn overrides_are_honored() {
     let lookup = env(&[
         ("VLAB_CONFIG_DIR", "/o/config"),

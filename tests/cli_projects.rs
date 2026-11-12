@@ -129,6 +129,21 @@ fn a_github_backed_project_stores_the_canonical_source() {
             .stdout
             .contains("GitHub: https://github.com/acme/portal")
     );
+    let id = outcome
+        .stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("ID:   "))
+        .expect("id line")
+        .trim();
+    let workspace = sandbox.data_dir().join("workspace").join(id);
+    assert!(workspace.join(".git").is_dir(), "workspace was not cloned");
+    assert!(
+        outcome
+            .stdout
+            .contains(&format!("Workspace: {}", workspace.display()))
+    );
+    assert!(!sandbox.git_log().contains(support::SECRET_MARKER));
+    assert!(sandbox.git_log().contains("token=set"));
     let listed = sandbox.run(&["--list-projects"]);
     listed.assert_success();
     assert!(listed.stdout.contains("https://github.com/acme/portal"));
@@ -138,6 +153,35 @@ fn a_github_backed_project_stores_the_canonical_source() {
         project[0].github_source.as_deref(),
         Some("https://github.com/acme/portal")
     );
+}
+
+#[test]
+fn a_failed_clone_creates_no_project_row_or_checkout() {
+    let sandbox = Sandbox::new();
+    let lab = seed_lab(&sandbox, "a3f91c07", "Payments");
+    activate(&sandbox, &lab);
+    sandbox.write_settings(&format!(
+        "provider: deepseek\nmodel: deepseek-chat\ncredentials:\n  github_api_key: \"{}\"\n",
+        support::SECRET_MARKER
+    ));
+    sandbox.fail_git();
+    let outcome = sandbox.run(&[
+        "--new-project",
+        "Portal",
+        "--github-source",
+        "https://github.com/acme/portal",
+    ]);
+    outcome
+        .assert_failure(1, "could not be cloned")
+        .assert_absent(support::SECRET_MARKER);
+    let db = sandbox.seed_database();
+    assert!(db.projects(&lab).unwrap().is_empty());
+    let workspace = sandbox.data_dir().join("workspace");
+    assert!(
+        !workspace.exists() || std::fs::read_dir(&workspace).unwrap().next().is_none(),
+        "clone failure left a checkout"
+    );
+    assert!(!sandbox.git_log().contains(support::SECRET_MARKER));
 }
 
 #[test]

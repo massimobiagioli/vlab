@@ -41,6 +41,20 @@ logs. Its directory is mode `0700` and the file mode `0600`. The tracked
 Errors from the strict parser repeat only the offending field name, never its
 value.
 
+### Project checkouts (`.workspace/`)
+
+A project created with `--github-source` is cloned to
+`.workspace/<project-id>`. The checkout contains the repository's source code
+and git metadata, is outside version control, and is not part of the database
+or the settings file. It is retained until the user removes it; project
+deletion does not remove it automatically in the initial release, so use
+`make clean-workspace` for an explicit reset. VLab does not back it up or
+encrypt it; use disk encryption for sensitive repositories.
+
+The GitHub token used for the clone is passed through a short-lived private
+askpass helper and the child process environment. It is never part of the
+checkout or its git config.
+
 ### SQLite database (`vlab.db`)
 
 Stored in the per-user application-data directory with mode `0600`; the parent

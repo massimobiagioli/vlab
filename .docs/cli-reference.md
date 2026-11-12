@@ -26,7 +26,7 @@ Run `vlab` or `vlab --help` for the grouped help.
 | Command | Behavior |
 |---|---|
 | `--list-projects` | Projects in the active laboratory with request/story/state counts. |
-| `--new-project <name> [--github-source <url>]` | Create a project; the optional URL must be `https://github.com/<owner>/<repository>` and requires `credentials.github_api_key` in `settings.yaml`. |
+| `--new-project <name> [--github-source <url>]` | Create a project; the optional URL must be `https://github.com/<owner>/<repository>` and requires `credentials.github_api_key`. A source is cloned into `.workspace/<project-id>` before the project row is saved; a failed clone creates no project. |
 | `--show-project-kanban <project-id>` | Read-only five-column board plus counts and pending intake. |
 | `--delete-project <project-id>` | Confirm, then cascade requests/stories/memories. |
 | `--new-request <project-id> [text]` | Plan a request from literal text or piped stdin. |

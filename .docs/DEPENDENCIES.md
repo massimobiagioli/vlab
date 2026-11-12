@@ -16,6 +16,7 @@ a point in time, not proof of absence of vulnerabilities.
 | Item | Version | Verified | Evidence |
 |---|---|---|---|
 | Rust | 1.99.1, edition 2024 | 2026-11-12 | `rustup check` reports 1.99.1 as the current stable release. Pinned in `rust-toolchain.toml`. |
+| Git | 2.54.0 verified locally; requires a maintained version on `PATH` | 2026-11-12 | Used only for project clones (ADR-0032). Hosted Ubuntu and macOS runners include git. Tests use a fake executable or a local `file://` repository. |
 | SQLite engine | 3.54.1, bundled | 2026-11-12 | `libsqlite3-sys` 0.39.1 bundles SQLite 3.54.1 (`SQLITE_VERSION` in the vendored `sqlite3.h`). The bundled engine is what the build runs, so no system SQLite affects behavior. `sqlx-sqlite` 0.9.0 is vendored with its upper bound widened so this fixed release can be selected (ADR-0017). |
 
 ## Runtime dependencies

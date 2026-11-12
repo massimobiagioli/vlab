@@ -56,6 +56,7 @@ development data directory. Create the private file with
 |---|---|---|
 | Settings | per-user config dir + `vlab/settings.yaml` | `VLAB_CONFIG_DIR` |
 | Database | per-user data dir + `vlab/vlab.db` | `VLAB_DATA_DIR`, `VLAB_DB_PATH` |
+| Project checkouts | `<repo>/.workspace/` for the debug layout, otherwise `<data dir>/workspace/` | — |
 
 A debug build run from `<repo>/target/debug/vlab` uses `<repo>/.data` for both
 settings and database when that directory exists and no override is set

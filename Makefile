@@ -17,13 +17,14 @@ CARGO_AUDIT_VERSION := 0.23.0
 CARGO_DENY_VERSION := 0.20.2
 
 DATA_DIR := $(CURDIR)/.data
+WORKSPACE_DIR := $(CURDIR)/.workspace
 DEV_ENV := VLAB_CONFIG_DIR="$(DATA_DIR)" VLAB_DATA_DIR="$(DATA_DIR)"
 
 # Arguments for `make run`, for example: make run ARGS="--list-labs"
 ARGS ?= --help
 
 .PHONY: help build-debug build-release run test lint fmt fmt-check clippy \
-	audit deny check tools snapshot clean clean-data
+	audit deny check tools snapshot clean clean-data clean-workspace
 
 help: ## Show this help
 	@echo "Usage: make <target> [ARGS=\"<vlab arguments>\"]"
@@ -74,3 +75,6 @@ clean: ## Remove build output
 
 clean-data: ## Delete the development data in .data/, keeping the example
 	@find "$(DATA_DIR)" -mindepth 1 ! -name settings.example.yaml -exec rm -rf {} + 2>/dev/null || true
+
+clean-workspace: ## Delete cloned project checkouts in .workspace/
+	rm -rf "$(WORKSPACE_DIR)"

@@ -43,9 +43,9 @@ timestamp. Membership cascades when either owner is removed.
 
 A unit of work inside exactly one laboratory. It has a name and an **optional
 GitHub source**: a canonical URL `https://github.com/<owner>/<repository>`.
-The source is descriptive metadata until a concrete GitHub operation is
-implemented; the application performs no GitHub network call in the initial
-release.
+The source is descriptive metadata and the target of the one allowed GitHub
+operation: creating the project clones it into `.workspace/<project-id>`
+(ADR-0032). No other GitHub network call is performed.
 
 ### Request
 

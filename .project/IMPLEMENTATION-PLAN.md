@@ -1550,7 +1550,7 @@ Deliver `--new-request` end to end: validate and persist the request, include th
 
 ### 11.2 Scope
 
-**In scope:** execution limits, provider port, DeepSeek adapter, retry policy, prompt/context builder (including scoped memories), output schema and validation, assignment rules, due dates, planning state machine, input handling, security tests, cancellation, recovery from stale `PLANNING`, optional project GitHub source, separate source-control provider configuration, and global `credentials.github_api_key` validation. GitHub network operations are out of scope until a concrete operation is specified.
+**In scope:** execution limits, provider port, DeepSeek adapter, retry policy, prompt/context builder (including scoped memories), output schema and validation, assignment rules, due dates, planning state machine, input handling, security tests, cancellation, recovery from stale `PLANNING`, optional project GitHub source, separate source-control provider configuration, global `credentials.github_api_key` validation, and the clone-only GitHub operation that populates `.workspace/` (ADR-0032). Fetch, push, branch, and other GitHub operations remain out of scope.
 
 **Out of scope:** direct questions (WP-6), any live-provider call or evaluation (Go-Live), story transitions, autonomous execution, CV transmission.
 
@@ -1858,7 +1858,7 @@ Deliver `--new-request` end to end: validate and persist the request, include th
 - Add the optional `source_control` section to `settings.yaml` with `provider: github`; GitHub is the only supported value and the section defaults to GitHub when omitted. Keep `provider`/`model` for DeepSeek.
 - Read the GitHub key only from `credentials.github_api_key` in `settings.yaml`; report `set`/`unset` in `--show-settings`; never store in the database, log, prompt, or display the value.
 - Extend `--new-project` with `--github-source <url>`. When a source is supplied, require a valid settings file, the GitHub source-control provider, and a present key; then persist the project and source atomically.
-- Display the source in project creation output, project lists, and the Kanban header. Perform no GitHub network call.
+- Display the source in project creation output, project lists, and the Kanban header. Clone it into `.workspace/<project-id>` before inserting the project (ADR-0032); no other GitHub call is made.
 - Add tests for URL validation, missing key, missing/invalid settings, migration from v3, and secret-marker absence.
 - Update `.docs/DATA-MODEL.md` and the retention documentation.
 
@@ -1869,7 +1869,7 @@ Deliver `--new-request` end to end: validate and persist the request, include th
 - A project without a source still works.
 - A GitHub-backed project stores the canonical URL; a missing key or invalid URL exits 2 with no row and no key in output.
 - Schema v3 → v4 preserves existing projects with `NULL` sources.
-- No GitHub network call exists; no credential is stored or logged.
+- The only GitHub network call is the clone; the credential is not stored in the project, database, arguments, or logs.
 - `.docs/DATA-MODEL.md` matches the implemented relationships.
 
 *(Delivered on 2026-11-12 ahead of the provider tasks; see §11.7.)*
@@ -1911,8 +1911,8 @@ working tree. Executed locally on macOS (aarch64), Rust 1.99.1: `make check`
 Delivered: schema v4 nullable `github_source`; strict canonical URL validation;
 optional `source_control.provider: github` in settings; `credentials.github_api_key`
 presence reporting; `--new-project --github-source`; project list/Kanban
-display; v3→v4 migration; `.docs/DATA-MODEL.md`; ADR-0025. No GitHub network
-call and no key storage exist. At the time of this partial report the provider
+display; v3→v4 migration; `.docs/DATA-MODEL.md`; ADR-0025, ADR-0032. The only GitHub network
+call is the clone; no key storage exists. At the time of this partial report the provider
 tasks were not started; WP-5 is now complete, see §11.8.
 
 ### 11.8 Package report (2026-11-12)
@@ -2417,7 +2417,7 @@ Take the build verified locally in WP-1 to WP-6 and validate it against the outs
 | 21 | Memories can be created, listed, and deleted for laboratories, projects, and agents, with scope enforced and deletion cascading from the owner | WP-4-T9 | WP4-AC10 |
 | 22 | Memory content is bounded, sanitized, untrusted, and never executed or used to grant permissions or change assignment rules | WP-4-T9; WP-5-T10; WP-6-T4 | WP4-AC10; WP5-AC12; WP6-AC10 |
 | 23 | Planning and questions include only the scoped memories within the configured cap, delimited as data, without silently truncating a memory | WP-5-T5; WP-6-T2 | WP5-AC12; WP6-AC10 |
-| 24 | Projects can optionally reference a canonical GitHub source; creating such a project validates the URL and requires a global `credentials.github_api_key`, with no GitHub network call in the initial release | WP-5-T13 | WP5-AC13 |
+| 24 | Projects can optionally reference a canonical GitHub source; creating such a project validates the URL, requires a global `credentials.github_api_key`, and clones it into `.workspace/<project-id>` before insertion | WP-5-T13 | WP5-AC13 |
 
 ### 13.4 Adapted validation scenarios (`VALIDATION.md`)
 

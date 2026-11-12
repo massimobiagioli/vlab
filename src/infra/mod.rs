@@ -8,3 +8,5 @@ pub mod config;
 pub mod db;
 pub mod paths;
 pub mod provider;
+
+pub mod workspace;

@@ -60,6 +60,7 @@ revises a technical decision must keep it current.
 | ADR-0029 | Activate hosted CI before the release tag | Accepted | 2026-11-12 | ADR-0013 | [adr-0029.md](adr-0029.md) |
 | ADR-0030 | Credentials in the private settings file | Accepted | 2026-11-12 | ADR-0015 | [adr-0030.md](adr-0030.md) |
 | ADR-0031 | Repository-local data for debug builds | Accepted | 2026-11-12 | — | [adr-0031.md](adr-0031.md) |
+| ADR-0032 | Clone GitHub projects into .workspace | Accepted | 2026-11-12 | — | [adr-0032.md](adr-0032.md) |
 
 ## Supersession map
 
