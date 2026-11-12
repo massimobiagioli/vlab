@@ -1,0 +1,15 @@
+# DISABLED until Go-Live (ADR-0013). To activate, remove this header and
+# the leading "# " from every line below. Until then, run the local gates
+# listed in AGENTS.md section 7 before every change.
+#
+# version: 2
+# updates:
+#   - package-ecosystem: cargo
+#     directory: /
+#     schedule:
+#       interval: weekly
+#     open-pull-requests-limit: 5
+#   - package-ecosystem: github-actions
+#     directory: /
+#     schedule:
+#       interval: weekly

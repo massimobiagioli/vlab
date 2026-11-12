@@ -1,0 +1,25 @@
+# Build output
+/target/
+
+# Local databases and secrets
+/.data/
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*
+
+# Local scratch and planning (ADR-0007): only the implementation plan is tracked
+/.tmp/
+/.project/*
+!/.project/IMPLEMENTATION-PLAN.md
+
+# Tool-local state
+/.claude/
+/.serena/
+
+# OS artifacts and editor backups
+.DS_Store
+*.swp
+*.swo
+*~

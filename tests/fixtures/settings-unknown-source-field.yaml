@@ -1,0 +1,5 @@
+provider: deepseek
+model: deepseek-chat
+source_control:
+  provider: github
+  token: sk-vlab-SECRET-MARKER

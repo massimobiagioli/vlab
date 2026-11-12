@@ -1,0 +1,38 @@
+# DISABLED until Go-Live (ADR-0013). To activate, remove this header and
+# the leading "# " from every line below. Until then, run the local gates
+# listed in AGENTS.md section 7 before every change.
+#
+# name: Daily security scan
+#
+# on:
+#   schedule:
+#     - cron: "17 5 * * *"
+#   workflow_dispatch:
+#
+# permissions:
+#   contents: read
+#
+# env:
+#   CARGO_TERM_COLOR: never
+#   CARGO_AUDIT_VERSION: 0.23.0
+#   CARGO_DENY_VERSION: 0.20.2
+#
+# jobs:
+#   scan:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+#         with:
+#           persist-credentials: false
+#       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+#         with:
+#           path: |
+#             ~/.cargo/bin/cargo-audit
+#             ~/.cargo/bin/cargo-deny
+#           key: ${{ runner.os }}-tools-audit-${{ env.CARGO_AUDIT_VERSION }}-deny-${{ env.CARGO_DENY_VERSION }}
+#       - run: |
+#           command -v cargo-audit || cargo install --locked cargo-audit --version "$CARGO_AUDIT_VERSION"
+#           command -v cargo-deny || cargo install --locked cargo-deny --version "$CARGO_DENY_VERSION"
+#       # Fresh advisory data on every run; a fetch failure fails the scan.
+#       - run: cargo audit
+#       - run: cargo deny check advisories

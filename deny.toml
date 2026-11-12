@@ -1,0 +1,46 @@
+# cargo-deny policy (ADR-0012, ADR-0018, ADR-0027). Do not ignore a finding to pass a
+# gate; a new allowed license needs a review and an ADR.
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+db-urls = ["https://github.com/rustsec/advisory-db"]
+yanked = "deny"
+unmaintained = "all"
+unsound = "all"
+ignore = []
+
+[licenses]
+version = 2
+confidence-threshold = 0.93
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-3-Clause",
+    "ISC",
+    "CDLA-Permissive-2.0",
+    "Unicode-3.0",
+    "Zlib",
+]
+
+# MPL-2.0 is file-level copyleft; accepted only for this unmodified transitive
+# dependency of `directories` (ADR-0012).
+[[licenses.exceptions]]
+crate = "option-ext"
+allow = ["MPL-2.0"]
+
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = false
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

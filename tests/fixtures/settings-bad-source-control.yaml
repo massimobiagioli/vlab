@@ -1,0 +1,4 @@
+provider: deepseek
+model: deepseek-chat
+source_control:
+  provider: gitlab
