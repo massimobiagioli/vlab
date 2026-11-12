@@ -8,6 +8,7 @@ Scope: WP-6 secrets, privacy, redaction, and the settings-file credential change
 
 | Boundary | Threat | Control | Evidence |
 |---|---|---|---|
+| Executable layout → paths | Debug build selecting attacker-controlled data | Fallback derived from the executable path, never the working directory; explicit overrides win; release builds unaffected | `src/infra/paths.rs`, `tests/paths.rs` |
 | Caller → CLI | Oversized/invalid input, control characters | UTF-8 and size caps before use; structured command validation; rendering sanitization | `tests/cli_new_request.rs`, `tests/cli_contract.rs`, `src/cli/render.rs` |
 | Application → DeepSeek | Credential/data leak | `credentials.deepseek_api_key` from private `settings.yaml`, used only in the Authorization header; request size cap; no CV/unrelated data; TLS validation | `tests/provider_deepseek.rs`, `tests/security_planning.rs` |
 | Model → application | Prompt injection, fabricated IDs, unsafe content | Strict schema, local membership/date rules, no tools, no execution, sanitized display | `tests/security_planning.rs`, `src/app/planning/*` |
@@ -63,4 +64,6 @@ real credential values; `settings.yaml` is git-ignored, and the synthetic
   VLab's control; users must protect those artifacts.
 - Credentials are not encrypted at rest beyond file permissions; an
   operating-system keyring is deferred.
+- A debug build selects `.data` next to its `target/debug` directory. Debug
+  binaries must not be distributed as release artifacts.
 - Windows permission hardening is best effort and not tested here.

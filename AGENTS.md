@@ -80,6 +80,7 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0028.md`](.docs/adr/adr-0028.md) | Content-free interaction metadata (schema v5). |
 | [`.docs/adr/adr-0029.md`](.docs/adr/adr-0029.md) | Activate hosted CI before the release tag. |
 | [`.docs/adr/adr-0030.md`](.docs/adr/adr-0030.md) | Credentials in the private settings file. |
+| [`.docs/adr/adr-0031.md`](.docs/adr/adr-0031.md) | Repository-local data for debug builds. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
 
 ### Precedence

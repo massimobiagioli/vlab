@@ -59,6 +59,7 @@ revises a technical decision must keep it current.
 | ADR-0028 | Content-free interaction metadata (schema v5) | Accepted | 2026-11-12 | — | [adr-0028.md](adr-0028.md) |
 | ADR-0029 | Activate hosted CI before the release tag | Accepted | 2026-11-12 | ADR-0013 | [adr-0029.md](adr-0029.md) |
 | ADR-0030 | Credentials in the private settings file | Accepted | 2026-11-12 | ADR-0015 | [adr-0030.md](adr-0030.md) |
+| ADR-0031 | Repository-local data for debug builds | Accepted | 2026-11-12 | — | [adr-0031.md](adr-0031.md) |
 
 ## Supersession map
 

@@ -59,8 +59,10 @@ each run it creates the folder if needed and sets its mode to `0700`, because
 VLab refuses directories other users can read. `.data/` is ignored by git,
 except the tracked placeholder `.data/settings.example.yaml`. Copy it to
 `.data/settings.yaml` and add your keys; `settings.yaml` itself is never
-tracked. Running the binary directly, without `make run`, uses the per-user
-directories below (ADR-0014).
+tracked. A debug build run from this checkout (`./target/debug/vlab`) also
+uses `.data/` automatically when no path override is set (ADR-0031). Release
+builds and installed binaries use the per-user directories below (ADR-0002,
+ADR-0014).
 
 ## Local paths
 
@@ -74,7 +76,9 @@ VLab never writes to the current working directory by default.
 
 The per-user directories are `~/Library/Application Support` on macOS and
 `$XDG_CONFIG_HOME` (default `~/.config`) and `$XDG_DATA_HOME` (default
-`~/.local/share`) on Linux. Overrides must be absolute paths. VLab creates its
+`~/.local/share`) on Linux. A debug binary in `<repo>/target/debug` uses
+`<repo>/.data` instead when that directory exists and no override is set
+(ADR-0031). Overrides must be absolute paths. VLab creates its
 directories with mode `0700` and its files with mode `0600` on Unix. It
 refuses an existing directory that grants group or other access and, on Unix,
 a settings file readable by group or other users.

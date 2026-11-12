@@ -2,7 +2,9 @@
 #
 # `make run` keeps settings and the database in `.data/` inside the project
 # (ignored by git) through the VLAB_CONFIG_DIR and VLAB_DATA_DIR overrides
-# (ADR-0014). The installed binary still defaults to per-user directories.
+# (ADR-0014). A direct debug build from this checkout selects `.data/`
+# automatically (ADR-0031); release and installed binaries default to
+# per-user directories.
 
 SHELL := /bin/sh
 .DEFAULT_GOAL := help

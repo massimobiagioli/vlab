@@ -57,6 +57,10 @@ development data directory. Create the private file with
 | Settings | per-user config dir + `vlab/settings.yaml` | `VLAB_CONFIG_DIR` |
 | Database | per-user data dir + `vlab/vlab.db` | `VLAB_DATA_DIR`, `VLAB_DB_PATH` |
 
+A debug build run from `<repo>/target/debug/vlab` uses `<repo>/.data` for both
+settings and database when that directory exists and no override is set
+(ADR-0031). Release and installed binaries use the per-user defaults.
+
 Overrides must be absolute. Directories are created `0700`; files `0600` on
 Unix. VLab refuses a directory readable by other users.
 
@@ -68,7 +72,8 @@ spaces, for example `EDITOR='"/Applications/My Editor" --wait'`.
 
 ## Development and tests
 
-- `make run ARGS="..."` uses `.data/` for settings and database (ADR-0014).
+- `make run ARGS="..."` uses `.data/` for settings and database (ADR-0014);
+  a direct debug build from the checkout does the same (ADR-0031).
 - `VLAB_DEEPSEEK_ENDPOINT` is a test-only loopback override for the mock
   provider; non-loopback values are ignored.
 - `RUST_LOG` enables stderr diagnostics; unset by default. Diagnostics contain

@@ -1,4 +1,4 @@
-//! Per-user locations and private storage (ADR-0002, ADR-0010).
+//! Per-user locations and private storage (ADR-0002, ADR-0010, ADR-0031).
 //!
 //! Nothing here runs unless a command needs storage, so help, version, and
 //! argument errors never touch the filesystem. The editor's temporary copy of
@@ -97,7 +97,29 @@ pub struct Paths {
 
 impl Paths {
     /// Resolves paths from the process environment.
+    ///
+    /// A debug build located at `<repo>/target/debug/vlab` uses
+    /// `<repo>/.data` when it exists and no path override is set
+    /// (ADR-0031). Explicit overrides always win.
     pub fn from_environment() -> Result<Self, PathError> {
+        let overridden = [CONFIG_DIR_VAR, DATA_DIR_VAR, DB_PATH_VAR]
+            .iter()
+            .any(|variable| std::env::var_os(variable).is_some());
+        let repository_data = if cfg!(debug_assertions) && !overridden {
+            repository_data_dir()
+        } else {
+            None
+        };
+        if let Some(data) = repository_data {
+            let data = data.into_os_string();
+            return Self::resolve(
+                move |key| match key {
+                    CONFIG_DIR_VAR | DATA_DIR_VAR => Some(data.clone()),
+                    _ => None,
+                },
+                None,
+            );
+        }
         Self::resolve(|key| std::env::var_os(key), PlatformDirs::current())
     }
 
@@ -153,6 +175,19 @@ impl Paths {
     pub fn database_file(&self) -> &Path {
         &self.database_file
     }
+}
+
+/// The repository `.data` directory for a Cargo debug executable.
+///
+/// The executable is expected at `<repo>/target/debug/vlab`; the fallback is
+/// derived from that path, never from the current working directory.
+fn repository_data_dir() -> Option<PathBuf> {
+    repository_data_dir_for(&std::env::current_exe().ok()?)
+}
+
+fn repository_data_dir_for(exe: &Path) -> Option<PathBuf> {
+    let data = exe.parent()?.parent()?.parent()?.join(".data");
+    data.is_dir().then_some(data)
 }
 
 fn absolute_override(
@@ -236,4 +271,30 @@ fn verify_private_dir(dir: &Path, metadata: &fs::Metadata) -> Result<(), PathErr
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::repository_data_dir_for;
+    use std::fs;
+    use std::path::Path;
+
+    #[test]
+    fn repository_data_is_found_next_to_a_target_debug_binary() {
+        let root = tempfile::tempdir().unwrap();
+        let debug = root.path().join("target").join("debug");
+        fs::create_dir_all(&debug).unwrap();
+        let data = root.path().join(".data");
+        fs::create_dir(&data).unwrap();
+        assert_eq!(repository_data_dir_for(&debug.join("vlab")), Some(data));
+    }
+
+    #[test]
+    fn repository_data_is_only_used_when_it_exists() {
+        let root = tempfile::tempdir().unwrap();
+        let debug = root.path().join("target").join("debug");
+        fs::create_dir_all(&debug).unwrap();
+        assert_eq!(repository_data_dir_for(&debug.join("vlab")), None);
+        assert_eq!(repository_data_dir_for(Path::new("/")), None);
+    }
 }

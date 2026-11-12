@@ -14,26 +14,30 @@ cd vlab
 make build-debug
 ```
 
-The binary is `./target/debug/vlab`. `make run ARGS="..."` runs it with data in
-`.data/` instead of your per-user directories.
+The binary is `./target/debug/vlab`. A debug build from this checkout uses
+`.data/` automatically; `make run ARGS="..."` does the same explicitly. An
+installed or release binary uses per-user directories.
 
 ## 2. Create settings with the credentials
 
 Credentials live in `settings.yaml`, never in environment variables. The file
 is private, outside git, and written with mode `0600`.
 
-If you use the binary directly, let the editor create the per-user file:
+From this checkout, the debug binary keeps settings in `.data/settings.yaml`.
+Create it with the editor:
 
 ```sh
-vlab --edit-settings
+./target/debug/vlab --edit-settings
 ```
 
-If you use `make run`, its settings live in `.data/`; copy the tracked example
-with private permissions and replace the placeholders:
+Or start from the tracked example with private permissions:
 
 ```sh
 install -m 600 .data/settings.example.yaml .data/settings.yaml
 ```
+
+An installed or release binary uses the per-user settings path instead; the
+same `--edit-settings` command creates it there.
 
 A valid file looks like:
 
@@ -172,9 +176,9 @@ is never executed or stored.
 | Settings | per-user config dir + `vlab/settings.yaml` | `VLAB_CONFIG_DIR` |
 | Database | per-user data dir + `vlab/vlab.db` | `VLAB_DATA_DIR`, `VLAB_DB_PATH` |
 
-`make run` uses `.data/` inside the project. It contains `settings.yaml` once
-you create it, and that file holds your keys; `.data/settings.example.yaml` is
-only a tracked placeholder. To reset development data (keeping the example):
+A debug build from this checkout uses `.data/` automatically (ADR-0031). It
+contains `settings.yaml` once you create it, and that file holds your keys;
+`.data/settings.example.yaml` is only a tracked placeholder. To reset development data (keeping the example):
 
 ```sh
 make clean-data
