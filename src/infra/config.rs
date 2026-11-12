@@ -27,8 +27,9 @@ pub const TEMPLATE: &str = "\
 # VLab settings. They are saved only if they are valid.
 #
 # provider: the AI provider. Only \"deepseek\" is supported.
-# model:    a model identifier accepted by the provider, taken from the
-#           DeepSeek API documentation. Replace the placeholder below.
+# model:    a model identifier accepted by DeepSeek. Replace the placeholder:
+#             deepseek-flash   DeepSeek V4.1 Flash (recommended)
+#             deepseek-v4-pro  DeepSeek V4 Pro
 #
 # This file contains credentials. Keep it private and outside version
 # control. VLab writes it with mode 0600.

@@ -4,7 +4,10 @@
 # placeholders. settings.yaml contains credentials: keep it private and out of
 # version control. VLab creates and edits it with mode 0600.
 provider: deepseek
-model: deepseek-chat
+# model: a model identifier accepted by DeepSeek.
+#   deepseek-flash   DeepSeek V4.1 Flash (recommended)
+#   deepseek-v4-pro  DeepSeek V4 Pro
+model: deepseek-flash
 # Optional source-control configuration. GitHub is the only supported provider.
 source_control:
   provider: github

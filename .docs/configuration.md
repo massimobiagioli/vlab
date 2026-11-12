@@ -6,7 +6,8 @@
 
 ```yaml
 provider: deepseek
-model: "deepseek-chat"
+# Current DeepSeek models: deepseek-flash (recommended) or deepseek-v4-pro.
+model: "deepseek-flash"
 # Optional; GitHub is the only supported source-control provider.
 source_control:
   provider: github
