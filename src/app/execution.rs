@@ -376,9 +376,11 @@ fn round_prompt(
          tools: list_files(path), read_file(path), write_file(path, content), and \
          run_command(command). Each round you may run up to {MAX_ACTIONS_PER_ROUND} \
          actions. Output ONLY a JSON object with fields `actions` (array), `done` \
-         (boolean), and optional `summary` (string). Use `done: true` with a 1 to \
-         {MAX_SUMMARY_CHARS} character `summary` and no actions when the story is \
-         complete. Do not claim tests passed unless you ran them."
+         (boolean), and optional `summary` (string). Example: \
+         {{\"actions\":[{{\"tool\":\"list_files\",\"path\":\".\"}},{{\"tool\":\"read_file\",\"path\":\"README.md\"}}],\"done\":false}}. \
+         Use `done: true` with a 1 to {MAX_SUMMARY_CHARS} character `summary` and \
+         no actions when the story is complete. Do not claim tests passed unless \
+         you ran them."
     );
     let mut user = String::new();
     user.push_str(&format!("<round>{round}/{MAX_ROUNDS}</round>\n"));
