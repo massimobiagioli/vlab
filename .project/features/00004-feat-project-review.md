@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00004` |
 | Branch | `feat/project-review` |
-| Status | `In review` |
+| Status | `Done` |
 | Date | 2026-11-13 |
 | Related ADRs | ADR-0043 (project edit, Kanban screen), ADR-0042 (form modal), ADR-0038 (dashboards), ADR-0032 (checkouts) |
 | Scope | Projects dashboard editing and Kanban presentation |
@@ -54,7 +54,7 @@
 ## Validation
 
 Local gate (2026-11-13): `make check` passed (fmt, clippy, tests, audit, deny).
-Hosted CI: pending; the branch has not been pushed.
+Hosted CI run `43411870497` passed on Ubuntu, macOS, and audit/deny.
 
 ## Task checklist
 
@@ -77,5 +77,5 @@ Hosted CI: pending; the branch has not been pushed.
   indicators, paging, first/last keys, and resize re-fit; tests.
 - [x] **F06-03** Extend the `vlab-tui` skill with board/scrolling rules and a
   visual-review procedure; apply it to this screen.
-- [ ] **F05-02** Push the branch, confirm hosted CI is green, and set the
+- [x] **F05-02** Push the branch, confirm hosted CI is green, and set the
   status to `Done`.
