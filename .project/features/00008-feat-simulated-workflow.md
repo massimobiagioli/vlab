@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00008` |
 | Branch | `feat/simulated-workflow` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-13 |
 | Related ADRs | ADR-0048 (workflow simulation), ADR-0047 (assigned starts), ADR-0003 (no tools), ADR-0026 (provider contract), ADR-0043 (Kanban detail) |
 | Scope | Automatic work/review simulation and DONE outcomes |
@@ -62,6 +62,7 @@ outcomes and the reviewer. No code is executed and the model has no tools.
 
 - Local gate (2026-11-13): `make check` passed (fmt, clippy, tests, audit,
   deny).
+- Hosted CI run `43441087222` passed on Ubuntu, macOS, and audit/deny.
 - Scripted-provider unit tests for work/review success, QA and lead reviewer
   selection, invalid JSON, provider failure, and pending-story selection.
 - Database tests for the outcome row, state transition, and schema v9.
@@ -85,4 +86,4 @@ outcomes and the reviewer. No code is executed and the model has no tools.
 - [x] **F03-01** Update the planning, CLI reference, README, playbook, data
   model, retention, and feature docs.
 - [x] **F04-01** Run `make check` and fix every failure.
-- [ ] **F04-02** Push, confirm hosted CI is green, and set the status to `Done`.
+- [x] **F04-02** Push, confirm hosted CI is green, and set the status to `Done`.
