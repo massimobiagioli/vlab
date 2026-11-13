@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00009` |
 | Branch | `feat/msx-floor` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-13 |
 | Related ADRs | ADR-0045 (laboratory floor), ADR-0038 (dashboards) |
 | Scope | Visual density of the terminal floor |
@@ -48,10 +48,10 @@ fallback. No GUI, image protocol, or new dependency is introduced.
 
 - Local gate (2026-11-13): `make check` passed (fmt, clippy, tests, audit,
   deny).
+- Hosted CI run `43445125844` passed on Ubuntu, macOS, and audit/deny.
 - `TestBackend` renders at 60×20, 80×24, and 100×30.
 - Scene assertions for the tiled floor, two-line sprite, compact fallback, and
   ASCII fallback.
-- Hosted CI is required before the feature is marked `Done`.
 
 ## Task checklist
 
@@ -60,4 +60,4 @@ fallback. No GUI, image protocol, or new dependency is introduced.
   fallback at 60×20.
 - [x] **F02-01** Update the visual tests and the feature/spec docs.
 - [x] **F03-01** Run `make check` and fix every failure.
-- [ ] **F04-01** Push, confirm hosted CI is green, and set the status to `Done`.
+- [x] **F04-01** Push, confirm hosted CI is green, and set the status to `Done`.
