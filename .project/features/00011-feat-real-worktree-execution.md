@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00011` |
 | Branch | `feat/real-worktree-execution` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-13 |
 | Related ADRs | ADR-0050 (real execution), ADR-0049 (startup resume), ADR-0032 (workspace), ADR-0043 (Kanban detail) |
 | Scope | Replace the simulated workflow with real bounded work in git worktrees |
@@ -63,7 +63,9 @@ stored in SQLite and shown on the `DONE` card. No simulated outcomes.
 
 ## Validation
 
-- Local gate: `make check` passed (fmt, clippy, tests, audit, deny).
+- Local gate (2026-11-13): `make check` passed (fmt, clippy, tests, audit,
+  deny).
+- Hosted CI run `43455969285` passed on Ubuntu, macOS, and audit/deny.
 - Unit tests for the action schema, path validation, observation bounds, and
   command output.
 - Git worktree test against a temporary repository: create, write, commit,
@@ -91,4 +93,4 @@ stored in SQLite and shown on the `DONE` card. No simulated outcomes.
   README, playbook, and docs.
 - [x] **F04-01** Reset the two local `DONE` cards to `TODO` without outcomes.
 - [x] **F05-01** Run `make check` and fix every failure.
-- [ ] **F05-02** Push, confirm hosted CI is green, and set the status to `Done`.
+- [x] **F05-02** Push, confirm hosted CI is green, and set the status to `Done`.
