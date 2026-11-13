@@ -23,20 +23,22 @@ stored in SQLite and shown on the `DONE` card. No simulated outcomes.
 2. The agent loop executes validated `list_files`, `read_file`, `write_file`,
    and `run_command` actions inside the worktree only; absolute paths, `..`,
    and symlink escapes are rejected.
-3. The loop is bounded: 12 rounds, 120-second call timeout, 2,048 output
+3. The loop is bounded: 24 rounds, 120-second call timeout, 8,192 output
    tokens, four actions per round, 15-minute work deadline, 60-second command
-   timeout, 64 KiB command output.
+   timeout, 64 KiB command output, and one empty-output retry per round.
 4. A successful attempt stages and commits all changes with a fixed author and
-   records the commit hash; an unchanged worktree fails the attempt without an
-   outcome.
+   records the commit hash; a bound that stops the loop also commits partial
+   work with an explicit summary. An unchanged worktree fails the attempt
+   without an outcome.
 5. Three failed attempts set the story `BLOCKED` and record a content-free
    `workflow_failed` event.
 6. The QA or Tech Lead review receives the summary, changed files, and a
-   bounded diff; `DONE` stores the work summary, review, reviewer, branch,
-   worktree path, commit, and completion time.
+   bounded diff and returns `review_outcome` plus `accepted`. An accepted
+   review stores the outcome and sets `DONE`; a rejected review stores it with
+   `review_accepted = 0` and sets `BLOCKED`.
 7. The `DONE` dialog shows branch, worktree, commit, work, review, reviewer,
    and completion time. No simulation note remains.
-8. Schema v10 adds `stories.execution_attempts` and
+8. Schema v11 adds `review_accepted`; v10 adds `stories.execution_attempts` and
    `story_outcomes.branch`, `worktree_path`, `commit_sha`.
 9. Tests cover action validation, confinement, command bounds, worktree
    creation/commit, the loop, attempt exhaustion, the migration, and detail

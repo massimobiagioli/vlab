@@ -184,6 +184,7 @@ ADR-0050 adds one optional row per completed story:
 | `story_id` | Story identifier | Primary key and cascade owner. |
 | `work_outcome` | Bounded work summary | What the agent changed and ran. |
 | `review_outcome` | Bounded review text | Reviewer assessment. |
+| `review_accepted` | `0` or `1` | Final review decision; `0` blocks the story. |
 | `reviewer_agent_id` | Reviewer agent | Who reviewed the work. |
 | `branch` | Story branch, for example `vlab/5a617283` | Locates the committed work. |
 | `worktree_path` | Path relative to `.workspace`, for example `.worktrees/5a617283` | Locates the isolated checkout. |
@@ -236,4 +237,4 @@ ADR-0034 adds `project_agents`:
 The table contains identifiers only, no content or credentials.
 
 Schema changes must justify each stored field and update this document before
-the migration lands. The current schema version is v10 (ADR-0050).
+the migration lands. The current schema version is v11 (ADR-0050).

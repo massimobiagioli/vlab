@@ -105,6 +105,7 @@ pub struct StoryOutcome {
     pub review: String,
     pub reviewer: String,
     pub completed_at: String,
+    pub accepted: bool,
     pub branch: Option<String>,
     pub worktree_path: Option<String>,
     pub commit_sha: Option<String>,

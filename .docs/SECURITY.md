@@ -114,10 +114,11 @@ before exposure.
 - Enforce token or cost limits where supported; otherwise enforce conservative
   request and size limits without claiming exact cost control.
 - Stop safely when required validation or authorization fails.
-- Bound real execution to 12 work rounds, four actions per round, a 120-second
-  call timeout, 2,048 output tokens, a 15-minute work deadline, a 60-second
-  command timeout, 64 KiB captured output, and three attempts per story. A
-  story that exceeds three attempts becomes `BLOCKED`.
+- Bound real execution to 24 work rounds, four actions per round, one
+  empty-output retry, a 120-second call timeout, 8,192 output tokens, a
+  15-minute work deadline, a 60-second command timeout, 64 KiB captured output,
+  and three attempts per story. A story that exceeds three attempts becomes
+  `BLOCKED`.
 - Run every command with the worktree as working directory, a cleared
   environment, a private `HOME`, no inherited credentials, and no privilege
   escalation. Do not claim OS-level isolation; none exists.

@@ -3533,6 +3533,17 @@ fn story_lines(story: &kanban::StoryDetail, theme: Theme, width: usize) -> Vec<L
         );
         field(
             &mut lines,
+            "Accepted",
+            if outcome.accepted {
+                "yes"
+            } else {
+                "no — story blocked"
+            }
+            .to_owned(),
+            Style::default(),
+        );
+        field(
+            &mut lines,
             "Completed",
             clean(&outcome.completed_at),
             Style::default(),

@@ -180,7 +180,7 @@ fn the_agent_writes_a_file_commits_it_and_stores_the_outcome() {
             r#"{"actions":[],"done":true,"summary":"Wrote Playbook.md."}"#,
         )),
         Ok(response(
-            r#"{"review_outcome":"The file exists and is correct."}"#,
+            r#"{"review_outcome":"The file exists and is correct.","accepted":true}"#,
         )),
     ]);
     let report = run(&fixture, &provider);
@@ -225,7 +225,7 @@ fn the_tech_lead_reviews_when_no_qa_exists() {
         Ok(response(
             r#"{"actions":[],"done":true,"summary":"Updated the README."}"#,
         )),
-        Ok(response(r#"{"review_outcome":"OK."}"#)),
+        Ok(response(r#"{"review_outcome":"OK.","accepted":true}"#)),
     ]);
     run(&fixture, &provider);
     let requests = provider.requests();
@@ -282,11 +282,35 @@ fn an_assigned_todo_story_is_executed() {
         Ok(response(
             r#"{"actions":[],"done":true,"summary":"Updated the README."}"#,
         )),
-        Ok(response(r#"{"review_outcome":"OK."}"#)),
+        Ok(response(r#"{"review_outcome":"OK.","accepted":true}"#)),
     ]);
     let report = run(&fixture, &provider);
     assert_eq!(report.completed, 1);
     assert_eq!(story(&fixture).state, kanban::StoryState::Done);
+}
+
+#[test]
+fn a_rejected_review_blocks_the_story_and_keeps_the_commit() {
+    let fixture = fixture(true);
+    let provider = ScriptedProvider::new(vec![
+        Ok(response(
+            r#"{"actions":[{"tool":"write_file","path":"README.md","content":"changed\n"}],"done":false}"#,
+        )),
+        Ok(response(
+            r#"{"actions":[],"done":true,"summary":"Updated the README."}"#,
+        )),
+        Ok(response(
+            r#"{"review_outcome":"Incomplete.","accepted":false}"#,
+        )),
+    ]);
+    let report = run(&fixture, &provider);
+    assert_eq!(report.completed, 0);
+    assert_eq!(report.failed, 1);
+    let detail = story(&fixture);
+    assert_eq!(detail.state, kanban::StoryState::Blocked);
+    let outcome = detail.outcome.unwrap();
+    assert!(!outcome.accepted);
+    assert!(outcome.commit_sha.is_some());
 }
 
 #[test]

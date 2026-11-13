@@ -68,10 +68,10 @@ story in a worktree, advance it to `IN_REVIEW`, and then `DONE`.
 ### Story outcome
 
 One optional row per completed story, linked by `story_id`. It stores the work
-summary, review text, reviewer agent, branch, worktree path, commit hash, and
-completion timestamp (ADR-0050). The row is project data, not audit metadata;
-the text is untrusted and displayed sanitized. Deleting the story cascades the
-outcome.
+summary, review text, review decision, reviewer agent, branch, worktree path,
+commit hash, and completion timestamp (ADR-0050). The row is project data, not
+audit metadata; the text is untrusted and displayed sanitized. Deleting the
+story cascades the outcome.
 
 ### Memory
 

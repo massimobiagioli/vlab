@@ -119,12 +119,27 @@ impl ActionRunner for WorktreeActions {
                     .map_err(map_io)?;
                 String::from_utf8(bytes).map_err(|_| ActionError::Output)
             }
-            Action::WriteFile { path, content } => {
+            Action::WriteFile {
+                path,
+                content,
+                append,
+            } => {
                 if content.len() > MAX_FILE_BYTES {
                     return Err(ActionError::TooLarge);
                 }
                 let file = self.resolve_for_write(path)?;
-                fs::write(&file, content.as_bytes()).map_err(map_io)?;
+                if *append {
+                    OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&file)
+                        .and_then(|mut handle| {
+                            std::io::Write::write_all(&mut handle, content.as_bytes())
+                        })
+                        .map_err(map_io)?;
+                } else {
+                    fs::write(&file, content.as_bytes()).map_err(map_io)?;
+                }
                 Ok(format!("wrote {} bytes", content.len()))
             }
             Action::RunCommand { command } => {
@@ -267,9 +282,10 @@ impl WorkflowEnvironment for WorkspaceEnvironment {
                 &clone,
                 &["worktree", "remove", "--force", &path.to_string_lossy()],
             );
-            let _ = run_git(&clone, &["branch", "-D", &branch]);
             let _ = fs::remove_dir_all(&path);
         }
+        let _ = run_git(&clone, &["worktree", "prune"]);
+        let _ = run_git(&clone, &["branch", "-D", &branch]);
         if path.exists() {
             return Err(WorktreeError::Occupied);
         }
@@ -428,14 +444,16 @@ mod tests {
         assert!(matches!(
             actions.execute(&Action::WriteFile {
                 path: "../escape.md".to_owned(),
-                content: "x".to_owned()
+                content: "x".to_owned(),
+                append: false,
             }),
             Err(ActionError::Confined)
         ));
         assert!(matches!(
             actions.execute(&Action::WriteFile {
                 path: "/tmp/escape.md".to_owned(),
-                content: "x".to_owned()
+                content: "x".to_owned(),
+                append: false,
             }),
             Err(ActionError::Confined)
         ));
@@ -443,6 +461,14 @@ mod tests {
             .execute(&Action::WriteFile {
                 path: "docs/note.md".to_owned(),
                 content: "hello".to_owned(),
+                append: false,
+            })
+            .unwrap();
+        actions
+            .execute(&Action::WriteFile {
+                path: "docs/note.md".to_owned(),
+                content: " world".to_owned(),
+                append: true,
             })
             .unwrap();
         assert_eq!(
@@ -451,7 +477,7 @@ mod tests {
                     path: "docs/note.md".to_owned()
                 })
                 .unwrap(),
-            "hello"
+            "hello world"
         );
     }
 

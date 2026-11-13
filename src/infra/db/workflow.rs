@@ -29,12 +29,13 @@ WHERE id = ?1 RETURNING execution_attempts";
 
 const UPSERT_OUTCOME: &str = "\
 INSERT INTO story_outcomes (story_id, work_outcome, review_outcome, reviewer_agent_id, \
-  branch, worktree_path, commit_sha, completed_at) \
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) \
+  review_accepted, branch, worktree_path, commit_sha, completed_at) \
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) \
 ON CONFLICT (story_id) DO UPDATE SET \
   work_outcome = excluded.work_outcome, \
   review_outcome = excluded.review_outcome, \
   reviewer_agent_id = excluded.reviewer_agent_id, \
+  review_accepted = excluded.review_accepted, \
   branch = excluded.branch, \
   worktree_path = excluded.worktree_path, \
   commit_sha = excluded.commit_sha, \
@@ -105,9 +106,11 @@ impl WorkflowStore for Database {
         &self,
         story: &StoryId,
         outcome: &StoryOutcome,
+        final_state: &str,
     ) -> Result<(), StorageError> {
         let story = story.clone();
         let outcome = outcome.clone();
+        let final_state = final_state.to_owned();
         self.transaction(move |connection| {
             Box::pin(async move {
                 sqlx::query(UPSERT_OUTCOME)
@@ -115,13 +118,14 @@ impl WorkflowStore for Database {
                     .bind(&outcome.work_outcome)
                     .bind(&outcome.review_outcome)
                     .bind(outcome.reviewer_agent_id.as_str())
+                    .bind(outcome.accepted)
                     .bind(&outcome.branch)
                     .bind(&outcome.worktree_path)
                     .bind(&outcome.commit_sha)
                     .execute(&mut *connection)
                     .await
                     .map_err(|_| StorageError::Operation)?;
-                set_state(connection, &story, "DONE")
+                set_state(connection, &story, &final_state)
                     .await
                     .map_err(|_| StorageError::Operation)
             })

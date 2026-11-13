@@ -1120,17 +1120,19 @@ After planning, the application runs real, bounded execution (ADR-0050):
 - The reviewer is the first active `qa` in the project roster, or in the active
   laboratory roster when the project roster is empty; if there is no QA, the
   Tech Lead reviews. The review receives the summary, changed files, and a
-  bounded diff and returns one `review_outcome` string. It is advisory.
-- The story becomes `DONE` and one `story_outcomes` row stores the work summary,
-  review, reviewer, branch, worktree path, commit, and completion time. The
-  Kanban detail shows them.
+  bounded diff and returns `review_outcome` and an `accepted` boolean. An
+  accepted review sets `DONE`; a rejected review keeps the commit on the branch
+  and sets `BLOCKED` for human attention.
+- The story becomes `DONE` when the reviewer accepts it. A rejected review
+  keeps the commit on `vlab/<story-id>`, stores it in `story_outcomes` with
+  `review_accepted = 0`, and moves the story to `BLOCKED` for human attention.
 - On provider, tool, or validation failure the story stays in progress, a
   content-free `workflow_failed` event is recorded, and the planning request is
   still `PLANNED`. After three failed attempts the story becomes `BLOCKED`.
-- Bounds: 12 work rounds, 120-second call timeout, 2,048 output tokens, four
+- Bounds: 24 work rounds, 120-second call timeout, 8,192 output tokens, four
   actions per round, 15-minute work deadline, 60-second command timeout, 64 KiB
-  captured command output, and three attempts. Stories are processed
-  sequentially.
+  captured command output, and three attempts. One empty-output retry per round
+  is allowed. Stories are processed sequentially.
 - Commands run in the worktree with a cleared environment, a private `HOME`,
   and no inherited secrets. There is no OS sandbox or network isolation; this is
   a documented residual risk.

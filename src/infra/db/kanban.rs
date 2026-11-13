@@ -13,6 +13,7 @@ type OutcomeRow = (
     Option<String>,
     Option<String>,
     Option<String>,
+    i64,
 );
 
 const SELECT_PROJECT: &str = "\
@@ -178,7 +179,7 @@ pub async fn story(
         .collect();
     let outcome: Option<OutcomeRow> = sqlx::query_as(
         "SELECT o.work_outcome, o.review_outcome, a.name, o.completed_at, o.branch, \
-                o.worktree_path, o.commit_sha \
+                o.worktree_path, o.commit_sha, o.review_accepted \
          FROM story_outcomes o LEFT JOIN agents a ON a.id = o.reviewer_agent_id \
          WHERE o.story_id = ?1",
     )
@@ -186,14 +187,17 @@ pub async fn story(
     .fetch_optional(connection)
     .await?;
     let outcome = outcome.map(
-        |(work, review, reviewer, completed_at, branch, worktree_path, commit_sha)| StoryOutcome {
-            work,
-            review,
-            reviewer: reviewer.unwrap_or_else(|| "Unknown reviewer".to_owned()),
-            completed_at,
-            branch,
-            worktree_path,
-            commit_sha,
+        |(work, review, reviewer, completed_at, branch, worktree_path, commit_sha, accepted)| {
+            StoryOutcome {
+                work,
+                review,
+                reviewer: reviewer.unwrap_or_else(|| "Unknown reviewer".to_owned()),
+                completed_at,
+                accepted: accepted != 0,
+                branch,
+                worktree_path,
+                commit_sha,
+            }
         },
     );
     Ok(Some(StoryDetail {

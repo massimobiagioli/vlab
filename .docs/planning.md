@@ -87,7 +87,8 @@ are executed sequentially (ADR-0050). An assigned `TODO` story moves to
    `read_file`, `write_file`, or `run_command` actions inside the worktree.
    Paths outside the worktree are rejected.
 3. On completion the application stages and commits all changes with a fixed
-   author and records the commit. No changes fails the attempt.
+   author and records the commit. If a bound stops the loop, partial changes are
+   committed with an explicit summary. No changes fails the attempt.
 4. The story moves to `IN_REVIEW`; the reviewer is the first active QA in the
    project roster, or in the active laboratory roster when the project roster is
    empty; if there is no QA, the Tech Lead reviews. The review receives the
@@ -99,13 +100,15 @@ are executed sequentially (ADR-0050). An assigned `TODO` story moves to
    planning remains `PLANNED`. After three failed attempts the story becomes
    `BLOCKED`.
 
-The review is advisory. `DONE` means the work was executed and committed on
-`vlab/<story-id>` and reviewed; it does not mean the branch was merged,
-deployed, or verified beyond what the agent ran. Limits: 12 rounds, four
-actions per round, 120-second call timeout, 2,048 output tokens, 15-minute work
+The review decides the final state. An accepted review sets `DONE`. A rejected
+review keeps the commit on `vlab/<story-id>`, stores `review_accepted = 0`, and
+sets `BLOCKED` so a human can inspect the work. `DONE` means the work was
+executed, committed, and accepted by the reviewer; it does not mean the branch
+was merged or deployed, or that every check passed. Limits: 24 rounds, four
+actions per round, 120-second call timeout, 8,192 output tokens, 15-minute work
 deadline, 60-second command timeout, 64 KiB captured output, and three attempts.
-Commands run with a cleared environment and no OS sandbox; use a trusted
-machine and account.
+One empty-output retry per round is allowed. Commands run with a cleared
+environment and no OS sandbox; use a trusted machine and account.
 
 ## Provider contract
 
