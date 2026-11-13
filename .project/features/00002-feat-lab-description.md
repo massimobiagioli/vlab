@@ -37,7 +37,7 @@ projects.
 ## Validation
 
 Local gate (2026-11-13): `make check` passed (fmt, clippy, tests, audit, deny).
-Hosted CI is recorded after the closing push.
+Hosted CI run `43402547220` passed on Ubuntu, macOS, and audit/deny.
 
 ## Task checklist
 
