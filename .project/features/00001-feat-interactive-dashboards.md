@@ -332,8 +332,8 @@ PTY flows, and legacy-flag hiding are implemented. All checklist tasks are
 checked.
 
 Final local gate (2026-11-13): `make check` passed (`fmt`, `clippy`, full tests,
-`cargo audit`, `cargo deny check`). Hosted CI is recorded after the closing
-push.
+`cargo audit`, `cargo deny check`). Hosted CI run `43392585089` passed on Ubuntu,
+macOS, and audit/deny.
 
 ## Completion rule
 
