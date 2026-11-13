@@ -18,7 +18,7 @@ use crate::app::projects::{self, CreatedProject, ProjectOverview, ProjectStore};
 use crate::app::requests::{self, PlanningOutcome};
 use crate::app::settings::SettingsReport;
 use crate::app::{AppError, settings, settings_edit};
-use crate::cli::args::{Action, DashboardGroup};
+use crate::cli::args::Action;
 use crate::cli::confirm::{self, ConfirmationRequest};
 use crate::cli::input;
 use crate::cli::prompt::{TerminalEditor, TerminalPrompter};
@@ -333,28 +333,6 @@ pub fn dispatch(
                 plan.id.as_str(),
             );
             write_stdout(stdout, &render_archived_agent(&plan))
-        }
-        Action::Dashboard {
-            group,
-            plain,
-            no_color,
-        } => {
-            let interactive = !plain && io::stdin().is_terminal() && io::stdout().is_terminal();
-            if interactive {
-                crate::cli::tui::run(group, no_color, run_id)
-            } else {
-                dispatch(
-                    match group {
-                        DashboardGroup::Labs => Action::ListLabs,
-                        DashboardGroup::Projects => Action::ListProjects,
-                        DashboardGroup::Agents => Action::ListAgents,
-                        DashboardGroup::Settings => Action::ShowSettings,
-                    },
-                    stdout,
-                    stderr,
-                    run_id,
-                )
-            }
         }
         Action::Ask { question, to_agent } => {
             if let Some(raw) = &to_agent {

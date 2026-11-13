@@ -89,18 +89,16 @@ not product commands.
 
 ## Dashboards
 
-For interactive use, VLab opens a keyboard-driven dashboard for each group:
+Run `vlab` in a terminal to open the home dashboard:
 
 ```sh
-vlab labs        # laboratories: new, check, set active, delete
-vlab projects    # projects: new, open, assign agent, Kanban, delete
-vlab agents      # agents: detail, new, assign, archive
-vlab settings    # settings: edit, reload, path, credential state
+vlab
 ```
 
-Use `j/k` or arrows to move, `Enter` to open, the action keys shown in the
-bottom bar, `/` to filter, `?` for help, and `q` to quit. `--plain` (or a
-redirected, non-TTY stream) prints the width-aware plain table instead.
+Choose Laboratories, Projects, Agents, or Settings with the arrow keys and
+`Enter` (or `1`–`4`). Inside a group use `j/k` or arrows to move, the action
+keys shown in the bottom bar, `/` to filter, `?` for help, `Esc` to return home,
+and `q` to quit. In a non-TTY stream VLab prints help instead of blocking.
 
 ## Local walkthrough
 

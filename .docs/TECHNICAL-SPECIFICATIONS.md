@@ -182,15 +182,9 @@ change the triggering action's outcome.
 vlab --help
 ```
 
-Help shall present the group subcommands first:
-
-```text
-Commands
-  labs       Open the laboratories dashboard
-  projects   Open the projects dashboard
-  agents     Open the agents dashboard
-  settings   Open the settings dashboard
-```
+A bare `vlab` opens the home dashboard in a terminal. The home dashboard lists
+Laboratories, Projects, Agents, and Settings; group navigation happens inside the
+interface. Only `-h`/`--help` and `-V`/`--version` are public options.
 
 The compatibility flag surface remains available during the feature migration:
 
@@ -223,10 +217,10 @@ Agents
   --ask <question> [--to-agent <agent-id>]
 ```
 
-Exactly one primary action or group subcommand shall be accepted per
-invocation. A group subcommand opens a dashboard in a terminal; `--plain` or a
-non-TTY stream selects plain output. A bare `vlab` opens the home dashboard in
-a terminal and prints help otherwise.
+A bare `vlab` opens the home dashboard in a terminal and prints help otherwise.
+The group subcommands (`labs`, `projects`, `agents`, `settings`, `help`) are
+removed. Hidden legacy action flags remain for script compatibility during the
+deprecation window but are not part of the public help surface.
 
 `--to-agent` is a modifier and is valid only with `--ask`.
 
@@ -774,7 +768,7 @@ UX requirements:
 - Use semantic color, box drawing, and a persistent action bar in dashboards.
 - Remain understandable without color; never rely on color alone.
 - Respect `NO_COLOR`, `--no-color`, and `TERM=dumb`.
-- Avoid ANSI decoration and cursor control when output is redirected or `--plain` is used.
+- Avoid ANSI decoration and cursor control when output is redirected or not a terminal.
 - Sanitize untrusted terminal-control sequences.
 - Provide useful empty-state guidance.
 

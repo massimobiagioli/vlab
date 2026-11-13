@@ -322,6 +322,11 @@ Check a task only when its deliverable and verification exist. The feature is
 
 ## Implementation notes (2026-11-13)
 
+**Entry-point follow-up:** ADR-0039 replaces the direct group subcommands with
+a single bare `vlab` home dashboard and in-interface navigation. The dashboard
+implementation and all checklist evidence remain valid; the examples above that
+show `vlab labs` describe the historical implementation.
+
 **Compatibility decision:** the legacy flags are removed from the public help
 surface and remain only as hidden compatibility aliases for this deprecation
 window. The new subcommands are the documented interface. Deleting the hidden

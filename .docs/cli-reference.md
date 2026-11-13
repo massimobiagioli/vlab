@@ -9,15 +9,16 @@ Run `vlab` or `vlab --help` for the grouped help.
 | Command | Behavior |
 |---|---|
 | `vlab` | Home dashboard in a terminal; help otherwise. |
-| `vlab labs` | Interactive laboratories dashboard. |
-| `vlab projects` | Interactive projects dashboard for the active laboratory. |
-| `vlab agents` | Interactive agents dashboard for the active laboratory. |
-| `vlab settings` | Interactive settings dashboard. |
-| `--plain` | With a group subcommand, print the plain table/report instead of the dashboard. |
-| `--no-color` | Keep the dashboard but disable color and styling. |
+| `-h`, `--help` | Print help. |
+| `-V`, `--version` | Print the version. |
 
-Dashboards use `j/k` or arrows, `h/l` for pages, `Enter` to open, the action
-keys in the bottom bar, `/` to filter, `?` for help, and `q` to quit. Stored and
+The home dashboard lists Laboratories, Projects, Agents, and Settings. Use
+`Enter` to open the selected group, `1`–`4` to jump directly, `Esc` to return
+home, and `q` to quit. Inside a group use `j/k` or arrows, `h/l` for pages, the
+action keys in the bottom bar, `/` to filter, and `?` for help. Group
+subcommands (`vlab labs`, `vlab projects`, `vlab agents`, `vlab settings`,
+`vlab help`) are removed; hidden legacy flags remain for script compatibility
+during the deprecation window. Stored and
 model-generated text is sanitized before display. Credentials are never shown.
 
 ## Legacy flags (hidden, deprecated)

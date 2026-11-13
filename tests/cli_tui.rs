@@ -132,8 +132,9 @@ fn the_labs_dashboard_creates_checks_activates_and_deletes() {
     let sandbox = Sandbox::new();
     let (output, success) = run_tui(
         &sandbox,
-        &["labs"],
+        &[],
         &[
+            ("\r", 300),
             ("n", 200),
             ("Pty Lab", 200),
             ("\r", 300),
@@ -148,7 +149,7 @@ fn the_labs_dashboard_creates_checks_activates_and_deletes() {
     assert!(success, "dashboard did not exit cleanly: {output:?}");
     assert_restored(&output);
     assert!(output.contains("Laboratories"), "{output:?}");
-    let plain = sandbox.run(&["labs", "--plain"]);
+    let plain = sandbox.run(&["--list-labs"]);
     plain.assert_success();
     assert!(plain.stdout.contains("No laboratories"), "{}", plain.stdout);
 }
@@ -162,15 +163,16 @@ fn the_labs_dashboard_paginates_and_cancels_a_new_form() {
         db.insert_lab(&Lab::new(id, Name::parse(&format!("Lab {index}")).unwrap()))
             .unwrap();
     }
-    let (output, success) = run_tui(&sandbox, &["labs"], &[("l", 300), ("q", 200)]);
+    let (output, success) = run_tui(&sandbox, &[], &[("\r", 300), ("l", 300), ("q", 200)]);
     assert!(success, "dashboard did not exit cleanly: {output:?}");
     assert!(output.contains("Page 2"), "{output:?}");
 
     let sandbox = Sandbox::new();
     let (output, success) = run_tui(
         &sandbox,
-        &["labs"],
+        &[],
         &[
+            ("\r", 300),
             ("n", 200),
             ("Cancelled Lab", 200),
             ("\u{1b}", 300),
@@ -178,7 +180,7 @@ fn the_labs_dashboard_paginates_and_cancels_a_new_form() {
         ],
     );
     assert!(success, "dashboard did not exit cleanly: {output:?}");
-    let plain = sandbox.run(&["labs", "--plain"]);
+    let plain = sandbox.run(&["--list-labs"]);
     plain.assert_success();
     assert!(plain.stdout.contains("No laboratories"), "{}", plain.stdout);
 }
@@ -189,8 +191,9 @@ fn the_projects_dashboard_creates_opens_assigns_and_deletes() {
     let (_, _, _) = seed(&sandbox);
     let (output, success) = run_tui(
         &sandbox,
-        &["projects"],
+        &[],
         &[
+            ("2", 300),
             ("n", 200),
             ("Pty Project", 200),
             ("\r", 300),
@@ -214,8 +217,8 @@ fn the_projects_dashboard_creates_opens_assigns_and_deletes() {
 
     let (output, success) = run_tui(
         &sandbox,
-        &["projects"],
-        &[("G", 200), ("d", 200), ("y", 400), ("q", 200)],
+        &[],
+        &[("2", 300), ("G", 200), ("d", 200), ("y", 400), ("q", 200)],
     );
     assert!(success, "dashboard did not exit cleanly: {output:?}");
     assert_restored(&output);
@@ -226,7 +229,7 @@ fn the_projects_dashboard_creates_opens_assigns_and_deletes() {
             .unwrap()
     });
     assert_eq!(count, 0);
-    let plain = sandbox.run(&["projects", "--plain"]);
+    let plain = sandbox.run(&["--list-projects"]);
     plain.assert_success();
     assert!(plain.stdout.contains("Portal"), "{}", plain.stdout);
 }
@@ -234,9 +237,9 @@ fn the_projects_dashboard_creates_opens_assigns_and_deletes() {
 #[test]
 fn project_and_agent_dashboards_start_without_context() {
     let sandbox = Sandbox::new();
-    for group in ["projects", "agents"] {
-        let (output, success) = run_tui(&sandbox, &[group], &[("q", 200)]);
-        assert!(success, "{group} did not exit cleanly: {output:?}");
+    for key in ["2", "3"] {
+        let (output, success) = run_tui(&sandbox, &[], &[(key, 300), ("q", 200)]);
+        assert!(success, "{key} did not exit cleanly: {output:?}");
         assert_restored(&output);
     }
 }
@@ -248,8 +251,9 @@ fn the_agents_dashboard_creates_an_agent_through_the_wizard() {
     sandbox.write_settings("provider: deepseek\nmodel: deepseek-chat\n");
     let (output, success) = run_tui(
         &sandbox,
-        &["agents"],
+        &[],
         &[
+            ("3", 300),
             ("n", 500),
             ("Pty Agent\r", 200),
             ("dev\r", 200),
@@ -281,8 +285,9 @@ fn the_agents_dashboard_shows_detail_and_archives() {
     let (_, _, _) = seed(&sandbox);
     let (output, success) = run_tui(
         &sandbox,
-        &["agents"],
+        &[],
         &[
+            ("3", 300),
             ("\r", 200),
             ("x", 200),
             ("d", 200),

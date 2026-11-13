@@ -69,11 +69,12 @@ It shows `DeepSeek API key: set` and `GitHub API key: set` (never the values).
 Interactive route:
 
 ```sh
-vlab labs
+vlab
 ```
 
-Use `n` to create, `a` to set the active laboratory, `c` to check it, and `q` to
-quit. The non-interactive commands are:
+Choose **Laboratories**, then use `n` to create, `a` to set active, `c` to
+check, and `Esc` to return to the home dashboard. The non-interactive commands
+are:
 
 ```sh
 vlab --new-lab "Payments Platform"
@@ -107,11 +108,11 @@ Exit 0 means it is ready. Exit 4 prints one line per failed rule.
 Interactive route:
 
 ```sh
-vlab projects
+vlab
 ```
 
-Use `n` to create, `Enter` to open, `a` to assign an agent, `v` for Kanban, and
-`d` to delete. The non-interactive command is:
+Choose **Projects**, then use `n` to create, `Enter` to open, `a` to assign an
+agent, `v` for Kanban, and `d` to delete. The non-interactive command is:
 
 ```sh
 vlab --new-project "Customer Portal"

@@ -66,7 +66,7 @@ Use `clap` as the CLI framework.
 
 The interface has two presentation modes (ADR-0038):
 
-- plain, width-aware output for scripts, pipes, `--plain`, and non-TTY use;
+- plain, width-aware output for scripts, pipes, hidden legacy flags, and non-TTY use;
 - full-screen, keyboard-driven dashboards for interactive terminals.
 
 `ratatui` with its re-exported `crossterm` backend is the only TUI stack.

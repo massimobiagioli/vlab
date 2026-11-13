@@ -106,7 +106,7 @@ where
         }
         Some(action) => {
             tracing::debug!(action = action.flag(), "dispatching");
-            if !matches!(action, args::Action::Dashboard { .. }) && io::stderr().is_terminal() {
+            if io::stderr().is_terminal() {
                 write_stderr(
                     stderr,
                     "Warning: action flags are deprecated; use `vlab labs`, `vlab projects`, `vlab agents`, or `vlab settings`.\n",
@@ -200,8 +200,9 @@ mod tests {
     fn help_goes_to_stdout_only() {
         let (code, stdout, stderr) = run_args(&["--help"]);
         assert_eq!(code, 0);
-        assert!(stdout.contains("Commands:"));
-        assert!(stdout.contains("labs"));
+        assert!(stdout.contains("-h, --help"));
+        assert!(stdout.contains("-V, --version"));
+        assert!(!stdout.contains("Commands:"));
         assert!(stderr.is_empty());
     }
 

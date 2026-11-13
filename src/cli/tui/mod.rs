@@ -561,7 +561,16 @@ impl App {
                     KeyCode::Char('q') => self.quit = true,
                     KeyCode::Esc => {
                         if self.filter.is_empty() {
-                            self.quit = true;
+                            self.home_selected = match group {
+                                DashboardGroup::Labs => 0,
+                                DashboardGroup::Projects => 1,
+                                DashboardGroup::Agents => 2,
+                                DashboardGroup::Settings => 3,
+                            };
+                            self.screen = Screen::Home;
+                            self.selected = 0;
+                            self.page = 0;
+                            self.status = None;
                         } else {
                             self.filter.clear();
                             self.selected = 0;
@@ -1200,7 +1209,7 @@ impl App {
             .constraints([
                 Constraint::Length(3),
                 Constraint::Min(1),
-                Constraint::Length(3),
+                Constraint::Length(5),
             ])
             .split(area);
         let context = self.context_line(group);
@@ -1216,17 +1225,18 @@ impl App {
         self.page_size = usize::from(chunks[1].height.saturating_sub(2)).max(1);
         self.clamp_selection();
         self.render_body(frame, chunks[1], group);
-        let mut footer = vec![Line::from(Span::styled(
-            group_actions(group),
-            self.theme.muted_style(),
-        ))];
+        let mut footer = action_lines(group, self.theme);
+        if !self.filter.is_empty() {
+            footer.push(Line::from(vec![
+                Span::styled("Filter: ", self.theme.key()),
+                Span::raw(clean(&self.filter)),
+            ]));
+        }
         if let Some(status) = &self.status {
-            footer.push(Line::from(Span::styled(
-                clean(status),
-                self.theme.success_style(),
-            )));
-        } else if !self.filter.is_empty() {
-            footer.push(Line::from(format!("Filter: {}", clean(&self.filter))));
+            footer.push(Line::from(vec![
+                Span::styled("Status: ", self.theme.key()),
+                Span::styled(clean(status), self.theme.success_style()),
+            ]));
         }
         frame.render_widget(
             Paragraph::new(footer).block(self.block("Actions")),
@@ -1237,12 +1247,13 @@ impl App {
     fn render_body(&mut self, frame: &mut Frame<'_>, area: Rect, group: DashboardGroup) {
         let start = self.page * self.page_size;
         let end = (start + self.page_size).min(self.visible_len());
+        let widths = table_widths(group, usize::from(area.width.saturating_sub(2)));
         let mut lines = Vec::new();
         match group {
             DashboardGroup::Labs => {
                 lines.push(table_header(
                     &["ID", "NAME", "AGENTS", "PROJECTS", "VALID", "ACTIVE"],
-                    &[8, 24, 7, 9, 6, 6],
+                    &widths,
                     self.theme,
                 ));
                 for visible in start..end {
@@ -1261,7 +1272,7 @@ impl App {
                                 if item.check.valid() { "ok" } else { "fail" }.to_owned(),
                                 if active { "*" } else { "" }.to_owned(),
                             ],
-                            &[8, 24, 7, 9, 6, 6],
+                            &widths,
                             visible == self.selected,
                             self.theme,
                         ));
@@ -1271,7 +1282,7 @@ impl App {
             DashboardGroup::Projects => {
                 lines.push(table_header(
                     &["ID", "NAME", "REQ", "STORY", "OPEN", "CURRENT"],
-                    &[8, 28, 5, 6, 5, 8],
+                    &widths,
                     self.theme,
                 ));
                 for visible in start..end {
@@ -1291,7 +1302,7 @@ impl App {
                                     .to_string(),
                                 if current { "*" } else { "" }.to_owned(),
                             ],
-                            &[8, 28, 5, 6, 5, 8],
+                            &widths,
                             visible == self.selected,
                             self.theme,
                         ));
@@ -1301,7 +1312,7 @@ impl App {
             DashboardGroup::Agents => {
                 lines.push(table_header(
                     &["ID", "NAME", "ROLE", "PROJECTS", "OPEN"],
-                    &[8, 22, 10, 9, 6],
+                    &widths,
                     self.theme,
                 ));
                 for visible in start..end {
@@ -1315,7 +1326,7 @@ impl App {
                                 item.projects.to_string(),
                                 item.open_stories.to_string(),
                             ],
-                            &[8, 22, 10, 9, 6],
+                            &widths,
                             visible == self.selected,
                             self.theme,
                         ));
@@ -1482,6 +1493,17 @@ impl Theme {
         }
     }
 
+    fn key(self) -> Style {
+        if self.color {
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().add_modifier(Modifier::BOLD)
+        }
+    }
+
     fn success_style(self) -> Style {
         if self.color {
             Style::default().fg(Color::Green)
@@ -1528,16 +1550,68 @@ fn group_title(group: DashboardGroup) -> &'static str {
     }
 }
 
-fn group_actions(group: DashboardGroup) -> &'static str {
+fn action_lines(group: DashboardGroup, theme: Theme) -> Vec<Line<'static>> {
+    fn item(key: &'static str, label: &'static str, theme: Theme) -> Vec<Span<'static>> {
+        vec![
+            Span::styled(key, theme.key()),
+            Span::styled(format!(" {label}   "), theme.muted_style()),
+        ]
+    }
+    let first = match group {
+        DashboardGroup::Labs => vec![
+            item("[n]", "New", theme),
+            item("[c]", "Check", theme),
+            item("[a]", "Set active", theme),
+            item("[d]", "Delete", theme),
+        ],
+        DashboardGroup::Projects => vec![
+            item("[n]", "New", theme),
+            item("[Enter]", "Open", theme),
+            item("[a]", "Assign", theme),
+            item("[v]", "Kanban", theme),
+            item("[d]", "Delete", theme),
+        ],
+        DashboardGroup::Agents => vec![
+            item("[n]", "New", theme),
+            item("[Enter]", "Detail", theme),
+            item("[a]", "Assign", theme),
+            item("[d]", "Archive", theme),
+        ],
+        DashboardGroup::Settings => vec![
+            item("[e]", "Edit", theme),
+            item("[r]", "Reload", theme),
+            item("[p]", "Path", theme),
+            item("[c]", "Credentials", theme),
+        ],
+    };
+    let second = vec![
+        item("[/]", "Filter", theme),
+        item("[?]", "Help", theme),
+        item("[Esc]", "Back", theme),
+        item("[q]", "Quit", theme),
+    ];
+    vec![
+        Line::from(first.into_iter().flatten().collect::<Vec<_>>()),
+        Line::from(second.into_iter().flatten().collect::<Vec<_>>()),
+    ]
+}
+
+fn table_widths(group: DashboardGroup, available: usize) -> Vec<usize> {
+    const GAP: usize = 2;
     match group {
-        DashboardGroup::Labs => "n new  c check  a set active  d delete  / filter  ? help  q quit",
+        DashboardGroup::Labs => {
+            let fixed = 8 + 6 + 8 + 5 + 6 + GAP * 5;
+            vec![8, available.saturating_sub(fixed).clamp(12, 45), 6, 8, 5, 6]
+        }
         DashboardGroup::Projects => {
-            "n new  Enter open  a assign  v kanban  d delete  / filter  ? help  q quit"
+            let fixed = 8 + 5 + 5 + 5 + 8 + GAP * 5;
+            vec![8, available.saturating_sub(fixed).clamp(12, 45), 5, 5, 5, 8]
         }
         DashboardGroup::Agents => {
-            "n new  Enter detail  a assign  d archive  / filter  ? help  q quit"
+            let fixed = 8 + 10 + 8 + 5 + GAP * 4;
+            vec![8, available.saturating_sub(fixed).clamp(12, 45), 10, 8, 5]
         }
-        DashboardGroup::Settings => "e edit  r reload  p path  c credentials  ? help  q quit",
+        DashboardGroup::Settings => Vec::new(),
     }
 }
 
@@ -1565,7 +1639,10 @@ fn confirm_label(action: &ConfirmAction) -> String {
 
 fn table_header(labels: &[&str], widths: &[usize], theme: Theme) -> Line<'static> {
     let mut spans = Vec::new();
-    for (label, width) in labels.iter().zip(widths) {
+    for (index, (label, width)) in labels.iter().zip(widths).enumerate() {
+        if index > 0 {
+            spans.push(Span::raw("  "));
+        }
         spans.push(Span::styled(
             format!("{:<width$}", label, width = width),
             theme.muted_style().add_modifier(Modifier::BOLD),
@@ -1581,7 +1658,10 @@ fn table_row(values: &[String], widths: &[usize], selected: bool, theme: Theme) 
         Style::default()
     };
     let mut spans = Vec::new();
-    for (value, width) in values.iter().zip(widths) {
+    for (index, (value, width)) in values.iter().zip(widths).enumerate() {
+        if index > 0 {
+            spans.push(Span::styled("  ", style));
+        }
         let clipped: String = clean(value).chars().take(*width).collect();
         spans.push(Span::styled(
             format!("{clipped:<width$}", width = width),
@@ -1668,7 +1748,8 @@ fn help_lines() -> Vec<String> {
         "d           delete with confirmation".to_owned(),
         "/           filter".to_owned(),
         "?           this help".to_owned(),
-        "q/Esc       quit".to_owned(),
+        "Esc         back to home".to_owned(),
+        "q           quit".to_owned(),
     ]
 }
 
@@ -1784,7 +1865,7 @@ mod tests {
         let (mut app, _dir) = fixture(Screen::Group(DashboardGroup::Labs));
         let screen = rendered(&mut app);
         assert!(screen.contains("Laboratories"), "{screen}");
-        assert!(screen.contains("n new"), "{screen}");
+        assert!(screen.contains("[n] New"), "{screen}");
         assert!(screen.contains("No laboratories"), "{screen}");
     }
 
@@ -1831,7 +1912,8 @@ mod tests {
         app.mode = Mode::Help;
         let screen = rendered(&mut app);
         assert!(screen.contains("j/k"), "{screen}");
-        assert!(screen.contains("q/Esc"), "{screen}");
+        assert!(screen.contains("Esc"), "{screen}");
+        assert!(screen.contains("q           quit"), "{screen}");
     }
 
     #[test]
@@ -1938,7 +2020,7 @@ mod tests {
     #[test]
     fn help_lists_navigation_and_safety_keys() {
         let help = help_lines().join("\n");
-        for key in ["j/k", "Enter", "d", "q/Esc"] {
+        for key in ["j/k", "Enter", "d", "Esc", "q"] {
             assert!(help.contains(key), "{key}: {help}");
         }
     }

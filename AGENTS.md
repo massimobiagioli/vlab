@@ -87,6 +87,9 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0034.md`](.docs/adr/adr-0034.md) | Project agent assignments and planning roster. |
 | [`.docs/adr/adr-0035.md`](.docs/adr/adr-0035.md) | Remove manual memory commands. |
 | [`.docs/adr/adr-0036.md`](.docs/adr/adr-0036.md) | Automatic memory generation. |
+| [`.docs/adr/adr-0037.md`](.docs/adr/adr-0037.md) | Tracked feature plans with task checklists. |
+| [`.docs/adr/adr-0038.md`](.docs/adr/adr-0038.md) | Interactive colored terminal dashboards. |
+| [`.docs/adr/adr-0039.md`](.docs/adr/adr-0039.md) | Dashboard-only entry point. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
 | [`.project/features/`](.project/features/) | Tracked feature plans with task checklists (ADR-0037). |
 
