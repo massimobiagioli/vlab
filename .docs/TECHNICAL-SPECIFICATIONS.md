@@ -1108,8 +1108,9 @@ The floor is a read-only, deterministic, MSX-inspired terminal scene:
 
 After planning, the application runs real, bounded execution (ADR-0050):
 
-- Each assigned `IN_PROGRESS` story gets a worktree under
-  `.workspace/.worktrees/<story-id>` on branch `vlab/<story-id>`.
+- Each assigned `TODO`, `IN_PROGRESS`, or `IN_REVIEW` story gets a worktree
+  under `.workspace/.worktrees/<story-id>` on branch `vlab/<story-id>`. An
+  assigned `TODO` story moves to `IN_PROGRESS` when the attempt starts.
 - The assigned agent works through at most 12 rounds. Each round is one
   strict JSON action list; the application executes up to four validated
   `list_files`, `read_file`, `write_file`, or `run_command` actions inside the

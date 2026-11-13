@@ -14,7 +14,7 @@ FROM stories s \
 JOIN projects p ON p.id = s.project_id \
 JOIN requests r ON r.id = s.request_id \
 LEFT JOIN story_outcomes o ON o.story_id = s.id \
-WHERE s.project_id = ?1 AND s.state IN ('IN_PROGRESS', 'IN_REVIEW') \
+WHERE s.project_id = ?1 AND s.state IN ('TODO', 'IN_PROGRESS', 'IN_REVIEW') \
   AND s.assigned_agent_id IS NOT NULL AND o.story_id IS NULL \
 ORDER BY s.created_at, s.id";
 

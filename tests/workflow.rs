@@ -269,6 +269,27 @@ fn three_attempts_block_the_story_without_calling_the_provider() {
 }
 
 #[test]
+fn an_assigned_todo_story_is_executed() {
+    let fixture = fixture(true);
+    fixture
+        .db
+        .execute("UPDATE stories SET state = 'TODO' WHERE id = '5a617283'")
+        .unwrap();
+    let provider = ScriptedProvider::new(vec![
+        Ok(response(
+            r#"{"actions":[{"tool":"write_file","path":"README.md","content":"changed\n"}],"done":false}"#,
+        )),
+        Ok(response(
+            r#"{"actions":[],"done":true,"summary":"Updated the README."}"#,
+        )),
+        Ok(response(r#"{"review_outcome":"OK."}"#)),
+    ]);
+    let report = run(&fixture, &provider);
+    assert_eq!(report.completed, 1);
+    assert_eq!(story(&fixture).state, kanban::StoryState::Done);
+}
+
+#[test]
 fn unassigned_and_completed_stories_are_not_processed() {
     let fixture = fixture(true);
     fixture

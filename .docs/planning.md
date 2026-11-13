@@ -75,8 +75,9 @@ submit a revised request and keep the previous record for traceability.
 ## Real worktree execution
 
 After planning, and automatically when the interactive application starts,
-assigned stories in `IN_PROGRESS` or `IN_REVIEW` without an outcome are
-executed sequentially (ADR-0050):
+assigned stories in `TODO`, `IN_PROGRESS`, or `IN_REVIEW` without an outcome
+are executed sequentially (ADR-0050). An assigned `TODO` story moves to
+`IN_PROGRESS` when its attempt starts.
 
 1. The application creates `.workspace/.worktrees/<story-id>` on branch
    `vlab/<story-id>` from the project checkout. A project without a checkout is

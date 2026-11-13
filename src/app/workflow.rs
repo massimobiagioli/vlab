@@ -175,6 +175,10 @@ pub fn run(
             report.failed += 1;
             continue;
         }
+        if store.update_story_state(&story.id, "IN_PROGRESS").is_err() {
+            report.failed += 1;
+            continue;
+        }
         let worktree = match environment.prepare(project, &story.id) {
             Ok(worktree) => worktree,
             Err(error) => {
