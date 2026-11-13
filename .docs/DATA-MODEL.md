@@ -61,7 +61,8 @@ even when planning fails.
 A planned work item linked to one project and one originating request. It
 records title, description, acceptance criteria, required skills, priority,
 complexity, optional assignment and rationale, a Kanban state, and a locally
-computed due date. The initial release creates `TODO` stories only.
+computed due date. Planning creates assigned stories in `IN PROGRESS` and
+unassigned stories in `TODO` (ADR-0047).
 
 ### Memory
 

@@ -97,6 +97,7 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0044.md`](.docs/adr/adr-0044.md) | Request intake from the dashboards. |
 | [`.docs/adr/adr-0045.md`](.docs/adr/adr-0045.md) | Read-only laboratory floor view. |
 | [`.docs/adr/adr-0046.md`](.docs/adr/adr-0046.md) | Manual laboratory and project memories from the floor. |
+| [`.docs/adr/adr-0047.md`](.docs/adr/adr-0047.md) | Assigned stories start in IN PROGRESS. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
 | [`.project/features/`](.project/features/) | Tracked feature plans with task checklists (ADR-0037). |
 

@@ -31,7 +31,7 @@ const INSERT_STORY: &str = "\
 INSERT INTO stories (id, project_id, request_id, title, description, acceptance_criteria_json, \
 priority, complexity, required_skills_json, assigned_agent_id, assignment_rationale, state, \
 due_date, created_at, updated_at) \
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'TODO', ?12, \
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, \
 strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))";
 
 impl Database {
@@ -105,6 +105,7 @@ impl Database {
                         .bind(skills::encode(&tags))
                         .bind(story.assigned_agent_id.as_deref())
                         .bind(&story.assignment_rationale)
+                        .bind(story.initial_state())
                         .bind(&story.due_date)
                         .execute(&mut *connection)
                         .await

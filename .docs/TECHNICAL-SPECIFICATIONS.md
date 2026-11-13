@@ -703,7 +703,8 @@ Each story shall contain:
 - Assignment rationale.
 - Kanban state.
 
-New stories shall begin in `TODO`.
+New stories with an assigned agent shall begin in `IN PROGRESS`; unassigned
+stories shall begin in `TODO` (ADR-0047).
 
 ### 9.4 Assignment Rules
 
@@ -804,7 +805,11 @@ the originating request; long details scroll. Terminals too narrow for five
 readable lists show a window of adjacent lists around the focused one. The
 plain `--show-project-kanban` output keeps the full card fields.
 
-The initial release creates `TODO` stories only. Later execution workflows may introduce state-transition commands; the Kanban display shall not imply that such execution already exists.
+Planning creates `IN PROGRESS` stories for assigned work and `TODO` stories
+for unassigned work (ADR-0047). The board remains read-only, and `IN PROGRESS`
+means the story has an owner rather than that an agent process is running.
+Later execution workflows may introduce state-transition commands; the Kanban
+display shall not imply that such execution already exists.
 
 ## 11. Persistence and Data Model
 

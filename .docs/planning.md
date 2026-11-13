@@ -44,7 +44,8 @@ cat request.md | vlab --new-request
 5. One logical provider invocation through the bounded retry policy.
 6. Parse and validate JSON schema version 1 locally.
 7. Apply project-roster and due-date rules locally.
-8. In one transaction, insert all stories as `TODO` and set the terminal status.
+8. In one transaction, insert every story as `IN PROGRESS` when it has an
+   assignee and as `TODO` otherwise, then set the terminal status (ADR-0047).
 9. Record `planning_started`, `provider_attempt`, and `planning_completed` or
    `planning_failed` events with no content.
 

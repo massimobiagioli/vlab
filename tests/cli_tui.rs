@@ -503,12 +503,13 @@ fn the_projects_dashboard_submits_a_request_through_the_prompt() {
     assert!(output.contains("New request"), "{output:?}");
     assert!(output.contains("Write a request first."), "{output:?}");
     assert!(output.contains("planned"), "{output:?}");
-    assert!(output.contains("Send reset email"), "{output:?}");
-    assert!(output.contains("TODO 1"), "{output:?}");
+    assert!(output.contains("Send res"), "{output:?}");
+    assert!(output.contains("IN PROGRESS 1"), "{output:?}");
+    assert!(output.contains("TODO 0"), "{output:?}");
     assert!(!output.contains("SECRET-MARKER"), "{output:?}");
 
     let db = sandbox.seed_database();
-    let (status, stories, content): (String, i64, String) = db.block_on(async {
+    let (status, stories, content, state): (String, i64, String, String) = db.block_on(async {
         let status = sqlx::query_scalar("SELECT status FROM requests")
             .fetch_one(db.pool())
             .await
@@ -521,11 +522,15 @@ fn the_projects_dashboard_submits_a_request_through_the_prompt() {
             .fetch_one(db.pool())
             .await
             .unwrap();
-        (status, stories, content)
+        let state = sqlx::query_scalar("SELECT state FROM stories")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        (status, stories, content, state)
     });
     assert_eq!(
-        (status.as_str(), stories, content.as_str()),
-        ("PLANNED", 1, "Add password reset")
+        (status.as_str(), stories, content.as_str(), state.as_str()),
+        ("PLANNED", 1, "Add password reset", "IN_PROGRESS")
     );
     assert_eq!(
         db.get(vlab::app::storage::AppStateKey::ActiveProjectId)

@@ -4,6 +4,7 @@ mod support;
 
 use vlab::app::context::save_active_lab;
 use vlab::app::directory::Directory;
+use vlab::app::kanban::{self, StoryState};
 use vlab::app::projects::ProjectStore;
 use vlab::app::requests::{self, PlanningOutcome};
 use vlab::domain::agent::{AgentProfile, Description, Role};
@@ -73,6 +74,24 @@ fn valid_plan() -> String {
     r#"{"schema_version":1,"clarification_questions":[],"stories":[{"title":"Add reset","description":"Reset flow","acceptance_criteria":["Email sent"],"priority":"high","complexity":"small","required_skills":["rust"],"assigned_agent_id":null,"assignment_rationale":"No suitable member."}]}"#.to_owned()
 }
 
+fn mixed_plan() -> String {
+    r#"{"schema_version":1,"clarification_questions":[],"stories":[
+      {"title":"Assigned work","description":"Owned","acceptance_criteria":["Done"],"priority":"high","complexity":"small","required_skills":["rust"],"assigned_agent_id":"2d3e4f50","assignment_rationale":"The developer owns it."},
+      {"title":"Waiting work","description":"Unowned","acceptance_criteria":["Done"],"priority":"low","complexity":"small","required_skills":["rust"],"assigned_agent_id":null,"assignment_rationale":"No suitable member."}
+    ]}"#
+    .to_owned()
+}
+
+fn story_states(db: &Database, request_id: &str) -> Vec<(String, String)> {
+    db.block_on(async {
+        sqlx::query_as("SELECT title, state FROM stories WHERE request_id = ?1 ORDER BY title")
+            .bind(request_id)
+            .fetch_all(db.pool())
+            .await
+            .unwrap()
+    })
+}
+
 fn run(fixture: &Fixture, provider: &ScriptedProvider, text: &str) -> PlanningOutcome {
     requests::plan(
         &fixture.db,
@@ -120,6 +139,10 @@ fn a_valid_plan_persists_stories_and_completes_the_request() {
     assert_eq!(stories.len(), 1);
     assert_eq!(status(&fixture.db, request_id.as_str()), "PLANNED");
     assert_eq!(
+        story_states(&fixture.db, request_id.as_str()),
+        vec![("Add reset".to_owned(), "TODO".to_owned())]
+    );
+    assert_eq!(
         fixture
             .db
             .agent_memberships(&AgentId::parse("1c2d3e4f").unwrap())
@@ -128,6 +151,46 @@ fn a_valid_plan_persists_stories_and_completes_the_request() {
         1
     );
     let _ = fixture.dir;
+}
+
+#[test]
+fn assigned_stories_start_in_progress_and_unassigned_stay_todo() {
+    let fixture = fixture();
+    let provider = ScriptedProvider::new(vec![Ok(ProviderResponse {
+        content: mixed_plan(),
+        model: "deepseek-chat".to_owned(),
+        usage: None,
+        finish_reason: None,
+        request_id: None,
+    })]);
+    let outcome = run(&fixture, &provider, "Add two stories");
+    let PlanningOutcome::Planned { request_id, .. } = outcome else {
+        panic!("unexpected outcome: {outcome:?}");
+    };
+    assert_eq!(
+        story_states(&fixture.db, request_id.as_str()),
+        vec![
+            ("Assigned work".to_owned(), "IN_PROGRESS".to_owned()),
+            ("Waiting work".to_owned(), "TODO".to_owned()),
+        ]
+    );
+    let board = kanban::show(&fixture.db, &fixture.db, fixture.project.as_str()).unwrap();
+    assert_eq!(board.counts.in_progress, 1);
+    assert_eq!(board.counts.todo, 1);
+    assert_eq!(
+        board
+            .cards_in(StoryState::InProgress)
+            .map(|card| card.title.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Assigned work"]
+    );
+    assert_eq!(
+        board
+            .cards_in(StoryState::Todo)
+            .map(|card| card.title.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Waiting work"]
+    );
 }
 
 struct DbCheckingProvider {

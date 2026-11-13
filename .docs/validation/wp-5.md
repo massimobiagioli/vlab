@@ -78,4 +78,5 @@ cargo deny check
   exercised by a PTY test; the literal validation path is unit-tested.
 - Live retry charges, real-provider token usage, and model semantic quality are
   evaluation criteria for GL-T3, not deterministic proofs.
-- No story state transitions exist; the planner creates `TODO` stories only.
+- No story state transitions exist; planning creates assigned stories in
+  `IN_PROGRESS` and unassigned stories in `TODO` (ADR-0047).

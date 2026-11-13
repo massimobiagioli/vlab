@@ -90,6 +90,56 @@ fn migrating_again_applies_nothing_and_records_nothing() {
     assert_eq!(event_rows(&db).len(), 1);
 }
 
+fn migrator_before_assigned_progress(
+    db: &Database,
+) -> (tempfile::TempDir, sqlx::migrate::Migrator) {
+    let dir = tempfile::tempdir().unwrap();
+    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    for entry in fs::read_dir(source).unwrap() {
+        let entry = entry.unwrap();
+        let name = entry.file_name();
+        if name.to_string_lossy().starts_with("0008") {
+            continue;
+        }
+        fs::copy(entry.path(), dir.path().join(name)).unwrap();
+    }
+    let migrator = db
+        .block_on(sqlx::migrate::Migrator::new(dir.path()))
+        .unwrap();
+    (dir, migrator)
+}
+
+#[test]
+fn assigned_progress_migration_moves_only_assigned_todo_stories() {
+    let (_dir, db) = open();
+    let (_migrations, migrator) = migrator_before_assigned_progress(&db);
+    db.migrate_with(&migrator, 7, RunId::generate()).unwrap();
+    for sql in [
+        "INSERT INTO labs (id, name, created_at, updated_at) VALUES ('a3f91c07', 'Lab', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "INSERT INTO agents (id, name, role, description, skills_json, provider, model, created_at, updated_at) VALUES ('0b1c2d3e', 'Ada', 'dev', 'x', '[]', 'deepseek', 'm', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "INSERT INTO projects (id, lab_id, name, created_at, updated_at) VALUES ('1c2d3e4f', 'a3f91c07', 'Portal', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "INSERT INTO requests (id, project_id, content, status, created_at, updated_at) VALUES ('2d3e4f50', '1c2d3e4f', 'R', 'PLANNED', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "INSERT INTO stories (id, project_id, request_id, title, description, acceptance_criteria_json, priority, complexity, required_skills_json, assigned_agent_id, assignment_rationale, state, due_date, created_at, updated_at) VALUES ('3e4f5061', '1c2d3e4f', '2d3e4f50', 'Assigned', 'D', '[]', 'high', 'small', '[]', '0b1c2d3e', 'R', 'TODO', '2026-01-03', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "INSERT INTO stories (id, project_id, request_id, title, description, acceptance_criteria_json, priority, complexity, required_skills_json, assigned_agent_id, assignment_rationale, state, due_date, created_at, updated_at) VALUES ('4f506172', '1c2d3e4f', '2d3e4f50', 'Waiting', 'D', '[]', 'low', 'small', '[]', NULL, 'R', 'TODO', '2026-01-04', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+    ] {
+        db.execute(sql).unwrap();
+    }
+    db.migrate(RunId::generate()).unwrap();
+    let rows: Vec<(String, String)> = db.block_on(async {
+        sqlx::query_as("SELECT title, state FROM stories ORDER BY title")
+            .fetch_all(db.pool())
+            .await
+            .unwrap()
+    });
+    assert_eq!(
+        rows,
+        vec![
+            ("Assigned".to_owned(), "IN_PROGRESS".to_owned()),
+            ("Waiting".to_owned(), "TODO".to_owned()),
+        ]
+    );
+}
+
 #[test]
 fn a_broken_migration_rolls_back_without_leaving_partial_schema() {
     let (_dir, db) = open();

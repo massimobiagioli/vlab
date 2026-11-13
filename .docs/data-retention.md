@@ -170,7 +170,7 @@ WP-4 adds these tables ([ADR-0023](adr/adr-0023.md), [ADR-0022](adr/adr-0022.md)
 | `priority`, `complexity` | Constrained enums | Planning estimate and sorting. |
 | `assigned_agent_id` | Project roster member or `NULL` | Assignment; references are validated locally. |
 | `assignment_rationale` | Bounded explanation or `NULL` | Explains the assignment or why it is unassigned. |
-| `state` | Kanban state | Read-only board column. Only `TODO` is created initially. |
+| `state` | Kanban state | Read-only board column. Assigned stories start in `IN PROGRESS`; unassigned stories start in `TODO` (ADR-0047). |
 | `due_date` | `YYYY-MM-DD` | Locally computed estimate, not a commitment. |
 | `created_at`, `updated_at` | RFC 3339 UTC timestamps | Ordering and diagnosis. |
 

@@ -1404,8 +1404,18 @@ impl App {
                     .into_iter()
                     .map(|member| (member.id.to_string(), member.name))
                     .collect();
+                let in_progress = stories
+                    .iter()
+                    .filter(|story| story.assigned_agent_id.is_some())
+                    .count();
+                let todo = stories.len().saturating_sub(in_progress);
                 let mut lines = vec![
-                    format!("{} stories added to TODO.", stories.len()),
+                    format!(
+                        "{} stories added ({} in progress, {} TODO).",
+                        stories.len(),
+                        in_progress,
+                        todo
+                    ),
                     String::new(),
                 ];
                 for story in stories {
