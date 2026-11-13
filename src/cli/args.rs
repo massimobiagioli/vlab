@@ -18,7 +18,7 @@ use crate::app::AppError;
         "show_settings", "edit_settings",
         "list_labs", "new_lab", "open_lab", "delete_lab", "check_lab",
         "list_projects", "new_project", "open_project", "show_project_kanban",
-        "delete_project", "new_request", "assign_agent",
+        "delete_project", "new_request", "assign_agent", "run_workflow",
         "list_agents", "new_agent", "delete_agent", "show_agent_detail", "ask",
     ])),
 )]
@@ -109,6 +109,10 @@ pub struct Cli {
     #[arg(hide = true, long, value_name = "agent-id", help_heading = "Projects")]
     assign_agent: Option<String>,
 
+    /// Resume the bounded simulated workflow for pending stories
+    #[arg(hide = true, long, help_heading = "Projects")]
+    run_workflow: bool,
+
     /// List agents in the active laboratory
     #[arg(hide = true, long, help_heading = "Agents")]
     list_agents: bool,
@@ -186,6 +190,7 @@ pub enum Action {
     AssignAgent {
         agent_id: String,
     },
+    RunWorkflow,
     ListAgents,
     NewAgent,
     DeleteAgent {
@@ -219,6 +224,7 @@ impl Action {
             Self::DeleteProject { .. } => "--delete-project",
             Self::NewRequest { .. } => "--new-request",
             Self::AssignAgent { .. } => "--assign-agent",
+            Self::RunWorkflow => "--run-workflow",
             Self::ListAgents => "--list-agents",
             Self::NewAgent => "--new-agent",
             Self::DeleteAgent { .. } => "--delete-agent",
@@ -285,6 +291,8 @@ impl Cli {
             }
         } else if let Some(agent_id) = self.assign_agent {
             Action::AssignAgent { agent_id }
+        } else if self.run_workflow {
+            Action::RunWorkflow
         } else if self.list_agents {
             Action::ListAgents
         } else if self.new_agent {

@@ -181,6 +181,34 @@ pub fn dispatch(
             }
             render_plan_outcome(stdout, stderr, &db, &outcome)
         }
+        Action::RunWorkflow => {
+            let limits = ExecutionLimits::default();
+            let db = open_database(run_id)?;
+            let project = context::active_project(&db)?.require()?;
+            let settings = settings::show(&settings_file()?)?.settings;
+            let provider = provider_from_settings(&settings, limits)?;
+            let cancel = CancelToken::default();
+            let handler_token = cancel.clone();
+            let _ = ctrlc::set_handler(move || handler_token.cancel());
+            let report = workflow::run(
+                &db,
+                &db,
+                &project,
+                &settings,
+                &provider,
+                limits,
+                &crate::domain::clock::SystemClock,
+                cancel,
+                run_id,
+            )?;
+            write_stdout(
+                stdout,
+                &format!(
+                    "Workflow: {} completed, {} failed, {} remaining.\n",
+                    report.completed, report.failed, report.remaining
+                ),
+            )
+        }
         Action::ListProjects => {
             let db = open_database(run_id)?;
             let _active = read_active(&db, stderr)?;
