@@ -5,11 +5,13 @@ mod support;
 use std::fs;
 
 use vlab::app::directory::Directory;
+use vlab::app::projects::ProjectStore;
 use vlab::app::storage::StorageError;
 use vlab::domain::agent::{AgentProfile, Description, Role};
-use vlab::domain::ids::{AgentId, LabId};
+use vlab::domain::ids::{AgentId, LabId, ProjectId};
 use vlab::domain::lab::Lab;
 use vlab::domain::name::Name;
+use vlab::domain::project::Project;
 use vlab::domain::settings::{ModelId, ProviderId, Settings};
 use vlab::domain::skills;
 use vlab::infra::db::{Database, SUPPORTED_SCHEMA_VERSION};
@@ -190,4 +192,28 @@ fn a_foreign_key_violation_rolls_back_the_whole_agent_insert() {
         .expect_err("an unknown laboratory must fail");
     assert!(matches!(error, StorageError::Operation), "{error:?}");
     assert!(db.agent(&profile.id).unwrap().is_none(), "no partial row");
+}
+
+#[test]
+fn an_agents_projects_include_the_project_roster() {
+    let (_dir, db) = migrated();
+    let lab = lab("Payments");
+    db.insert_lab(&lab).unwrap();
+    let profile = profile("deepseek", "deepseek-chat");
+    db.insert_agent(&profile, std::slice::from_ref(&lab.id))
+        .unwrap();
+    let project = ProjectId::parse("1c2d3e4f").unwrap();
+    db.insert_project(&Project::new(
+        project.clone(),
+        lab.id,
+        Name::parse("Portal").unwrap(),
+        None,
+    ))
+    .unwrap();
+    db.assign_project_agent(&project, &profile.id).unwrap();
+    assert_eq!(db.agent_project_count(&profile.id).unwrap(), 1);
+    assert_eq!(
+        db.agent_project_names(&profile.id).unwrap(),
+        vec![(project, "Portal".to_owned())]
+    );
 }

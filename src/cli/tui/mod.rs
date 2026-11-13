@@ -74,14 +74,12 @@ impl ScreenItem {
         }
     }
 
-    fn description(self) -> &'static str {
+    fn home_description(self) -> &'static str {
         match self {
-            Self::Group(DashboardGroup::Labs) => "create, check, select, and delete laboratories",
-            Self::Group(DashboardGroup::Projects) => {
-                "create, open, assign, inspect, and delete projects"
-            }
-            Self::Group(DashboardGroup::Agents) => "inspect, create, assign, and archive agents",
-            Self::Group(DashboardGroup::Settings) => "inspect and edit the private settings file",
+            Self::Group(DashboardGroup::Labs) => "create, check, activate, delete",
+            Self::Group(DashboardGroup::Projects) => "create, open, assign, delete",
+            Self::Group(DashboardGroup::Agents) => "inspect, create, assign, archive",
+            Self::Group(DashboardGroup::Settings) => "inspect and edit settings",
         }
     }
 }
@@ -1055,7 +1053,16 @@ impl App {
 
     fn apply_result(&mut self, result: Result<(), AppError>) {
         match result {
-            Ok(()) => self.mode = Mode::Browse,
+            Ok(()) => {
+                // Actions that open a report or detail modal set the mode
+                // themselves; only a completed form/confirm returns to browse.
+                if !matches!(
+                    self.mode,
+                    Mode::Message { .. } | Mode::Confirm(_) | Mode::Picker { .. } | Mode::Help
+                ) {
+                    self.mode = Mode::Browse;
+                }
+            }
             Err(error) => self.show_error(error),
         }
     }
@@ -1157,7 +1164,7 @@ impl App {
             .constraints([
                 Constraint::Length(3),
                 Constraint::Min(1),
-                Constraint::Length(2),
+                Constraint::Length(5),
             ])
             .split(area);
         frame.render_widget(
@@ -1168,37 +1175,43 @@ impl App {
             .block(self.block("Home")),
             chunks[0],
         );
-        let lines: Vec<Line> = HOME_ITEMS
-            .iter()
-            .enumerate()
-            .map(|(index, item)| {
-                let marker = if index == self.home_selected {
-                    ">"
-                } else {
-                    " "
-                };
-                let style = if index == self.home_selected {
-                    self.theme.selected()
-                } else {
-                    Style::default()
-                };
-                Line::from(vec![
-                    Span::styled(format!("{marker} "), style),
-                    Span::styled(
-                        format!("{}  ", item.label()),
-                        style.add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(item.description(), self.theme.muted_style()),
-                ])
-            })
-            .collect();
+
+        let label_width = 16usize;
+        let separator = if self.theme.unicode {
+            "  │  "
+        } else {
+            "  |  "
+        };
+        let mut lines = vec![home_header(self.theme, label_width, separator)];
+        for (index, item) in HOME_ITEMS.iter().enumerate() {
+            lines.push(home_line(
+                *item,
+                index == self.home_selected,
+                self.theme,
+                label_width,
+                separator,
+            ));
+        }
         frame.render_widget(Paragraph::new(lines).block(self.block("Groups")), chunks[1]);
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                "↑/↓ select   Enter open   1-4 direct   q quit",
+
+        let actions = vec![
+            Line::from(vec![
+                Span::styled("[↑/↓]", self.theme.key()),
+                Span::styled(" Select   ", self.theme.muted_style()),
+                Span::styled("[Enter]", self.theme.key()),
+                Span::styled(" Open   ", self.theme.muted_style()),
+                Span::styled("[1-4]", self.theme.key()),
+                Span::styled(" Direct   ", self.theme.muted_style()),
+                Span::styled("[q]", self.theme.key()),
+                Span::styled(" Quit", self.theme.muted_style()),
+            ]),
+            Line::from(Span::styled(
+                "Choose a group to manage; Esc in a dashboard returns here.",
                 self.theme.muted_style(),
-            )))
-            .block(self.block("Actions")),
+            )),
+        ];
+        frame.render_widget(
+            Paragraph::new(actions).block(self.block("Actions")),
             chunks[2],
         );
     }
@@ -1530,6 +1543,53 @@ impl Theme {
             Style::default().add_modifier(Modifier::REVERSED)
         }
     }
+}
+
+fn home_header(theme: Theme, label_width: usize, separator: &str) -> Line<'static> {
+    Line::from(vec![
+        Span::raw("   "),
+        Span::styled(
+            format!("{:<label_width$}", "NAME"),
+            theme.muted_style().add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(separator.to_owned(), theme.border_style()),
+        Span::styled(
+            "DESCRIPTION",
+            theme.muted_style().add_modifier(Modifier::BOLD),
+        ),
+    ])
+}
+
+fn home_line(
+    item: ScreenItem,
+    selected: bool,
+    theme: Theme,
+    label_width: usize,
+    separator: &str,
+) -> Line<'static> {
+    let base = if selected {
+        theme.selected()
+    } else {
+        Style::default()
+    };
+    let marker = if selected {
+        if theme.unicode { "▸" } else { ">" }
+    } else {
+        " "
+    };
+    let description = if selected { base } else { theme.muted_style() };
+    Line::from(vec![
+        Span::styled(format!(" {marker} "), base),
+        Span::styled(
+            format!("{:<label_width$}", item.label()),
+            base.add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            separator.to_owned(),
+            if selected { base } else { theme.border_style() },
+        ),
+        Span::styled(item.home_description(), description),
+    ])
 }
 
 fn supports_unicode() -> bool {
@@ -1876,6 +1936,36 @@ mod tests {
         for label in ["Laboratories", "Projects", "Agents", "Settings"] {
             assert!(screen.contains(label), "{label}: {screen}");
         }
+    }
+
+    #[test]
+    fn home_rows_align_labels_and_descriptions_in_columns() {
+        let line = home_line(
+            ScreenItem::Group(DashboardGroup::Labs),
+            false,
+            Theme {
+                color: false,
+                unicode: true,
+            },
+            16,
+            "  │  ",
+        );
+        assert_eq!(line.spans[1].content.chars().count(), 16);
+        assert_eq!(line.spans[2].content.as_ref(), "  │  ");
+        assert_eq!(
+            line.spans[3].content.as_ref(),
+            "create, check, activate, delete"
+        );
+        let header = home_header(
+            Theme {
+                color: false,
+                unicode: true,
+            },
+            16,
+            "  │  ",
+        );
+        assert_eq!(header.spans[1].content.as_ref(), "NAME            ");
+        assert_eq!(header.spans[3].content.as_ref(), "DESCRIPTION");
     }
 
     #[test]

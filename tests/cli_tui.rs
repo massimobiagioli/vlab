@@ -149,6 +149,7 @@ fn the_labs_dashboard_creates_checks_activates_and_deletes() {
     assert!(success, "dashboard did not exit cleanly: {output:?}");
     assert_restored(&output);
     assert!(output.contains("Laboratories"), "{output:?}");
+    assert!(output.contains("Laboratory check"), "{output:?}");
     let plain = sandbox.run(&["--list-labs"]);
     plain.assert_success();
     assert!(plain.stdout.contains("No laboratories"), "{}", plain.stdout);
@@ -206,6 +207,7 @@ fn the_projects_dashboard_creates_opens_assigns_and_deletes() {
     );
     assert!(success, "dashboard did not exit cleanly: {output:?}");
     assert_restored(&output);
+    assert!(output.contains("Kanban"), "{output:?}");
     let db = sandbox.seed_database();
     let assigned: i64 = db.block_on(async {
         sqlx::query_scalar("SELECT count(*) FROM project_agents")
@@ -299,6 +301,8 @@ fn the_agents_dashboard_shows_detail_and_archives() {
     );
     assert!(success, "dashboard did not exit cleanly: {output:?}");
     assert_restored(&output);
+    assert!(output.contains("Agent 1c2d3e4f"), "{output:?}");
+    assert!(output.contains("Memories:"), "{output:?}");
     let db = sandbox.seed_database();
     let archived: Option<String> = db.block_on(async {
         sqlx::query_scalar("SELECT archived_at FROM agents WHERE id = '1c2d3e4f'")

@@ -136,7 +136,9 @@ impl Directory for Database {
 
     fn agent_project_count(&self, id: &AgentId) -> Result<u64, StorageError> {
         self.count_agent(
-            "SELECT count(DISTINCT project_id) FROM stories WHERE assigned_agent_id = ?1",
+            "SELECT count(*) FROM (\
+                 SELECT project_id FROM project_agents WHERE agent_id = ?1 \
+                 UNION SELECT project_id FROM stories WHERE assigned_agent_id = ?1)",
             id,
         )
     }
@@ -180,7 +182,11 @@ impl Directory for Database {
                 .await
                 .map_err(|error| map_sqlx_error(self.path(), &error))?;
             let rows: Vec<(String, String)> = sqlx::query_as(
-                "SELECT DISTINCT p.id, p.name FROM projects p                  JOIN stories s ON s.project_id = p.id                  WHERE s.assigned_agent_id = ?1 ORDER BY p.name COLLATE NOCASE, p.id",
+                "SELECT p.id, p.name FROM projects p \
+                 WHERE p.id IN (\
+                     SELECT project_id FROM project_agents WHERE agent_id = ?1 \
+                     UNION SELECT project_id FROM stories WHERE assigned_agent_id = ?1) \
+                 ORDER BY p.name COLLATE NOCASE, p.id",
             )
             .bind(id.as_str())
             .fetch_all(&mut *connection)
@@ -189,8 +195,7 @@ impl Directory for Database {
             rows.into_iter()
                 .map(|(id, name)| {
                     Ok((
-                        crate::domain::ids::ProjectId::parse(&id)
-                            .ok_or(StorageError::Operation)?,
+                        crate::domain::ids::ProjectId::parse(&id).ok_or(StorageError::Operation)?,
                         name,
                     ))
                 })
