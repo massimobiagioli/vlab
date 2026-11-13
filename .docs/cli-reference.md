@@ -20,6 +20,11 @@ Dashboards use `j/k` or arrows, `h/l` for pages, `Enter` to open, the action
 keys in the bottom bar, `/` to filter, `?` for help, and `q` to quit. Stored and
 model-generated text is sanitized before display. Credentials are never shown.
 
+## Legacy flags (hidden, deprecated)
+
+The following flag surface remains available for scripts during the migration
+window but is hidden from `--help`. New work uses the group subcommands.
+
 ## Settings
 
 | Command | Behavior |

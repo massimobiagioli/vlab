@@ -104,8 +104,9 @@ redirected, non-TTY stream) prints the width-aware plain table instead.
 
 ## Local walkthrough
 
-The commands below remain the stable non-interactive surface. The same
-operations are available from the dashboards.
+The legacy flags below remain available as hidden compatibility aliases during
+the migration window; they are no longer part of the public help surface. The
+same operations are available from the dashboards.
 
 WP-3 delivers laboratories and agent profiles; WP-4 adds projects, the
 read-only Kanban, automatic memories, and safe deletion. Settings must be valid

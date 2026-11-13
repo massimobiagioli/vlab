@@ -1,6 +1,6 @@
 Manage virtual software laboratories staffed by AI agents.
 
-Usage: vlab [OPTIONS] [COMMAND]
+Usage: vlab [COMMAND]
 
 Commands:
   labs      Open the laboratories dashboard
@@ -10,35 +10,5 @@ Commands:
   help      Print this message or the help of the given subcommand(s)
 
 Options:
-      --yes      Confirm a deletion without prompting
   -h, --help     Print help
   -V, --version  Print version
-
-Settings:
-      --show-settings  Show the configuration path, provider, and model
-      --edit-settings  Edit settings.yaml in $VISUAL or $EDITOR and validate it
-
-Laboratories:
-      --list-labs            List laboratories
-      --new-lab <name>       Create a laboratory and print its identifier
-      --open-lab <lab-id>    Select the active laboratory
-      --delete-lab <lab-id>  Delete a laboratory and its projects (asks for confirmation)
-      --check-lab <lab-id>   Validate a laboratory's agents and Tech Lead
-
-Projects:
-      --list-projects                 List projects in the active laboratory
-      --new-project <name>            Create a project in the active laboratory
-      --github-source <url>           Optional GitHub repository URL for the new project
-      --open-project <project-id>     Select the current project
-      --show-project-kanban           Show the current project's read-only Kanban board
-      --delete-project                Delete the current project (asks for confirmation)
-      --new-request [<request-text>]  Submit a request for the current project
-      --assign-agent <agent-id>       Assign an agent to the current project
-
-Agents:
-      --list-agents                   List agents in the active laboratory
-      --new-agent                     Create an agent with a guided procedure
-      --delete-agent <agent-id>       Delete an agent from every laboratory (asks for confirmation)
-      --show-agent-detail <agent-id>  Show an agent's profile, memberships, and assignments
-      --ask <question>                Ask the Tech Lead, or the agent given with --to-agent, a question
-      --to-agent <agent-id>           Address --ask to a specific agent

@@ -51,6 +51,7 @@ mode, and key events for ADR-0038.
 | Crate | Version | Purpose | License | Verified |
 |---|---|---|---|---|
 | `assert_cmd` | 2.2.2 | Run the binary and capture exit code and streams (`STACK.md`). | MIT OR Apache-2.0 | 2026-11-12 |
+| `portable-pty` | 0.9.0 | Pseudo-terminal harness for dashboard key-flow and terminal-restore tests (ADR-0038). | MIT | 2026-11-13 |
 | `tempfile` | 3.27.0 | Isolated filesystem sandboxes (`STACK.md`). | MIT OR Apache-2.0 | 2026-11-12 |
 | `wiremock` | 0.6.5 | Local HTTP test double for DeepSeek contract tests (`STACK.md`). | MIT OR Apache-2.0 | 2026-11-12 |
 

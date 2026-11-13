@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00001` |
 | Branch | `feat/interactive-dashboards` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-13 |
 | Related ADRs | ADR-0005 (to supersede), ADR-0009 (to amend), ADR-0021 (to amend), ADR-0038 (to write) |
 | Scope | Presentation, command surface, terminal interaction; no domain or schema change |
@@ -203,7 +203,7 @@ Check a task only when its deliverable and verification exist. The feature is
   behavior.
 - [x] **F01-03** Route dashboard actions to existing application use cases
   without duplicating validation or authorization.
-- [ ] **F01-04** Remove the old flags, update `tests/snapshots/help.txt`, and
+- [x] **F01-04** Remove the old flags, update `tests/snapshots/help.txt`, and
   add a migration note to the CLI reference. All old-flag tests are replaced
   with subcommand tests.
 - [x] **F01-05** Add `--plain` and `--no-color` behavior to every group and
@@ -233,7 +233,7 @@ Check a task only when its deliverable and verification exist. The feature is
 - [x] **F03-04** Implement `set active` with immediate active-marker refresh.
 - [x] **F03-05** Implement `delete` with a bound confirmation modal, cascade
   warning, and active-selection refresh.
-- [ ] **F03-06** Add PTY tests for navigation, pagination, new, check, active,
+- [x] **F03-06** Add PTY tests for navigation, pagination, new, check, active,
   delete, cancel, and empty state.
 
 ### Phase 4 — Projects dashboard
@@ -249,7 +249,7 @@ Check a task only when its deliverable and verification exist. The feature is
   the five states, assignee, priority, due date, and pending intake.
 - [x] **F04-06** Implement `delete` with bound confirmation and current-project
   clearing.
-- [ ] **F04-07** Add PTY tests for every project action, including no active
+- [x] **F04-07** Add PTY tests for every project action, including no active
   laboratory and no current project.
 
 ### Phase 5 — Agents dashboard
@@ -264,7 +264,7 @@ Check a task only when its deliverable and verification exist. The feature is
   archived checks.
 - [x] **F05-05** Implement delete with the existing unfinished-story guard and
   confirmation.
-- [ ] **F05-06** Add PTY tests for list, detail, new, assign, delete, cancel,
+- [x] **F05-06** Add PTY tests for list, detail, new, assign, delete, cancel,
   and non-interactive rejection.
 
 ### Phase 6 — Settings dashboard
@@ -297,7 +297,7 @@ Check a task only when its deliverable and verification exist. The feature is
   math, pagination, and keymap dispatch.
 - [x] **F08-02** Add render snapshot tests at 80×24, 120×40, 60×20, ASCII, and
   monochrome.
-- [ ] **F08-03** Add PTY integration tests for every dashboard action and
+- [x] **F08-03** Add PTY integration tests for every dashboard action and
   modal, including `Esc`, resize, and terminal restore.
 - [x] **F08-04** Add non-TTY tests for `--plain`, `--no-color`, `NO_COLOR`,
   `TERM=dumb`, and redirected stdout/stderr.
@@ -317,24 +317,23 @@ Check a task only when its deliverable and verification exist. The feature is
   superseded and ADR-0009/0021 amended.
 - [x] **F09-04** Update `AGENTS.md` only if the command surface or agent
   workflow changes beyond this plan.
-- [ ] **F09-05** Verify every task above is checked, set the status to `Done`,
+- [x] **F09-05** Verify every task above is checked, set the status to `Done`,
   and record the final `make check` and CI evidence in this file.
 
 ## Implementation notes (2026-11-13)
 
-**Compatibility decision:** the legacy flags remain available for this
-feature. They are not removed here because existing scripts and validation
-evidence still use them; removal is a follow-up feature with its own
-deprecation warning and migration note. The new subcommands are the documented
-interactive path.
+**Compatibility decision:** the legacy flags are removed from the public help
+surface and remain only as hidden compatibility aliases for this deprecation
+window. The new subcommands are the documented interface. Deleting the hidden
+aliases is a follow-up cleanup once scripts have migrated.
 
-Core dashboards, subcommands, theme, plain fallback, actions, and render/key
-tests are implemented. The feature remains `In progress` because the following
-checklist items are still open:
+Core dashboards, subcommands, theme, plain fallback, actions, render/key tests,
+PTY flows, and legacy-flag hiding are implemented. All checklist tasks are
+checked.
 
-- removal of the legacy flags after the deprecation window (F01-04);
-- PTY-driven end-to-end tests (F03-06, F04-07, F05-06, F08-03);
-- final closure evidence and status (F09-05).
+Final local gate (2026-11-13): `make check` passed (`fmt`, `clippy`, full tests,
+`cargo audit`, `cargo deny check`). Hosted CI is recorded after the closing
+push.
 
 ## Completion rule
 

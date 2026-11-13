@@ -4,44 +4,8 @@ mod support;
 
 use support::Sandbox;
 
-/// Command groups and their flags, in the order of specification §4.1.
-const GROUPS: &[(&str, &[&str])] = &[
-    ("Settings", &["--show-settings", "--edit-settings"]),
-    (
-        "Laboratories",
-        &[
-            "--list-labs",
-            "--new-lab <name>",
-            "--open-lab <lab-id>",
-            "--delete-lab <lab-id>",
-            "--check-lab <lab-id>",
-        ],
-    ),
-    (
-        "Projects",
-        &[
-            "--list-projects",
-            "--new-project <name>",
-            "--github-source <url>",
-            "--open-project <project-id>",
-            "--show-project-kanban",
-            "--delete-project",
-            "--new-request [<request-text>]",
-            "--assign-agent <agent-id>",
-        ],
-    ),
-    (
-        "Agents",
-        &[
-            "--list-agents",
-            "--new-agent",
-            "--delete-agent <agent-id>",
-            "--show-agent-detail <agent-id>",
-            "--ask <question>",
-            "--to-agent <agent-id>",
-        ],
-    ),
-];
+/// Public group subcommands, in help order.
+const COMMANDS: &[&str] = &["labs", "projects", "agents", "settings"];
 
 /// Lines of the help section that starts with `heading:`.
 fn section<'a>(help: &'a str, heading: &str) -> Vec<&'a str> {
@@ -53,24 +17,26 @@ fn section<'a>(help: &'a str, heading: &str) -> Vec<&'a str> {
 }
 
 #[test]
-fn help_lists_every_command_under_its_group_in_order() {
+fn help_lists_the_group_subcommands_in_order() {
     let sandbox = Sandbox::new();
     let outcome = sandbox.run(&["--help"]);
     outcome.assert_success().assert_no_escape_bytes();
-
-    for (heading, flags) in GROUPS {
-        let lines = section(&outcome.stdout, heading);
-        let listed: Vec<&str> = lines
-            .iter()
-            .filter_map(|line| {
-                flags
-                    .iter()
-                    .copied()
-                    .find(|flag| line.trim_start().starts_with(flag))
-            })
-            .collect();
-        assert_eq!(&listed, flags, "group {heading} in:\n{}", outcome.stdout);
-    }
+    let lines = section(&outcome.stdout, "Commands");
+    let listed: Vec<&str> = lines
+        .iter()
+        .filter_map(|line| {
+            COMMANDS
+                .iter()
+                .copied()
+                .find(|command| line.trim_start().starts_with(command))
+        })
+        .collect();
+    assert_eq!(listed, COMMANDS, "{}", outcome.stdout);
+    assert!(
+        !outcome.stdout.contains("--list-labs"),
+        "{}",
+        outcome.stdout
+    );
 }
 
 #[test]

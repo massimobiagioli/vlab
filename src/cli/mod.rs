@@ -200,7 +200,8 @@ mod tests {
     fn help_goes_to_stdout_only() {
         let (code, stdout, stderr) = run_args(&["--help"]);
         assert_eq!(code, 0);
-        assert!(stdout.contains("Laboratories:"));
+        assert!(stdout.contains("Commands:"));
+        assert!(stdout.contains("labs"));
         assert!(stderr.is_empty());
     }
 

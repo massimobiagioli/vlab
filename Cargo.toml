@@ -28,6 +28,7 @@ uuid = { version = "1.29.2", default-features = false, features = ["std", "v4"] 
 
 [dev-dependencies]
 assert_cmd = "2.2.2"
+portable-pty = "0.9.0"
 tempfile = "3.27.0"
 wiremock = "0.6.5"
 

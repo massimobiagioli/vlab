@@ -24,59 +24,79 @@ use crate::app::AppError;
 )]
 pub struct Cli {
     /// Show the configuration path, provider, and model
-    #[arg(long, help_heading = "Settings")]
+    #[arg(hide = true, long, help_heading = "Settings")]
     show_settings: bool,
 
     /// Edit settings.yaml in $VISUAL or $EDITOR and validate it
-    #[arg(long, help_heading = "Settings")]
+    #[arg(hide = true, long, help_heading = "Settings")]
     edit_settings: bool,
 
     /// List laboratories
-    #[arg(long, help_heading = "Laboratories")]
+    #[arg(hide = true, long, help_heading = "Laboratories")]
     list_labs: bool,
 
     /// Create a laboratory and print its identifier
-    #[arg(long, value_name = "name", help_heading = "Laboratories")]
+    #[arg(hide = true, long, value_name = "name", help_heading = "Laboratories")]
     new_lab: Option<String>,
 
     /// Select the active laboratory
-    #[arg(long, value_name = "lab-id", help_heading = "Laboratories")]
+    #[arg(
+        hide = true,
+        long,
+        value_name = "lab-id",
+        help_heading = "Laboratories"
+    )]
     open_lab: Option<String>,
 
     /// Delete a laboratory and its projects (asks for confirmation)
-    #[arg(long, value_name = "lab-id", help_heading = "Laboratories")]
+    #[arg(
+        hide = true,
+        long,
+        value_name = "lab-id",
+        help_heading = "Laboratories"
+    )]
     delete_lab: Option<String>,
 
     /// Validate a laboratory's agents and Tech Lead
-    #[arg(long, value_name = "lab-id", help_heading = "Laboratories")]
+    #[arg(
+        hide = true,
+        long,
+        value_name = "lab-id",
+        help_heading = "Laboratories"
+    )]
     check_lab: Option<String>,
 
     /// List projects in the active laboratory
-    #[arg(long, help_heading = "Projects")]
+    #[arg(hide = true, long, help_heading = "Projects")]
     list_projects: bool,
 
     /// Create a project in the active laboratory
-    #[arg(long, value_name = "name", help_heading = "Projects")]
+    #[arg(hide = true, long, value_name = "name", help_heading = "Projects")]
     new_project: Option<String>,
 
     /// Optional GitHub repository URL for the new project
-    #[arg(long, value_name = "url", help_heading = "Projects")]
+    #[arg(hide = true, long, value_name = "url", help_heading = "Projects")]
     github_source: Option<String>,
 
     /// Select the current project
-    #[arg(long, value_name = "project-id", help_heading = "Projects")]
+    #[arg(
+        hide = true,
+        long,
+        value_name = "project-id",
+        help_heading = "Projects"
+    )]
     open_project: Option<String>,
 
     /// Show the current project's read-only Kanban board
-    #[arg(long, help_heading = "Projects")]
+    #[arg(hide = true, long, help_heading = "Projects")]
     show_project_kanban: bool,
 
     /// Delete the current project (asks for confirmation)
-    #[arg(long, help_heading = "Projects")]
+    #[arg(hide = true, long, help_heading = "Projects")]
     delete_project: bool,
 
     /// Submit a request for the current project
-    #[arg(
+    #[arg(hide = true,
         long,
         value_name = "request-text",
         num_args = 0..=1,
@@ -86,35 +106,35 @@ pub struct Cli {
     new_request: Option<String>,
 
     /// Assign an agent to the current project
-    #[arg(long, value_name = "agent-id", help_heading = "Projects")]
+    #[arg(hide = true, long, value_name = "agent-id", help_heading = "Projects")]
     assign_agent: Option<String>,
 
     /// List agents in the active laboratory
-    #[arg(long, help_heading = "Agents")]
+    #[arg(hide = true, long, help_heading = "Agents")]
     list_agents: bool,
 
     /// Create an agent with a guided procedure
-    #[arg(long, help_heading = "Agents")]
+    #[arg(hide = true, long, help_heading = "Agents")]
     new_agent: bool,
 
     /// Delete an agent from every laboratory (asks for confirmation)
-    #[arg(long, value_name = "agent-id", help_heading = "Agents")]
+    #[arg(hide = true, long, value_name = "agent-id", help_heading = "Agents")]
     delete_agent: Option<String>,
 
     /// Show an agent's profile, memberships, and assignments
-    #[arg(long, value_name = "agent-id", help_heading = "Agents")]
+    #[arg(hide = true, long, value_name = "agent-id", help_heading = "Agents")]
     show_agent_detail: Option<String>,
 
     /// Ask the Tech Lead, or the agent given with --to-agent, a question
-    #[arg(long, value_name = "question", help_heading = "Agents")]
+    #[arg(hide = true, long, value_name = "question", help_heading = "Agents")]
     ask: Option<String>,
 
     /// Address --ask to a specific agent
-    #[arg(long, value_name = "agent-id", help_heading = "Agents")]
+    #[arg(hide = true, long, value_name = "agent-id", help_heading = "Agents")]
     to_agent: Option<String>,
 
     /// Confirm a deletion without prompting
-    #[arg(long)]
+    #[arg(hide = true, long)]
     yes: bool,
 
     /// Open a dashboard for a group
