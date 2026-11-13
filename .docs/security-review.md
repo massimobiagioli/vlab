@@ -5,8 +5,8 @@ Scope: WP-6 secrets, privacy, redaction, the settings-file credential change
 (ADR-0030), the project clone boundary (ADR-0032), current-project commands
 (ADR-0033), project rosters (ADR-0034), automatic memories (ADR-0035,
 ADR-0036), interactive dashboards (ADR-0038), the laboratory floor (ADR-0045),
-manual laboratory/project memories (ADR-0046), and the bounded no-tool
-workflow simulation (ADR-0048).
+manual laboratory/project memories (ADR-0046), and real bounded worktree
+execution (ADR-0050).
 
 ## Trust boundaries and controls
 
@@ -23,7 +23,7 @@ workflow simulation (ADR-0048).
 | Project roster → planning | Unauthorized or unknown agent | Membership, archive, and laboratory checks; planning filters to the roster; empty result fails closed | `src/app/projects.rs`, `src/app/requests.rs`, `tests/cli_memories.rs`, `tests/planning_flow.rs` |
 | Automatic memory → prompt | Injected or secret content | Deterministic structural text; bounded model summary; secret check; 20-per-scope and 8 KiB prompt caps | `src/app/memories.rs`, `src/app/requests.rs`, `tests/planning_flow.rs` |
 | Manual memory editor → storage/prompt | Injected, secret, cross-scope, or oversized content | Active-lab/current-project ownership checks, 1–2,000-char validation, control-character rejection, credential check, 20-per-scope cap, edit preserves identifier/scope/time, bound delete confirmation, content-free events | `src/app/memories.rs`, `src/cli/tui/memory.rs`, `src/infra/db/memories.rs`, `tests/cli_memories.rs` |
-| Workflow model output → story state | Invalid JSON, injection, or a model-chosen transition | Strict schema, local validation, application-owned `IN_REVIEW`/`DONE`, no tools, bounded calls, sanitized outcome display, content-free events | `src/app/workflow.rs`, `src/infra/db/workflow.rs`, `tests/workflow.rs` |
+| Workflow action/model output → worktree and story state | Invalid JSON, path escape, injection, hostile command, or a model-chosen transition | Strict action schema, canonical path confinement, symlink rejection, cleared environment, command/round/time/output bounds, application-owned commit and `IN_REVIEW`/`DONE`, content-free events | `src/app/execution.rs`, `src/app/workflow.rs`, `src/infra/execution.rs`, `src/infra/db/workflow.rs`, `tests/workflow.rs` |
 | Stored/model text → terminal | Escape-sequence injection, misleading UI | All rendered text sanitized; identifiers never silently truncated; color never the only signal | `src/cli/tui/mod.rs`, `tests/cli_dashboards.rs` |
 | Dashboard → destructive action | Accidental or bypassed deletion | Bound confirmation modal; exact target; `Esc` cancels; same app use cases as flags | `src/cli/tui/mod.rs` |
 | Settings file → application | Credential disclosure or malformed config | Strict bounded parser, token validation, content-free errors, `0600`/`0700`, Unix refusal of group/other-readable files | `tests/cli_settings_show.rs`, `src/infra/config.rs` |
@@ -67,8 +67,11 @@ real credential values; `settings.yaml` is git-ignored, and the synthetic
 
 ## Residual risks and limitations
 
-- Prompt injection cannot be proven absent; mitigations are structural (no
-  tools, strict validation) plus adversarial tests.
+- Prompt injection cannot be proven absent; mitigations are structural (strict
+  action schema, path confinement, bounded commands) plus adversarial tests.
+- Real execution has no OS sandbox or network isolation. A hostile repository
+  or model command can reach the host network and files readable by the
+  operator. Run VLab only on a trusted machine and account (ADR-0050).
 - Provider-side processing and retention are outside local control; the live
   contract is verified at GL-T2.
 - No real credential appears in the repository history by review; synthetic

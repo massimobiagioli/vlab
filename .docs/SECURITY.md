@@ -72,7 +72,9 @@ Prompts are behavioral guidance, not security boundaries.
 | Application → model provider | Minimize transmitted data and apply provider-specific privacy requirements. |
 | Application → GitHub | Validate the project source; clone only the validated repository; pass the global credential through a short-lived askpass helper and child environment; bound time; discard output; no token in arguments or logs. |
 | Model → orchestrator | Validate responses; never interpret proposals as authorization. |
-| Workflow output → story state | Accept only strict work/review JSON; the application owns `IN_REVIEW`/`DONE` and outcome persistence; the model has no tools and cannot choose a transition. |
+| Workflow output → story state | Accept only strict action/review JSON; the application validates and executes actions, owns `IN_REVIEW`/`DONE`, and the model cannot choose a transition. |
+| Orchestrator → worktree | Resolve every path inside the story worktree; reject absolute paths, `..`, and symlink escapes; bound file size, command time, and output. |
+| Worktree → host | No OS sandbox: commands run with the operator's privileges. Run VLab on a trusted machine and account; this remains a residual risk (ADR-0050). |
 | Tool output → orchestrator | Treat content as data, not instructions or policy. |
 | Memory content → orchestrator | Validate scope, encoding, and size; include only within the memory budget; delimit as data; never let it change policy, permissions, or assignment rules. |
 | Orchestrator → tool | Enforce permissions, approval, and execution limits. |
@@ -90,11 +92,12 @@ before exposure.
 | Prompt injection | External content, including memory content, cannot modify policy, permissions, or approval requirements. |
 | Memory poisoning | Memory text cannot grant capabilities, alter rules, or be treated as an instruction; it is bounded and delimited. |
 | Memory data leakage | Only the scoped memories selected by the specification are sent to the provider; content is never logged or rendered unsanitized. |
-| Simulated outcome mistaken for real execution | `DONE` is documented and displayed as a no-tool simulation; no shell, filesystem, network, or repository capability exists in the workflow. |
-| Unauthorized tool use | Use an explicit tool registry and validate every invocation. |
-| Data exfiltration | Restrict outbound destinations, transmitted data, and credential access. |
+| Executed work mistaken for merged delivery | `DONE` is documented and displayed as committed work on `vlab/<story-id>`; VLab never merges or deploys, and the detail shows branch, worktree, and commit. |
+| Worktree escape | Every path is canonicalized and checked against the worktree; absolute paths, `..`, and symlinked destinations are rejected. |
+| Unauthorized tool use | Use a fixed tool registry (`list_files`, `read_file`, `write_file`, `run_command`) and validate every action. |
+| Data exfiltration | Restrict outbound destinations at the product level; commands can reach the network and this is a documented residual risk. |
 | Filesystem escape | Restrict operations to approved resources and address traversal and symlink attacks. |
-| Command injection | Avoid shell interpretation; use fixed executables and validated arguments if needed. |
+| Command injection | `run_command` intentionally uses `sh -c` inside the worktree; mitigations are confinement, a cleared environment, a 60-second timeout, capped output, and no privilege escalation. Treat the command as hostile and never run it outside the worktree. |
 | Approval substitution | Bind approval to the exact run, action, arguments, and affected resources. |
 | Resource exhaustion | Enforce finite budgets, timeouts, and input/output limits. |
 | Duplicate side effects | Retry only when idempotency is established or the previous outcome is reconciled. |
@@ -111,10 +114,13 @@ before exposure.
 - Enforce token or cost limits where supported; otherwise enforce conservative
   request and size limits without claiming exact cost control.
 - Stop safely when required validation or authorization fails.
-- Bound the simulated workflow to two provider calls per story, one attempt per
-  call, a 60-second call timeout, 512 output tokens, and a 240-second total
-  deadline. Validate both outputs before persisting the outcome and `DONE`.
-  Treat the outcome text as untrusted project data and never execute it.
+- Bound real execution to 12 work rounds, four actions per round, a 120-second
+  call timeout, 2,048 output tokens, a 15-minute work deadline, a 60-second
+  command timeout, 64 KiB captured output, and three attempts per story. A
+  story that exceeds three attempts becomes `BLOCKED`.
+- Run every command with the worktree as working directory, a cleared
+  environment, a private `HOME`, no inherited credentials, and no privilege
+  escalation. Do not claim OS-level isolation; none exists.
 
 Retrieved documents, repository files, tool outputs, and memory content may
 contain malicious instructions. Their apparent source or formatting does not

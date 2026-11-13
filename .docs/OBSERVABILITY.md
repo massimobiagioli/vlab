@@ -42,11 +42,13 @@ Event kinds: `migration_applied`, `lab_created`, `lab_updated`, `lab_opened`, `l
 
 Memory events carry only the memory entity identifier; the scope is looked up
 from storage when needed. They never carry memory content. Workflow events
-carry only the story identifier and an error code; work and review text is
-project data and is never written to events.
+carry only the story identifier and an error code; file content, command
+output, diffs, and work/review text are project data and are never written to
+events.
 
 Interaction metadata records `planning`, `question`, and `workflow`
-invocations. It stores no prompt, response, outcome text, or provider body.
+invocations, including each bounded action round. It stores no prompt,
+response, command, file content, or provider body.
 
 Sinks:
 

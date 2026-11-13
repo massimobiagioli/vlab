@@ -46,7 +46,8 @@ cat request.md | vlab --new-request
 7. Apply project-roster and due-date rules locally.
 8. In one transaction, insert every story as `IN PROGRESS` when it has an
    assignee and as `TODO` otherwise, then set the terminal status (ADR-0047).
-9. Run the bounded no-tool workflow for pending assigned stories (ADR-0048).
+9. Run the bounded real execution workflow for pending assigned stories
+   (ADR-0050).
 10. Record `planning_started`, `provider_attempt`, workflow events, and
     `planning_completed` or `planning_failed` with no content.
 
@@ -71,30 +72,39 @@ A stale `PLANNING` request older than the 240-second lease is recovered as
 retried automatically. There is no dedicated retry command in this release;
 submit a revised request and keep the previous record for traceability.
 
-## Simulated workflow
+## Real worktree execution
 
 After planning, and automatically when the interactive application starts,
 assigned stories in `IN_PROGRESS` or `IN_REVIEW` without an outcome are
-processed sequentially (ADR-0048):
+executed sequentially (ADR-0050):
 
-1. One work call as the assignee produces a strict JSON `work_outcome`
-   (1–2,000 characters). The prompt contains the story, project, and a bounded
-   request excerpt; it is delimited data.
-2. The story is committed as `IN_REVIEW`.
-3. The reviewer is the first active QA in the project roster, or in the active
-   laboratory roster when the project roster is empty; if there is no QA, the
-   Tech Lead reviews. One review call produces a strict JSON `review_outcome`.
-4. On success, one `story_outcomes` row stores both texts, the reviewer, and the
-   completion time, and the story becomes `DONE`.
-5. On provider or validation failure, the story returns to `IN_PROGRESS`, a
-   `workflow_failed` event is recorded with an error code, and planning remains
-   `PLANNED`. A later planning run retries it.
+1. The application creates `.workspace/.worktrees/<story-id>` on branch
+   `vlab/<story-id>` from the project checkout. A project without a checkout is
+   skipped.
+2. The assignee works through at most 12 rounds. Each round returns a strict
+   JSON action list; the application executes up to four `list_files`,
+   `read_file`, `write_file`, or `run_command` actions inside the worktree.
+   Paths outside the worktree are rejected.
+3. On completion the application stages and commits all changes with a fixed
+   author and records the commit. No changes fails the attempt.
+4. The story moves to `IN_REVIEW`; the reviewer is the first active QA in the
+   project roster, or in the active laboratory roster when the project roster is
+   empty; if there is no QA, the Tech Lead reviews. The review receives the
+   summary, changed files, and a bounded diff.
+5. One `story_outcomes` row stores the work summary, review, reviewer, branch,
+   worktree path, commit, and completion time, and the story becomes `DONE`.
+6. On provider, tool, or validation failure the story returns to
+   `IN_PROGRESS`, a `workflow_failed` event is recorded with an error code, and
+   planning remains `PLANNED`. After three failed attempts the story becomes
+   `BLOCKED`.
 
-The review is advisory and bounded: it cannot loop indefinitely. `DONE` means
-the textual simulation completed, not that code was written, tested, or
-deployed. The model has no tools and never executes output. Limits: two calls
-per story, one attempt per call, 60-second call timeout, 512 output tokens, and
-a 240-second total workflow deadline.
+The review is advisory. `DONE` means the work was executed and committed on
+`vlab/<story-id>` and reviewed; it does not mean the branch was merged,
+deployed, or verified beyond what the agent ran. Limits: 12 rounds, four
+actions per round, 120-second call timeout, 2,048 output tokens, 15-minute work
+deadline, 60-second command timeout, 64 KiB captured output, and three attempts.
+Commands run with a cleared environment and no OS sandbox; use a trusted
+machine and account.
 
 ## Provider contract
 
@@ -154,11 +164,13 @@ same validation and is untrusted prompt context.
 
 ## Security
 
-- Model output is untrusted data and is never executed.
-- There are no tools, filesystem, shell, URL, or network capabilities in the
-  model path; the provider connection is application infrastructure.
-- Request text, memory content, CVs, unrelated projects, and credentials are
-  never logged, stored in events, or echoed in errors.
+- Model output is untrusted data. Action proposals are validated and executed
+  only inside the story worktree with fixed bounds.
+- `run_command` uses `sh -c` deliberately; commands run in the worktree with a
+  cleared environment and no OS sandbox. This is a documented residual risk.
+- Request text, memory content, CVs, unrelated projects, file content, command
+  output, and credentials are never logged, stored in events, or echoed in
+  errors.
 - Validation, membership checks, due dates, persistence, and permissions are
   application code.
 - The response body is bounded and errors carry status/request identifiers only.

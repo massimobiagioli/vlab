@@ -8,7 +8,7 @@ Run `vlab` or `vlab --help` for the grouped help.
 
 | Command | Behavior |
 |---|---|
-| `vlab` | Home dashboard in a terminal; resumes pending simulated stories for the current project first. Prints help otherwise. |
+| `vlab` | Home dashboard in a terminal; resumes pending story execution for the current project first. Prints help otherwise. |
 | `-h`, `--help` | Print help. |
 | `-V`, `--version` | Print the version. |
 
@@ -42,10 +42,11 @@ in its border. Use `←/→` or `h/l` for lists, `↑/↓` or `j/k` for cards,
 `Enter` for the detail dialog (every story field; `↑/↓` scroll, `Esc` close),
 `n` for a new request, `r` to reload, `?` for help, `Esc` to return to Projects, and `q` to quit. The
 board is read-only; state changes come from the application workflow. After
-planning, assigned stories are simulated through `IN_REVIEW` to `DONE` (work by
-the assignee, review by the first active QA or the Tech Lead). A `DONE` card
-detail shows the work outcome, review outcome, reviewer, and completion time.
-This is a no-tool simulation: no code is executed.
+planning, assigned stories are executed for real in a git worktree and then
+moved through `IN_REVIEW` to `DONE` (work by the assignee, review by the first
+active QA or the Tech Lead). A `DONE` card detail shows the work summary,
+review, reviewer, branch, worktree, commit, and completion time. VLab never
+merges the branch automatically.
 
 The home dashboard lists Laboratories, Projects, Agents, Settings, and Lab
 floor. Use `Enter` to open the selected group, `1`–`5` to jump directly, `Esc`
@@ -102,7 +103,7 @@ window but is hidden from `--help`. New work uses the group subcommands.
 | `--assign-agent <agent-id>` | Assign an active laboratory member to the current project; repeated assignment is idempotent. |
 | `--show-project-kanban` | Read-only five-column board for the current project, plus counts and pending intake. |
 | `--delete-project` | Confirm, then delete the current project and cascade requests/stories/memories/assignments. |
-| `--new-request [text]` | Plan a request for the current project from literal text or piped stdin, then run the bounded no-tool work/review simulation. |
+| `--new-request [text]` | Plan a request for the current project from literal text or piped stdin, then execute assigned stories in git worktrees. |
 
 ## Memories
 

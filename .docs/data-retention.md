@@ -170,23 +170,29 @@ WP-4 adds these tables ([ADR-0023](adr/adr-0023.md), [ADR-0022](adr/adr-0022.md)
 | `priority`, `complexity` | Constrained enums | Planning estimate and sorting. |
 | `assigned_agent_id` | Project roster member or `NULL` | Assignment; references are validated locally. |
 | `assignment_rationale` | Bounded explanation or `NULL` | Explains the assignment or why it is unassigned. |
-| `state` | Kanban state | Read-only board column. Assigned stories start in `IN PROGRESS`; unassigned stories start in `TODO` (ADR-0047). |
+| `state` | Kanban state | Board column written only by the application workflow. Assigned stories start in `IN PROGRESS`; unassigned stories start in `TODO` (ADR-0047). |
+| `execution_attempts` | Integer counter | Bounds paid retries; three failures set `BLOCKED` (ADR-0050). |
 | `due_date` | `YYYY-MM-DD` | Locally computed estimate, not a commitment. |
 | `created_at`, `updated_at` | RFC 3339 UTC timestamps | Ordering and diagnosis. |
 
 #### `story_outcomes`
 
-ADR-0048 adds one optional row per completed simulated story:
+ADR-0050 adds one optional row per completed story:
 
 | Column | Contents | Why it is stored |
 |---|---|---|
 | `story_id` | Story identifier | Primary key and cascade owner. |
-| `work_outcome`, `review_outcome` | Bounded model text, locally validated | Simulated work and review record shown in the card detail. |
+| `work_outcome` | Bounded work summary | What the agent changed and ran. |
+| `review_outcome` | Bounded review text | Reviewer assessment. |
 | `reviewer_agent_id` | Reviewer agent | Who reviewed the work. |
+| `branch` | Story branch, for example `vlab/5a617283` | Locates the committed work. |
+| `worktree_path` | Path relative to `.workspace`, for example `.worktrees/5a617283` | Locates the isolated checkout. |
+| `commit_sha` | Git commit hash | Identifies the exact committed state. |
 | `completed_at` | RFC 3339 UTC timestamp | Completion ordering and diagnosis. |
 
-The outcome text is project data, not audit metadata. It is untrusted, never
-executed, and rendered sanitized.
+The outcome text is project data, not audit metadata. It is untrusted and
+rendered sanitized. File content, command output, and diffs are never stored in
+this table.
 
 #### `memories`
 
@@ -230,4 +236,4 @@ ADR-0034 adds `project_agents`:
 The table contains identifiers only, no content or credentials.
 
 Schema changes must justify each stored field and update this document before
-the migration lands. The current schema version is v9 (ADR-0048).
+the migration lands. The current schema version is v10 (ADR-0050).

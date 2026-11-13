@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00010` |
 | Branch | `feat/startup-workflow-logs` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-13 |
 | Related ADRs | ADR-0049 (startup resume, `--logs`), ADR-0048 (workflow), ADR-0011 (audit events), ADR-0009 (flag surface) |
 | Scope | Automatic workflow resume and audit-log view |
@@ -48,10 +48,12 @@ can read the newest content-free audit events without SQLite.
 
 ## Validation
 
+- Local gate (2026-11-13): `make check` passed (fmt, clippy, tests, audit,
+  deny).
+- Hosted CI run `43452010663` passed on Ubuntu, macOS, and audit/deny.
 - `tests/cli_logs.rs` creates a laboratory, asserts `lab_created` and
   `memory_created` appear, and asserts the laboratory name and `sk-` marker do
   not.
-- `make check` and hosted CI.
 
 ## Task checklist
 
@@ -64,4 +66,4 @@ can read the newest content-free audit events without SQLite.
 - [x] **F03-01** Update the CLI reference, planning, README, ADR-0048, and the
   feature docs.
 - [x] **F04-01** Run `make check` and fix every failure.
-- [ ] **F04-02** Push, confirm hosted CI is green, and set the status to `Done`.
+- [x] **F04-02** Push, confirm hosted CI is green, and set the status to `Done`.

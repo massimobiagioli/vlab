@@ -6,6 +6,7 @@
 
 pub mod config;
 pub mod db;
+pub mod execution;
 pub mod paths;
 pub mod provider;
 

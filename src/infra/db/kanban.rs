@@ -5,6 +5,16 @@ use sqlx::SqliteConnection;
 use crate::app::kanban::{Board, BoardCounts, Card, StoryDetail, StoryOutcome, StoryState};
 use crate::domain::ids::{LabId, ProjectId, RequestId, StoryId};
 
+type OutcomeRow = (
+    String,
+    String,
+    Option<String>,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
 const SELECT_PROJECT: &str = "\
 SELECT p.id, p.name, p.github_source, l.name FROM projects p JOIN labs l ON l.id = p.lab_id \
 WHERE p.id = ?1 AND p.lab_id = ?2";
@@ -166,20 +176,26 @@ pub async fn story(
         .iter()
         .map(|tag| tag.as_str().to_owned())
         .collect();
-    let outcome: Option<(String, String, Option<String>, String)> = sqlx::query_as(
-        "SELECT o.work_outcome, o.review_outcome, a.name, o.completed_at \
+    let outcome: Option<OutcomeRow> = sqlx::query_as(
+        "SELECT o.work_outcome, o.review_outcome, a.name, o.completed_at, o.branch, \
+                o.worktree_path, o.commit_sha \
          FROM story_outcomes o LEFT JOIN agents a ON a.id = o.reviewer_agent_id \
          WHERE o.story_id = ?1",
     )
     .bind(story.as_str())
     .fetch_optional(connection)
     .await?;
-    let outcome = outcome.map(|(work, review, reviewer, completed_at)| StoryOutcome {
-        work,
-        review,
-        reviewer: reviewer.unwrap_or_else(|| "Unknown reviewer".to_owned()),
-        completed_at,
-    });
+    let outcome = outcome.map(
+        |(work, review, reviewer, completed_at, branch, worktree_path, commit_sha)| StoryOutcome {
+            work,
+            review,
+            reviewer: reviewer.unwrap_or_else(|| "Unknown reviewer".to_owned()),
+            completed_at,
+            branch,
+            worktree_path,
+            commit_sha,
+        },
+    );
     Ok(Some(StoryDetail {
         id: StoryId::parse(&id).ok_or(sqlx::Error::RowNotFound)?,
         request_id: RequestId::parse(&request_id).ok_or(sqlx::Error::RowNotFound)?,

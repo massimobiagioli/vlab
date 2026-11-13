@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00008` |
 | Branch | `feat/simulated-workflow` |
-| Status | `Done` |
+| Status | `Done` (superseded by feature `00011` / ADR-0050) |
 | Date | 2026-11-13 |
 | Related ADRs | ADR-0048 (workflow simulation), ADR-0047 (assigned starts), ADR-0003 (no tools), ADR-0026 (provider contract), ADR-0043 (Kanban detail) |
 | Scope | Automatic work/review simulation and DONE outcomes |

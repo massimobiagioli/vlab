@@ -32,6 +32,7 @@ use crate::domain::budget::{CancelToken, ExecutionLimits};
 use crate::domain::memory::MemoryScope;
 use crate::infra::config::SettingsFile;
 use crate::infra::db::Database;
+use crate::infra::execution::WorkspaceEnvironment;
 use crate::infra::paths::Paths;
 use crate::infra::provider::deepseek::{AdapterLimits, DEFAULT_ENDPOINT, DeepSeekProvider};
 use crate::infra::workspace::{DEFAULT_CLONE_TIMEOUT, GitWorkspace};
@@ -138,6 +139,7 @@ pub fn dispatch(
             let cancel = CancelToken::default();
             let handler_token = cancel.clone();
             let _ = ctrlc::set_handler(move || handler_token.cancel());
+            let environment = WorkspaceEnvironment::new(Paths::from_environment()?.workspace_dir());
             let outcome = requests::plan(
                 &db,
                 &db,
@@ -157,6 +159,7 @@ pub fn dispatch(
                     &project,
                     &settings,
                     &provider,
+                    &environment,
                     limits,
                     &crate::domain::clock::SystemClock,
                     cancel,
@@ -478,7 +481,7 @@ fn settings_file() -> Result<SettingsFile, AppError> {
     Ok(SettingsFile::new(paths.config_dir(), paths.settings_file()))
 }
 
-/// Resumes pending simulated stories when the interactive application starts.
+/// Resumes pending story execution when the interactive application starts.
 ///
 /// Startup is not a navigation action: it runs the same bounded workflow as a
 /// planning run, once, for the current project. Missing context or settings
@@ -529,6 +532,17 @@ pub(crate) fn resume_pending_workflow(stderr: &mut dyn Write, run_id: RunId) {
     let cancel = CancelToken::default();
     let handler = cancel.clone();
     let _ = ctrlc::set_handler(move || handler.cancel());
+    let environment = match Paths::from_environment() {
+        Ok(paths) => WorkspaceEnvironment::new(paths.workspace_dir()),
+        Err(error) => {
+            let error = AppError::from(error);
+            let _ = write_stderr(
+                stderr,
+                &format!("Warning: workflow skipped: {} {}\n", error, error.hint()),
+            );
+            return;
+        }
+    };
     let _ = write_stderr(stderr, "Resuming pending workflow...\n");
     match workflow::run(
         &db,
@@ -536,6 +550,7 @@ pub(crate) fn resume_pending_workflow(stderr: &mut dyn Write, run_id: RunId) {
         &project,
         &settings,
         &provider,
+        &environment,
         limits,
         &crate::domain::clock::SystemClock,
         cancel,

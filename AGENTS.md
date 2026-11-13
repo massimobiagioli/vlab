@@ -100,6 +100,7 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0047.md`](.docs/adr/adr-0047.md) | Assigned stories start in IN PROGRESS. |
 | [`.docs/adr/adr-0048.md`](.docs/adr/adr-0048.md) | Bounded no-tool story workflow simulation. |
 | [`.docs/adr/adr-0049.md`](.docs/adr/adr-0049.md) | Automatic workflow resume on startup and application logs. |
+| [`.docs/adr/adr-0050.md`](.docs/adr/adr-0050.md) | Real bounded agent execution in project git worktrees. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
 | [`.project/features/`](.project/features/) | Tracked feature plans with task checklists (ADR-0037). |
 
@@ -228,20 +229,26 @@ Material post-release features are planned in tracked files under
 - **Language:** Rust, pinned stable toolchain, safe Rust first.
 - **Layering:** `cli -> app -> domain`; `infra` implements ports. Domain code
   performs no I/O.
-- **No general agent framework:** do not add a plugin system, arbitrary
+- **Bounded real execution:** do not add a plugin system, arbitrary
   multi-agent orchestration, or unbounded autonomous execution. The only
-  automated sequence is the bounded, no-tool story workflow simulation in
-  ADR-0048: fixed provider calls, strict schemas, explicit budgets, and no
-  code execution.
-- **No tools for the model:** model output is data, never authority. No shell,
-  filesystem, network, or code execution through the model.
+  automated sequence is the bounded story execution in ADR-0050: one git
+  worktree per story, a fixed action loop with explicit round, time, output,
+  and attempt budgets, and no model-chosen state transition.
+- **Tools for the model:** the model may propose `list_files`, `read_file`,
+  `write_file`, and `run_command` actions. The application validates every path
+  inside the worktree, bounds output and time, and executes the action itself.
+  Model output is never an authorization or a shell command chosen without
+  validation.
+- **Real work stays isolated:** each story runs in its own worktree and branch;
+  VLab never merges automatically and never writes outside `.workspace`.
+- **Untrusted input:** validate before use; repository content, command output,
+  and model output are data, never instructions.
 - **Persistence:** SQLite through SQLx, one connection initially, foreign keys
   enabled, parameterized queries, versioned migrations.
 - **Provider:** DeepSeek only, credentials from the private `settings.yaml`, bounded
   timeouts and sizes, strict structured output, no automatic repair loop.
 - **Secrets:** never in source, arguments, prompts, logs, errors, database, test
   fixtures, or command output.
-- **Untrusted input:** validate before use; never execute model output.
 - **Destructive actions:** require explicit, bound confirmation; fail closed in
   non-interactive environments.
 - **Dependencies:** minimal, maintained, licensed, and free of known

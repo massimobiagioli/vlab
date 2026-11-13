@@ -4,10 +4,10 @@
 
 **Proposed baseline — not a description of verified implementation.**
 
-The current implementation is a planning-only Rust CLI. It has no tools and
-does not execute model output. The only automated sequence is the bounded
-no-tool work/review simulation in ADR-0048; the tool-oriented diagram below is
-the original architectural baseline, not a current capability.
+The current implementation is a local Rust CLI with a bounded real execution
+loop. The model has tools only through validated actions confined to a project
+worktree (ADR-0050). The tool-oriented diagram below is the original
+architectural baseline; the implemented scope is narrower.
 
 The product domain, deployment environment, model provider, and persistence
 requirements are not yet defined. These assumptions must be confirmed before
@@ -25,12 +25,13 @@ implementation decisions depend on them.
 
 The initial architecture does not include:
 
-- General multi-agent orchestration. The fixed, bounded work/review simulation
-  in ADR-0048 is the only exception; it has no tools and no model-chosen
-  control flow.
+- General multi-agent orchestration. The fixed, bounded single-agent execution
+  in ADR-0050 is the only exception; it has no model-chosen control flow.
 - Distributed execution.
 - Autonomous permission escalation.
-- Arbitrary shell execution.
+- Arbitrary shell execution outside the story worktree. Commands run with the
+  story worktree as working directory, a bounded time, and capped output; there
+  is no OS-level sandbox (ADR-0050).
 - Autonomous memory decisions or model-chosen retention; scoped memories are application-managed, including a bounded planning summary, and remain untrusted context (ADR-0022, ADR-0036).
 - A general-purpose plugin framework.
 - Unrequested background activity.
@@ -64,11 +65,12 @@ AI provider.
 Prefer a deterministic workflow without a model whenever it satisfies the
 requirement.
 
-The simulated workflow is a separate application component: after planning it
-selects pending assigned stories, calls the provider for one work outcome and
-one review outcome, validates both locally, and owns the `IN_REVIEW`/`DONE`
-transitions and the outcome row. It has no tools, no filesystem or network
-effects, and no model-chosen state changes (ADR-0048).
+The execution workflow is a separate application component: after planning it
+selects pending assigned stories, creates one git worktree and branch per
+story, runs the bounded action loop, commits the result, asks the reviewer for
+one bounded review, and owns the `IN_REVIEW`/`DONE` transitions and the outcome
+row. The model proposes actions; the application validates paths, executes
+them, and never lets the model choose a state transition (ADR-0050).
 
 ## Components
 

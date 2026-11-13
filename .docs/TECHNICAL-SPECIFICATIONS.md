@@ -37,9 +37,10 @@ The initial release shall not include:
 - Distributed or multi-user operation.
 - A graphical interface.
 - Providers other than DeepSeek.
-- Arbitrary autonomous execution, code execution, or tools for the model.
-  The only automation is the bounded, no-tool work/review simulation in
-  ADR-0048; it produces textual outcomes and never changes code or files.
+- Arbitrary autonomous execution outside a bounded worktree loop or a
+  multi-agent framework. The only automation is the bounded real execution in
+  ADR-0050: one worktree per story, a fixed action loop, explicit budgets, and
+  no model-chosen state transition.
 - Manual memory-management commands. Laboratory and project memories may be
   created, viewed, edited, and deleted from the laboratory floor (ADR-0046);
   agent memories remain application-managed.
@@ -682,10 +683,10 @@ A valid request shall trigger this sequence:
 7. Validate the proposals locally.
 8. Persist valid stories, assignments, due dates, and rationale atomically.
 9. Mark the request as `PLANNED`.
-10. Run the bounded no-tool workflow (ADR-0048): for each assigned
-    `IN_PROGRESS` story, one simulated work call and one simulated review call;
-    store the outcomes and mark the story `DONE`. Review is assigned to the
-    first active QA in the project roster, else the Tech Lead.
+10. Run the bounded real execution workflow (ADR-0050): for each assigned
+    `IN_PROGRESS` story, create a git worktree, run the bounded action loop,
+    commit, review, and mark the story `DONE`. Review is assigned to the first
+    active QA in the project roster, else the Tech Lead.
 11. Best effort: request and store a bounded model-generated project memory summary.
 12. Display the result.
 
@@ -812,11 +813,13 @@ readable lists show a window of adjacent lists around the focused one. The
 plain `--show-project-kanban` output keeps the full card fields.
 
 Planning creates `IN PROGRESS` stories for assigned work and `TODO` stories
-for unassigned work (ADR-0047). The bounded no-tool simulation then advances
-assigned stories through `IN_REVIEW` to `DONE` and stores the work/review
-outcomes (ADR-0048). The board remains read-only; state changes come only from
-that application-owned workflow, not from navigation. `DONE` means the textual
-simulation completed, not that code was executed or deployed.
+for unassigned work (ADR-0047). The bounded real workflow then executes
+assigned stories in isolated git worktrees, commits their changes, moves them
+through `IN_REVIEW` to `DONE`, and stores the work/review outcome (ADR-0050).
+The board remains read-only; state changes come only from that
+application-owned workflow, not from navigation. `DONE` means the work ran and
+was committed on `vlab/<story-id>` and reviewed; it does not mean the branch was
+merged or deployed.
 
 ## 11. Persistence and Data Model
 
@@ -1101,31 +1104,35 @@ The floor is a read-only, deterministic, MSX-inspired terminal scene:
 - Manual creates, edits, and deletes record content-free `memory_created`,
   `memory_updated`, and `memory_deleted` events.
 
-### 19.1 Simulated workflow and outcomes
+### 19.1 Real worktree workflow and outcomes
 
-After planning, the application runs a bounded, no-tool simulation (ADR-0048):
+After planning, the application runs real, bounded execution (ADR-0050):
 
-- Each assigned `IN_PROGRESS` story receives one work call as its assignee and
-  one review call as its reviewer.
+- Each assigned `IN_PROGRESS` story gets a worktree under
+  `.workspace/.worktrees/<story-id>` on branch `vlab/<story-id>`.
+- The assigned agent works through at most 12 rounds. Each round is one
+  strict JSON action list; the application executes up to four validated
+  `list_files`, `read_file`, `write_file`, or `run_command` actions inside the
+  worktree. Paths leaving the worktree are rejected.
+- On success the application stages and commits all changes and records the
+  commit hash. A story with no changes fails the attempt.
 - The reviewer is the first active `qa` in the project roster, or in the active
   laboratory roster when the project roster is empty; if there is no QA, the
-  Tech Lead reviews.
-- Work and review outputs are strict JSON objects with one string field,
-  1–2,000 characters. Unknown fields, invalid JSON, and control characters are
-  rejected without repair.
-- On success, the story becomes `DONE` and one `story_outcomes` row stores the
-  work text, review text, reviewer, and completion time. The Kanban detail for
-  a `DONE` story shows all four.
-- The review is advisory and does not create an unbounded rejection loop; a
-  successful simulation always reaches `DONE`.
-- On provider or validation failure, the story remains in progress, a
+  Tech Lead reviews. The review receives the summary, changed files, and a
+  bounded diff and returns one `review_outcome` string. It is advisory.
+- The story becomes `DONE` and one `story_outcomes` row stores the work summary,
+  review, reviewer, branch, worktree path, commit, and completion time. The
+  Kanban detail shows them.
+- On provider, tool, or validation failure the story stays in progress, a
   content-free `workflow_failed` event is recorded, and the planning request is
-  still `PLANNED`. A later planning run retries pending stories.
-- Bounds: two calls per story, one attempt per call, 60-second call timeout,
-  512 output tokens, and a 240-second total workflow deadline. Stories are
-  processed sequentially.
-- The model has no tools and never executes code. `DONE` means the textual work
-  and review simulation completed, not that code was delivered.
+  still `PLANNED`. After three failed attempts the story becomes `BLOCKED`.
+- Bounds: 12 work rounds, 120-second call timeout, 2,048 output tokens, four
+  actions per round, 15-minute work deadline, 60-second command timeout, 64 KiB
+  captured command output, and three attempts. Stories are processed
+  sequentially.
+- Commands run in the worktree with a cleared environment, a private `HOME`,
+  and no inherited secrets. There is no OS sandbox or network isolation; this is
+  a documented residual risk.
 
 Acceptance: a natural-language laboratory floor is legible without color, the
 idle/exchange/focus bubbles reflect stored story counts and roles, the memory

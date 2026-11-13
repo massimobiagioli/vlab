@@ -95,8 +95,8 @@ Run `vlab` in a terminal to open the home dashboard:
 vlab
 ```
 
-On startup the active project's pending simulated stories are resumed
-automatically before the dashboard appears. Choose Laboratories, Projects,
+On startup the active project's pending stories are executed automatically
+before the dashboard appears. Choose Laboratories, Projects,
 Agents, Settings, or Lab floor with the arrow keys and `Enter` (or `1`–`5`).
 Run `vlab --logs` to print the newest content-free audit events. Inside a group
 use `j/k` or arrows to move, the action
@@ -179,11 +179,13 @@ ignored by git and can be reset with `make clean-workspace`.
 The board is read-only: it shows the five states, cards, assignee or
 `Unassigned`, priority, due date, story counts, completed count, and pending
 intake. Planning creates assigned stories in `IN PROGRESS` and unassigned
-stories in `TODO`. After planning, the application runs a bounded no-tool
-simulation: the assignee produces a work outcome, the first active QA (or the
-Tech Lead) produces a review outcome, and the story becomes `DONE`. The `DONE`
-card detail shows both outcomes and the reviewer. No code is executed; `DONE`
-means the textual simulation completed. There are no manual state transitions.
+stories in `TODO`. After planning, the application executes each assigned story
+for real in its own git worktree: the assignee reads and writes files and runs
+commands in `.workspace/.worktrees/<story-id>`, the changes are committed on
+`vlab/<story-id>`, and the first active QA (or the Tech Lead) records a review.
+The `DONE` card detail shows the work summary, review, reviewer, branch,
+worktree, and commit. VLab never merges or deploys the branch. There are no
+manual state transitions.
 
 ### Automatic memories
 
@@ -287,9 +289,12 @@ budget.
 
 - SQLite is unencrypted at rest; use OS disk encryption for sensitive data.
 - No backup/restore command; stop VLab before copying the database file.
-- Story states advance only through the bounded no-tool simulation; there are
-  no manual transitions and no real code execution. `DONE` is a simulated
-  work/review outcome, not a delivered change.
+- Story states advance only through the bounded real workflow; there are no
+  manual transitions. `DONE` means the agent worked, committed on
+  `vlab/<story-id>`, and a review was recorded; it does not mean the branch was
+  merged or deployed.
+- Commands run with the operator's privileges and no OS sandbox; run VLab on a
+  trusted machine and account.
 - No JSON output mode, packaging/licensing, or Windows-specific hardening.
 - Semantic quality of assignments and answers is an evaluation criterion, not
   a deterministic proof.

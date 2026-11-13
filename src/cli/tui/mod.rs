@@ -31,6 +31,7 @@ use crate::domain::memory::MemoryScope;
 use crate::domain::project::GithubSource;
 use crate::infra::config::SettingsFile;
 use crate::infra::db::Database;
+use crate::infra::execution::WorkspaceEnvironment;
 use crate::infra::paths::Paths;
 use crate::infra::workspace::{DEFAULT_CLONE_TIMEOUT, GitWorkspace};
 use crate::obs::events::{AuditEvent, EntityRef, EntityType, EventKind, Outcome};
@@ -1386,17 +1387,21 @@ impl App {
             self.run_id,
         );
         let workflow_report = match &outcome {
-            Ok(PlanningOutcome::Planned { .. }) => Some(workflow::run(
-                &self.db,
-                &self.db,
-                project_id,
-                &settings,
-                &provider,
-                limits,
-                &crate::domain::clock::SystemClock,
-                cancel,
-                self.run_id,
-            )),
+            Ok(PlanningOutcome::Planned { .. }) => {
+                let environment = WorkspaceEnvironment::new(self.paths.workspace_dir());
+                Some(workflow::run(
+                    &self.db,
+                    &self.db,
+                    project_id,
+                    &settings,
+                    &provider,
+                    &environment,
+                    limits,
+                    &crate::domain::clock::SystemClock,
+                    cancel,
+                    self.run_id,
+                ))
+            }
             _ => None,
         };
         watcher.stop();
@@ -3012,7 +3017,7 @@ impl App {
                 vec![
                     format!("Planning a request for {}…", clean(project_name)),
                     String::new(),
-                    "The Tech Lead is drafting stories and running the simulated workflow; this can take up to 8 minutes.".to_owned(),
+                    "The Tech Lead is drafting stories and executing assigned work; a story can take up to 15 minutes.".to_owned(),
                     String::new(),
                     "Esc cancel".to_owned(),
                 ],
@@ -3532,8 +3537,38 @@ fn story_lines(story: &kanban::StoryDetail, theme: Theme, width: usize) -> Vec<L
             clean(&outcome.completed_at),
             Style::default(),
         );
+        field(
+            &mut lines,
+            "Branch",
+            outcome
+                .branch
+                .as_deref()
+                .map(clean)
+                .unwrap_or_else(|| "—".to_owned()),
+            Style::default(),
+        );
+        field(
+            &mut lines,
+            "Worktree",
+            outcome
+                .worktree_path
+                .as_deref()
+                .map(clean)
+                .unwrap_or_else(|| "—".to_owned()),
+            Style::default(),
+        );
+        field(
+            &mut lines,
+            "Commit",
+            outcome
+                .commit_sha
+                .as_deref()
+                .map(clean)
+                .unwrap_or_else(|| "—".to_owned()),
+            Style::default(),
+        );
         lines.push(Line::from(Span::styled(
-            "No code was executed; this is a bounded simulation.",
+            "Real work was executed in an isolated git worktree.",
             theme.muted_style(),
         )));
     }

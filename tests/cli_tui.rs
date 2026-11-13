@@ -140,6 +140,28 @@ fn assert_restored(output: &str) {
     );
 }
 
+/// Removes CSI sequences so assertions are not broken by cursor moves inside
+/// a rendered line.
+fn strip_ansi(output: &str) -> String {
+    let mut plain = String::with_capacity(output.len());
+    let mut chars = output.chars();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            plain.push(c);
+            continue;
+        }
+        if chars.next() != Some('[') {
+            continue;
+        }
+        for c in chars.by_ref() {
+            if c.is_ascii_alphabetic() {
+                break;
+            }
+        }
+    }
+    plain
+}
+
 #[test]
 fn the_labs_dashboard_creates_checks_activates_and_deletes() {
     let sandbox = Sandbox::new();
@@ -500,13 +522,14 @@ fn the_projects_dashboard_submits_a_request_through_the_prompt() {
     );
     assert!(success, "dashboard did not exit cleanly: {output:?}");
     assert_restored(&output);
-    assert!(output.contains("New request"), "{output:?}");
-    assert!(output.contains("Write a request first."), "{output:?}");
-    assert!(output.contains("planned"), "{output:?}");
-    assert!(output.contains("Send res"), "{output:?}");
-    assert!(output.contains("IN PROGRESS 1"), "{output:?}");
-    assert!(output.contains("TODO 0"), "{output:?}");
-    assert!(!output.contains("SECRET-MARKER"), "{output:?}");
+    let plain = strip_ansi(&output);
+    assert!(plain.contains("New request"), "{output:?}");
+    assert!(plain.contains("Write a request first."), "{output:?}");
+    assert!(plain.contains("planned"), "{output:?}");
+    assert!(plain.contains("reset"), "{output:?}");
+    assert!(plain.contains("IN PROGRESS 1"), "{output:?}");
+    assert!(plain.contains("TODO 0"), "{output:?}");
+    assert!(!plain.contains("SECRET-MARKER"), "{output:?}");
 
     let db = sandbox.seed_database();
     let (status, stories, content, state): (String, i64, String, String) = db.block_on(async {

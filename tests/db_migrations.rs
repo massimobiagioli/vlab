@@ -150,20 +150,38 @@ fn workflow_schema_accepts_workflow_interactions_and_outcomes() {
         "INSERT INTO projects (id, lab_id, name, created_at, updated_at) VALUES ('1c2d3e4f', 'a3f91c07', 'Portal', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
         "INSERT INTO requests (id, project_id, content, status, created_at, updated_at) VALUES ('2d3e4f50', '1c2d3e4f', 'R', 'PLANNED', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
         "INSERT INTO stories (id, project_id, request_id, title, description, acceptance_criteria_json, priority, complexity, required_skills_json, assigned_agent_id, assignment_rationale, state, due_date, created_at, updated_at) VALUES ('3e4f5061', '1c2d3e4f', '2d3e4f50', 'T', 'D', '[]', 'high', 'small', '[]', '0b1c2d3e', 'R', 'DONE', '2026-01-03', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
-        "INSERT INTO story_outcomes (story_id, work_outcome, review_outcome, reviewer_agent_id) VALUES ('3e4f5061', 'Work', 'Review', '0b1c2d3e')",
+        "INSERT INTO story_outcomes (story_id, work_outcome, review_outcome, reviewer_agent_id, branch, worktree_path, commit_sha) VALUES ('3e4f5061', 'Work', 'Review', '0b1c2d3e', 'vlab/3e4f5061', '.worktrees/3e4f5061', 'abcdef1')",
+        "UPDATE stories SET execution_attempts = 2 WHERE id = '3e4f5061'",
         "INSERT INTO interactions (id, run_id, agent_id, kind, provider, model, outcome, duration_ms, created_at) VALUES ('4f506172', 'run', '0b1c2d3e', 'workflow', 'deepseek', 'm', 'success', 1, '2026-01-01T00:00:00Z')",
     ] {
         db.execute(sql).unwrap();
     }
-    let (work, review): (String, String) = db.block_on(async {
+    let (work, review, branch, worktree, commit): (
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = db.block_on(async {
         sqlx::query_as(
-            "SELECT work_outcome, review_outcome FROM story_outcomes WHERE story_id = '3e4f5061'",
+            "SELECT work_outcome, review_outcome, branch, worktree_path, commit_sha \
+             FROM story_outcomes WHERE story_id = '3e4f5061'",
         )
         .fetch_one(db.pool())
         .await
         .unwrap()
     });
     assert_eq!((work.as_str(), review.as_str()), ("Work", "Review"));
+    assert_eq!(branch.as_deref(), Some("vlab/3e4f5061"));
+    assert_eq!(worktree.as_deref(), Some(".worktrees/3e4f5061"));
+    assert_eq!(commit.as_deref(), Some("abcdef1"));
+    let attempts: i64 = db.block_on(async {
+        sqlx::query_scalar("SELECT execution_attempts FROM stories WHERE id = '3e4f5061'")
+            .fetch_one(db.pool())
+            .await
+            .unwrap()
+    });
+    assert_eq!(attempts, 2);
 }
 
 #[test]

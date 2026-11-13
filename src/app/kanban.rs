@@ -98,13 +98,16 @@ impl Board {
     }
 }
 
-/// Simulated work and review text shown on a completed story (ADR-0048).
+/// Executed work and review shown on a completed story (ADR-0050).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoryOutcome {
     pub work: String,
     pub review: String,
     pub reviewer: String,
     pub completed_at: String,
+    pub branch: Option<String>,
+    pub worktree_path: Option<String>,
+    pub commit_sha: Option<String>,
 }
 
 /// Full story content for the dashboard card detail (ADR-0043).

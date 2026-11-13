@@ -12,6 +12,7 @@ pub mod context;
 pub mod deletions;
 pub mod directory;
 mod errors;
+pub mod execution;
 pub mod floor;
 pub mod invocation;
 pub mod kanban;
@@ -30,3 +31,4 @@ pub mod workflow;
 pub use errors::{AppError, EntityKind, ProviderFailure};
 
 pub mod workspace;
+pub mod worktrees;
