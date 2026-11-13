@@ -88,6 +88,7 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0035.md`](.docs/adr/adr-0035.md) | Remove manual memory commands. |
 | [`.docs/adr/adr-0036.md`](.docs/adr/adr-0036.md) | Automatic memory generation. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
+| [`.project/features/`](.project/features/) | Tracked feature plans with task checklists (ADR-0037). |
 
 ### Precedence
 
@@ -188,6 +189,24 @@ discover `.agents/skills` natively, configure it to load that directory.
 Never claim to have inspected a file, executed a command, or verified behavior
 unless it actually happened.
 
+### Feature plans
+
+Material post-release features are planned in tracked files under
+`.project/features/` (ADR-0037).
+
+- Name the file `nnnnn-feat-<short-description>.md`, with a zero-padded
+  five-digit sequence and a lowercase kebab-case description.
+- Use `<short-description>` as the feature branch identifier; the branch is
+  `feat/<short-description>`.
+- State the identifier, title, branch, status, date, related ADRs, goal,
+  non-goals, acceptance criteria, risks, and an ordered checklist.
+- Every task is a Markdown checkbox with an observable deliverable. Check a
+  task only when its deliverable and verification exist.
+- A feature is `Done` only when every task is checked, `make check` passes,
+  hosted CI is green, and the documentation and ADRs are updated.
+- Feature plans rank below `.docs/` and accepted ADRs. Do not use them to
+  invent rules; record material decisions as ADRs.
+
 ---
 
 ## 6. Engineering guardrails
@@ -254,6 +273,7 @@ Makefile                        developer tasks; `make` lists them (ADR-0014)
 .docs/adr/                      architecture decisions and registry
 .agents/skills/                 reusable, tool-portable procedures
 .project/IMPLEMENTATION-PLAN.md ordered implementation plan
+.project/features/              tracked feature plans and task checklists (ADR-0037)
 .data/settings.example.yaml     tracked settings placeholder; other data ignored
 Cargo.toml, Cargo.lock          crate manifest and committed lockfile
 rust-toolchain.toml             pinned toolchain (ADR-0008)
@@ -274,12 +294,13 @@ the accepted ADRs and `.docs/STACK.md`.
 
 ### Version-control boundary
 
-Everything listed above is tracked. The plan sequences work but must not
-introduce rules or decisions that are not recorded in `.docs/` or an accepted
-ADR. Local scratch directories, including `.tmp/` and any other content
-under `.project/`, are outside version control. They are not authoritative
-sources and must not be referenced by tracked guidance, skills, ADRs, or the
-plan. The development data folder `.data/`, written by `make run`, is outside
+Everything listed above is tracked. The implementation plan and feature plans
+sequence work but must not introduce rules or decisions that are not recorded
+in `.docs/` or an accepted ADR. Local scratch directories, including `.tmp/`
+and `.project/` content other than the implementation plan and
+`.project/features/*.md`, are outside version control. They are not
+authoritative sources and must not be referenced by tracked guidance, skills,
+ADRs, or plans. The development data folder `.data/`, written by `make run`, is outside
 version control except for the tracked `settings.example.yaml` placeholder
 (ADR-0014, ADR-0030).
 
@@ -294,6 +315,8 @@ A change is complete only when:
 - Formatting, linting, tests, dependency audit, and license policy pass.
 - Necessary ADRs are written and the registry is updated.
 - Documentation and retention notes match the implemented behavior.
+- For a feature plan, every checklist task is checked and the plan status is
+  `Done` only when the feature is actually complete.
 - No secrets, unrelated files, or unintended changes are included.
 - The completion report accurately states validation performed and remaining
   limitations.
@@ -304,5 +327,5 @@ A change is complete only when:
 
 Update `AGENTS.md` when the documentation set, skill set, entry-point rules, or
 tracked repository layout changes. Such a change is a technical decision
-governed by ADR-0007; if it alters the governance model itself, supersede
-ADR-0007 with a new ADR and update the registry.
+governed by ADR-0007 and ADR-0037; if it alters the governance model itself,
+supersede ADR-0007 with a new ADR and update the registry.

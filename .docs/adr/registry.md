@@ -65,6 +65,7 @@ revises a technical decision must keep it current.
 | ADR-0034 | Project agent assignments and planning roster | Accepted | 2026-11-12 | — | [adr-0034.md](adr-0034.md) |
 | ADR-0035 | Remove manual memory commands | Accepted | 2026-11-12 | — | [adr-0035.md](adr-0035.md) |
 | ADR-0036 | Automatic memory generation | Accepted | 2026-11-12 | — | [adr-0036.md](adr-0036.md) |
+| ADR-0037 | Tracked feature plans with task checklists | Accepted | 2026-11-13 | — | [adr-0037.md](adr-0037.md) |
 
 ## Supersession map
 
