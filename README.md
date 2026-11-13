@@ -102,7 +102,8 @@ and `q` to quit. The Laboratories dashboard shows the optional description and
 provides Edit and Projects actions; New/Edit open a bordered form with a visible cursor and Tab/arrow field navigation. The Projects dashboard renames projects with `e` and opens a full-screen,
 Trello-style Kanban board with `v`: lists side by side, cards with the short
 description only, independent scrolling per list, and `Enter` for a dialog
-with the full story. In a non-TTY stream VLab prints help instead of blocking.
+with the full story. Press `r` on a project (or `n` on its board) to submit a
+new request in a simple prompt dialog; the Tech Lead plans it into stories. In a non-TTY stream VLab prints help instead of blocking.
 
 ## Local walkthrough
 

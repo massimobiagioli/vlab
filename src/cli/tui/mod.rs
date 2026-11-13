@@ -19,10 +19,12 @@ use crate::app::kanban;
 use crate::app::labs::{self, LabListItem};
 use crate::app::memories;
 use crate::app::projects::{self, CreatedProject, ProjectOverview};
+use crate::app::requests::{self, PlanningOutcome};
 use crate::app::settings::{self, SettingsReport, SettingsStore};
 use crate::app::settings_edit;
 use crate::cli::args::DashboardGroup;
 use crate::cli::prompt::{TerminalEditor, TerminalPrompter};
+use crate::domain::budget::{CancelToken, ExecutionLimits};
 use crate::domain::ids::{AgentId, LabId, ProjectId};
 use crate::domain::memory::MemoryScope;
 use crate::domain::project::GithubSource;
@@ -44,13 +46,32 @@ pub fn run_home(run_id: RunId) -> Result<(), AppError> {
 }
 
 fn run_screen(screen: Screen, no_color: bool, run_id: RunId) -> Result<(), AppError> {
-    let mut terminal = ratatui::try_init().map_err(|error| AppError::Io {
-        context: "starting the terminal dashboard",
+    let mut terminal = start_terminal("starting the terminal dashboard")?;
+    let result = App::new(screen, no_color, run_id).and_then(|mut app| app.run(&mut terminal));
+    stop_terminal();
+    result
+}
+
+/// Enters the dashboard terminal mode with bracketed paste (ADR-0044), so a
+/// pasted request arrives as one event instead of keystrokes.
+fn start_terminal(context: &'static str) -> Result<DefaultTerminal, AppError> {
+    let terminal = ratatui::try_init().map_err(|error| AppError::Io {
+        context,
         kind: error.kind(),
     })?;
-    let result = App::new(screen, no_color, run_id).and_then(|mut app| app.run(&mut terminal));
+    let _ = ratatui::crossterm::execute!(
+        std::io::stdout(),
+        ratatui::crossterm::event::EnableBracketedPaste
+    );
+    Ok(terminal)
+}
+
+fn stop_terminal() {
+    let _ = ratatui::crossterm::execute!(
+        std::io::stdout(),
+        ratatui::crossterm::event::DisableBracketedPaste
+    );
     let _ = ratatui::try_restore();
-    result
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,7 +101,7 @@ impl ScreenItem {
     fn home_description(self) -> &'static str {
         match self {
             Self::Group(DashboardGroup::Labs) => "create, check, activate, delete",
-            Self::Group(DashboardGroup::Projects) => "create, edit, open, assign, board",
+            Self::Group(DashboardGroup::Projects) => "create, edit, request, board",
             Self::Group(DashboardGroup::Agents) => "inspect, create, assign, archive",
             Self::Group(DashboardGroup::Settings) => "inspect and edit settings",
         }
@@ -131,6 +152,29 @@ impl FormField {
         if ch.is_control() {
             return;
         }
+        let byte = self
+            .value
+            .char_indices()
+            .nth(self.cursor)
+            .map(|(index, _)| index)
+            .unwrap_or(self.value.len());
+        self.value.insert(byte, ch);
+        self.cursor += 1;
+    }
+
+    /// Inserts typed or pasted text, keeping line breaks and dropping every
+    /// other control character.
+    fn insert_text(&mut self, text: &str) {
+        for ch in text.replace("\r\n", "\n").replace('\r', "\n").chars() {
+            match ch {
+                '\n' => self.insert_raw('\n'),
+                '\t' => self.insert_raw(' '),
+                ch => self.insert(ch),
+            }
+        }
+    }
+
+    fn insert_raw(&mut self, ch: char) {
         let byte = self
             .value
             .char_indices()
@@ -263,6 +307,26 @@ impl Form {
     }
 }
 
+/// Request prompt dialog state (ADR-0044).
+#[derive(Debug, Clone)]
+struct Prompt {
+    project_id: ProjectId,
+    project_name: String,
+    field: FormField,
+    notice: Option<&'static str>,
+}
+
+impl Prompt {
+    fn new(project_id: ProjectId, project_name: String) -> Self {
+        Self {
+            project_id,
+            project_name,
+            field: FormField::new("Request", ""),
+            notice: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 enum Mode {
     Browse,
@@ -274,6 +338,11 @@ enum Mode {
         lines: Vec<String>,
     },
     Help,
+    Prompt(Prompt),
+    /// Shown while the provider call blocks the dashboard.
+    Planning {
+        project_name: String,
+    },
     /// Card detail dialog over the Kanban screen; `scroll` is clamped when
     /// rendered.
     Story {
@@ -415,6 +484,8 @@ impl KanbanView {
 enum Deferred {
     EditSettings,
     NewAgent,
+    /// Plans `App::pending_request` inside the dashboard.
+    Plan,
 }
 
 struct App {
@@ -439,6 +510,7 @@ struct App {
     status: Option<String>,
     home_selected: usize,
     kanban: Option<KanbanView>,
+    pending_request: Option<(ProjectId, String)>,
 }
 
 impl App {
@@ -474,6 +546,7 @@ impl App {
             status: None,
             home_selected: 0,
             kanban: None,
+            pending_request: None,
         };
         app.reload();
         Ok(app)
@@ -495,14 +568,21 @@ impl App {
                 kind: error.kind(),
             })?;
             match event {
+                Event::Paste(text) => {
+                    if let Mode::Prompt(prompt) = &mut self.mode {
+                        prompt.field.insert_text(&text);
+                        prompt.notice = None;
+                    }
+                }
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
                     if let Some(deferred) = self.handle_key(key) {
-                        let _ = ratatui::try_restore();
+                        if deferred == Deferred::Plan {
+                            self.run_planning(terminal)?;
+                            continue;
+                        }
+                        stop_terminal();
                         let result = self.execute_deferred(deferred);
-                        *terminal = ratatui::try_init().map_err(|error| AppError::Io {
-                            context: "restarting the terminal dashboard",
-                            kind: error.kind(),
-                        })?;
+                        *terminal = start_terminal("restarting the terminal dashboard")?;
                         match result {
                             Ok(message) => {
                                 self.status = Some(message);
@@ -771,6 +851,37 @@ impl App {
                 None
             }
             Mode::Message { .. } | Mode::Help => None,
+            // Input is read by the cancellation watcher while planning.
+            Mode::Planning { .. } => None,
+            Mode::Prompt(mut prompt) => {
+                prompt.notice = None;
+                match key.code {
+                    KeyCode::Esc => return None,
+                    KeyCode::Enter if key.modifiers.contains(KeyModifiers::ALT) => {
+                        prompt.field.insert_text("\n");
+                    }
+                    KeyCode::Enter => {
+                        if prompt.field.value.trim().is_empty() {
+                            prompt.notice = Some("Write a request first.");
+                        } else {
+                            self.pending_request = Some((prompt.project_id, prompt.field.value));
+                            return Some(Deferred::Plan);
+                        }
+                    }
+                    KeyCode::Backspace => prompt.field.backspace(),
+                    KeyCode::Delete => prompt.field.delete(),
+                    KeyCode::Left => prompt.field.left(),
+                    KeyCode::Right => prompt.field.right(),
+                    KeyCode::Home => prompt.field.home(),
+                    KeyCode::End => prompt.field.end(),
+                    KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        prompt.field.insert(ch);
+                    }
+                    _ => {}
+                }
+                self.mode = Mode::Prompt(prompt);
+                None
+            }
             Mode::Story { detail, mut scroll } => {
                 match key.code {
                     KeyCode::Esc | KeyCode::Enter => return None,
@@ -958,6 +1069,14 @@ impl App {
                         let result = self.open_kanban();
                         self.apply_result(result);
                     }
+                    KeyCode::Char('r') if group == DashboardGroup::Projects => {
+                        if let Some(project) = self.selected_project() {
+                            self.mode =
+                                Mode::Prompt(Prompt::new(project.id.clone(), project.name.clone()));
+                        } else {
+                            self.status = Some("Select a project for the request.".to_owned());
+                        }
+                    }
                     KeyCode::Char('e') if group == DashboardGroup::Projects => {
                         if let Some(project) = self.selected_project() {
                             self.mode = Mode::Form(Form::project_edit(
@@ -993,6 +1112,14 @@ impl App {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Esc => self.close_kanban(),
             KeyCode::Char('?') => self.mode = Mode::Help,
+            KeyCode::Char('n') => {
+                if let Some(view) = self.kanban.as_ref() {
+                    self.mode = Mode::Prompt(Prompt::new(
+                        view.board.project_id.clone(),
+                        view.board.project_name.clone(),
+                    ));
+                }
+            }
             KeyCode::Left | KeyCode::Char('h') => {
                 if let Some(view) = self.kanban.as_mut() {
                     view.move_column(-1);
@@ -1089,6 +1216,135 @@ impl App {
             scroll: 0,
         };
         Ok(())
+    }
+
+    /// Submits the pending request through the same use case as the flag
+    /// path, then shows the outcome (ADR-0044).
+    fn run_planning(&mut self, terminal: &mut DefaultTerminal) -> Result<(), AppError> {
+        let Some((project_id, text)) = self.pending_request.take() else {
+            return Ok(());
+        };
+        match self.plan_request(terminal, &project_id, &text) {
+            Ok((title, lines)) => {
+                self.reload();
+                self.mode = Mode::Message { title, lines };
+            }
+            Err(error) => {
+                self.reload();
+                self.show_error(error);
+            }
+        }
+        Ok(())
+    }
+
+    fn plan_request(
+        &mut self,
+        terminal: &mut DefaultTerminal,
+        project_id: &ProjectId,
+        text: &str,
+    ) -> Result<(String, Vec<String>), AppError> {
+        let project = projects::open(&self.db, &self.db, project_id.as_str())?;
+        let settings = settings::show(&self.settings_file())?.settings;
+        let limits = ExecutionLimits::default();
+        let provider = crate::cli::dispatch::provider_from_settings(&settings, limits)?;
+        self.mode = Mode::Planning {
+            project_name: project.name.clone(),
+        };
+        terminal
+            .draw(|frame| self.render(frame))
+            .map_err(|error| AppError::Io {
+                context: "drawing the terminal dashboard",
+                kind: error.kind(),
+            })?;
+        let cancel = CancelToken::default();
+        let watcher = CancelWatcher::start(cancel.clone());
+        let outcome = requests::plan(
+            &self.db,
+            &self.db,
+            project_id,
+            text,
+            &settings,
+            &provider,
+            limits,
+            &crate::domain::clock::SystemClock,
+            cancel,
+            self.run_id,
+        );
+        watcher.stop();
+        Ok(self.outcome_lines(&outcome?))
+    }
+
+    fn outcome_lines(&self, outcome: &PlanningOutcome) -> (String, Vec<String>) {
+        let on_board = self.screen == Screen::Kanban;
+        let retry_key = if on_board { "n" } else { "r" };
+        match outcome {
+            PlanningOutcome::Planned {
+                request_id,
+                stories,
+            } => {
+                let names: std::collections::HashMap<String, String> = self
+                    .active_lab
+                    .as_ref()
+                    .and_then(|lab| self.db.lab_agents(lab).ok())
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|member| (member.id.to_string(), member.name))
+                    .collect();
+                let mut lines = vec![
+                    format!("{} stories added to TODO.", stories.len()),
+                    String::new(),
+                ];
+                for story in stories {
+                    let assignee = story
+                        .assigned_agent_id
+                        .as_deref()
+                        .and_then(|id| names.get(id).cloned())
+                        .unwrap_or_else(|| "Unassigned".to_owned());
+                    lines.push(format!("• {} — {assignee}", story.title));
+                }
+                lines.push(String::new());
+                lines.push(if on_board {
+                    "The board has been refreshed. Press any key to close.".to_owned()
+                } else {
+                    "Press v to open the board.".to_owned()
+                });
+                (format!("Request {request_id} planned"), lines)
+            }
+            PlanningOutcome::NeedsClarification {
+                request_id,
+                questions,
+            } => {
+                let mut lines = vec!["The Tech Lead needs more information:".to_owned()];
+                for (index, question) in questions.iter().enumerate() {
+                    lines.push(format!("{}. {question}", index + 1));
+                }
+                lines.push(String::new());
+                lines.push(format!("Press {retry_key} to submit a revised request."));
+                (format!("Request {request_id} needs clarification"), lines)
+            }
+            PlanningOutcome::Failed {
+                request_id,
+                code,
+                hint,
+                ..
+            } => (
+                format!("Request {request_id} failed"),
+                vec![
+                    format!("Code: {code}"),
+                    format!("Hint: {hint}"),
+                    String::new(),
+                    "The request is kept for traceability.".to_owned(),
+                ],
+            ),
+            PlanningOutcome::Cancelled { request_id } => (
+                format!("Request {request_id} cancelled"),
+                vec![
+                    "Planning was cancelled; no stories were added.".to_owned(),
+                    "Provider-side processing may have continued after local cancellation."
+                        .to_owned(),
+                ],
+            ),
+        }
     }
 
     fn open_group(&mut self, group: DashboardGroup) {
@@ -1463,6 +1719,8 @@ impl App {
 
     fn execute_deferred(&mut self, deferred: Deferred) -> Result<String, AppError> {
         match deferred {
+            // Planning stays inside the dashboard; see `run_planning`.
+            Deferred::Plan => Ok(String::new()),
             Deferred::EditSettings => {
                 let editor = TerminalEditor::from_environment()?;
                 settings_edit::edit(&self.settings_file(), &editor)?;
@@ -1627,6 +1885,7 @@ impl App {
         match &self.mode {
             Mode::Browse => {}
             Mode::Form(form) => self.render_form(frame, area, form),
+            Mode::Prompt(prompt) => self.render_prompt(frame, area, prompt),
             Mode::Story { .. } => {
                 let theme = self.theme;
                 if let Mode::Story { detail, scroll } = &mut self.mode {
@@ -1878,7 +2137,7 @@ impl App {
             usize::from(area.width.saturating_sub(2)),
         );
         footer.push(Line::from(Span::styled(
-            "Read-only board; Enter shows the full story.",
+            "Stories are read-only; Enter shows the full story.",
             self.theme.muted_style(),
         )));
         if let Some(status) = &self.status {
@@ -2065,7 +2324,7 @@ impl App {
             if state == kanban::StoryState::Todo && view.board.cards.is_empty() {
                 lines.push(Line::from(""));
                 lines.push(Line::from(Span::styled(
-                    "Submit a request with `vlab --new-request` to plan stories.",
+                    "Press n to submit a request.",
                     self.theme.muted_style(),
                 )));
             }
@@ -2120,6 +2379,73 @@ impl App {
         } else {
             BorderType::Plain
         }
+    }
+
+    fn render_prompt(&self, frame: &mut Frame<'_>, area: Rect, prompt: &Prompt) {
+        let width = 76.min(area.width.saturating_sub(4)).max(40);
+        let height = 14.min(area.height.saturating_sub(2));
+        let rect = fixed_rect(width, height, area);
+        frame.render_widget(Clear, rect);
+        let block = self.block(&format!("New request · {}", clean(&prompt.project_name)));
+        let inner = block.inner(rect);
+        frame.render_widget(block, rect);
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Min(3),
+                Constraint::Length(1),
+            ])
+            .split(inner);
+        let intro = fitting(
+            &[
+                "Describe what you need; the Tech Lead plans it into stories.",
+                "Describe what you need.",
+            ],
+            usize::from(inner.width),
+        );
+        frame.render_widget(
+            Paragraph::new(Span::styled(intro, self.theme.muted_style())),
+            chunks[0],
+        );
+        let area_block = Block::bordered()
+            .border_type(self.border_type())
+            .border_style(self.theme.key())
+            .title(Line::from(Span::styled(" Request ", self.theme.key())));
+        let text_area = area_block.inner(chunks[1]);
+        frame.render_widget(area_block, chunks[1]);
+        frame.render_widget(
+            Paragraph::new(prompt_lines(
+                &prompt.field,
+                usize::from(text_area.width),
+                usize::from(text_area.height),
+                self.theme,
+            )),
+            text_area,
+        );
+        let count = format!("{} chars", prompt.field.value.chars().count());
+        // Leave room for the right-aligned count.
+        let room = usize::from(inner.width).saturating_sub(count.chars().count() + 2);
+        let footer = match prompt.notice {
+            Some(notice) => Span::styled(notice, self.theme.warning_style()),
+            None => Span::styled(
+                fitting(
+                    &[
+                        "Enter submit · Alt+Enter new line · Esc cancel",
+                        "Enter submit · Alt+Enter line · Esc",
+                        "Enter submit · Esc cancel",
+                    ],
+                    room,
+                ),
+                self.theme.muted_style(),
+            ),
+        };
+        frame.render_widget(Paragraph::new(Line::from(footer)), chunks[2]);
+        frame.render_widget(
+            Paragraph::new(Span::styled(count, self.theme.muted_style()))
+                .alignment(Alignment::Right),
+            chunks[2],
+        );
     }
 
     fn render_form(&self, frame: &mut Frame<'_>, area: Rect, form: &Form) {
@@ -2228,7 +2554,17 @@ impl App {
                 lines.push("\nEnter assign · Esc cancel".to_owned());
                 ("Assign agent".to_owned(), lines)
             }
-            Mode::Form(_) | Mode::Browse | Mode::Story { .. } => return,
+            Mode::Planning { project_name } => (
+                "Planning".to_owned(),
+                vec![
+                    format!("Planning a request for {}…", clean(project_name)),
+                    String::new(),
+                    "The Tech Lead is drafting stories; this can take up to 4 minutes.".to_owned(),
+                    String::new(),
+                    "Esc cancel".to_owned(),
+                ],
+            ),
+            Mode::Form(_) | Mode::Browse | Mode::Story { .. } | Mode::Prompt(_) => return,
         };
         let rect = centered_rect(78, 60, area);
         frame.render_widget(Clear, rect);
@@ -2431,6 +2767,7 @@ fn action_items(group: DashboardGroup) -> Vec<(&'static str, &'static str)> {
         DashboardGroup::Projects => vec![
             ("[n]", "New"),
             ("[e]", "Edit"),
+            ("[r]", "Request"),
             ("[Enter]", "Open"),
             ("[a]", "Assign"),
             ("[v]", "Kanban"),
@@ -2463,7 +2800,8 @@ fn action_items(group: DashboardGroup) -> Vec<(&'static str, &'static str)> {
     }
 }
 
-const KANBAN_ACTIONS: [(&str, &str); 8] = [
+const KANBAN_ACTIONS: [(&str, &str); 9] = [
+    ("[n]", "Request"),
     ("[←/→]", "List"),
     ("[↑/↓]", "Card"),
     ("[PgUp/Dn]", "Scroll"),
@@ -2874,6 +3212,7 @@ fn kanban_help_lines() -> Vec<String> {
         "PgUp/PgDn   scroll the list by one page".to_owned(),
         "g/G         first/last card in the list".to_owned(),
         "Enter       card detail (↑/↓ scroll, Esc close)".to_owned(),
+        "n           new request for this project".to_owned(),
         "r           reload the board".to_owned(),
         "?           this help".to_owned(),
         "Esc         back to projects".to_owned(),
@@ -2891,6 +3230,7 @@ fn help_lines() -> Vec<String> {
         "Enter       open/confirm selection".to_owned(),
         "n           new item in this group".to_owned(),
         "e           edit the selected item".to_owned(),
+        "r           new request for the selected project".to_owned(),
         "v           project Kanban board".to_owned(),
         "a           set active or assign".to_owned(),
         "d           delete with confirmation".to_owned(),
@@ -2951,6 +3291,143 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(vertical[1])[1]
+}
+
+/// Lays out the request text word-wrapped at `width` (long words split),
+/// keeps the cursor row visible in `height` rows, and marks the cursor.
+fn prompt_lines(
+    field: &FormField,
+    width: usize,
+    height: usize,
+    theme: Theme,
+) -> Vec<Line<'static>> {
+    if width == 0 || height == 0 {
+        return Vec::new();
+    }
+    let chars: Vec<char> = field.value.chars().collect();
+    // Each row holds character indices, so the cursor maps back exactly.
+    let mut rows: Vec<Vec<usize>> = vec![Vec::new()];
+    for (index, ch) in chars.iter().enumerate() {
+        if *ch == '\n' {
+            if let Some(row) = rows.last_mut() {
+                row.push(index);
+            }
+            rows.push(Vec::new());
+            continue;
+        }
+        if let Some(row) = rows.last_mut().filter(|row| row.len() == width) {
+            let tail = match row.iter().rposition(|&at| chars[at] == ' ') {
+                Some(space) if space + 1 < row.len() => row.split_off(space + 1),
+                _ => Vec::new(),
+            };
+            rows.push(tail);
+        }
+        if let Some(row) = rows.last_mut() {
+            row.push(index);
+        }
+    }
+    let cursor = if field.cursor >= chars.len() {
+        let last = rows.len() - 1;
+        if rows[last].len() >= width {
+            rows.push(Vec::new());
+        }
+        (rows.len() - 1, rows[rows.len() - 1].len())
+    } else {
+        rows.iter()
+            .enumerate()
+            .find_map(|(row, indices)| {
+                indices
+                    .iter()
+                    .position(|&at| at == field.cursor)
+                    .map(|column| (row, column))
+            })
+            .unwrap_or((0, 0))
+    };
+    let first = (cursor.0 + 1).saturating_sub(height);
+    let mark = if theme.unicode { "▏" } else { "|" };
+    let text = |indices: &[usize]| -> String {
+        indices
+            .iter()
+            .map(|&at| if chars[at] == '\n' { ' ' } else { chars[at] })
+            .collect()
+    };
+    rows.iter()
+        .enumerate()
+        .skip(first)
+        .take(height)
+        .map(|(index, row)| {
+            if field.value.is_empty() && index == 0 {
+                return Line::from(vec![
+                    Span::styled(mark.to_owned(), theme.selected()),
+                    Span::styled(" e.g. Add password reset by email", theme.muted_style()),
+                ]);
+            }
+            if index != cursor.0 {
+                return Line::from(text(row).trim_end().to_owned());
+            }
+            let before = text(&row[..cursor.1.min(row.len())]);
+            let at = row.get(cursor.1).map(|&at| match chars[at] {
+                '\n' => ' ',
+                ch => ch,
+            });
+            let after = text(row.get(cursor.1 + 1..).unwrap_or_default());
+            Line::from(vec![
+                Span::raw(before),
+                Span::styled(
+                    at.map(String::from).unwrap_or_else(|| mark.to_owned()),
+                    theme.selected(),
+                ),
+                Span::raw(after.trim_end().to_owned()),
+            ])
+        })
+        .collect()
+}
+
+/// The first candidate that fits `width`, or the last one.
+fn fitting<'a>(candidates: &[&'a str], width: usize) -> &'a str {
+    candidates
+        .iter()
+        .copied()
+        .find(|text| text.chars().count() <= width)
+        .unwrap_or(candidates[candidates.len() - 1])
+}
+
+/// Reads terminal input while planning blocks the dashboard; `Esc` or
+/// `Ctrl-C` cancels. It only touches the cancel token, never the database.
+struct CancelWatcher {
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    handle: std::thread::JoinHandle<()>,
+}
+
+impl CancelWatcher {
+    fn start(cancel: CancelToken) -> Self {
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = std::sync::Arc::clone(&stop);
+        let handle = std::thread::spawn(move || {
+            while !flag.load(std::sync::atomic::Ordering::SeqCst) {
+                if !event::poll(std::time::Duration::from_millis(50)).unwrap_or(false) {
+                    continue;
+                }
+                if let Ok(Event::Key(key)) = event::read()
+                    && key.kind == KeyEventKind::Press
+                    && is_cancel_key(key)
+                {
+                    cancel.cancel();
+                }
+            }
+        });
+        Self { stop, handle }
+    }
+
+    fn stop(self) {
+        self.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        let _ = self.handle.join();
+    }
+}
+
+fn is_cancel_key(key: KeyEvent) -> bool {
+    key.code == KeyCode::Esc
+        || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL))
 }
 
 fn record_event(
@@ -3021,6 +3498,7 @@ mod tests {
             status: None,
             home_selected: 0,
             kanban: None,
+            pending_request: None,
         };
         (app, dir)
     }
@@ -3329,7 +3807,7 @@ mod tests {
             "Rate limit",
             "[Enter]",
             "Detail",
-            "Read-only board",
+            "Stories are read-only",
         ] {
             assert!(screen.contains(text), "{text}: {screen}");
         }
@@ -3661,5 +4139,202 @@ mod tests {
         assert_eq!(title, "Operation failed");
         assert!(!lines.join(" ").contains("Portal"), "{lines:?}");
         assert_eq!(app.projects[0].name, "Portal Web");
+    }
+
+    #[test]
+    fn pasted_text_keeps_line_breaks_and_drops_controls() {
+        let mut field = FormField::new("Request", "");
+        field.insert_text("Add reset\r\nby email\u{1b}[31m\tnow\r");
+        assert_eq!(field.value, "Add reset\nby email[31m now\n");
+        assert_eq!(field.cursor, field.value.chars().count());
+    }
+
+    fn prompt_text(lines: &[Line<'_>]) -> Vec<String> {
+        lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_prompt_wraps_and_scrolls_to_the_cursor() {
+        let theme = Theme {
+            color: false,
+            unicode: true,
+        };
+        let mut field = FormField::new("Request", "");
+        assert_eq!(
+            prompt_text(&prompt_lines(&field, 20, 3, theme)),
+            vec!["▏ e.g. Add password reset by email"]
+        );
+        field.insert_text("abcdefghij\nxy");
+        // A word longer than the row is split.
+        assert_eq!(
+            prompt_text(&prompt_lines(&field, 4, 5, theme)),
+            vec!["abcd", "efgh", "ij", "xy▏"]
+        );
+        // Only the last rows are visible when the cursor is at the end.
+        assert_eq!(
+            prompt_text(&prompt_lines(&field, 4, 2, theme)),
+            vec!["ij", "xy▏"]
+        );
+        field.home();
+        assert_eq!(
+            prompt_text(&prompt_lines(&field, 4, 2, theme)),
+            vec!["abcd", "efgh"]
+        );
+        // A full row moves the end cursor to a new row.
+        let mut full = FormField::new("Request", "");
+        full.insert_text("abcd");
+        assert_eq!(
+            prompt_text(&prompt_lines(&full, 4, 3, theme)),
+            vec!["abcd", "▏"]
+        );
+        // Words move whole to the next row; the cursor follows its character.
+        let mut words = FormField::new("Request", "");
+        words.insert_text("reset my password");
+        assert_eq!(
+            prompt_text(&prompt_lines(&words, 10, 3, theme)),
+            vec!["reset my", "password▏"]
+        );
+        words.home();
+        for _ in 0..9 {
+            words.right();
+        }
+        assert_eq!(
+            prompt_text(&prompt_lines(&words, 10, 3, theme)),
+            vec!["reset my", "password"]
+        );
+        let lines = prompt_lines(&words, 10, 3, theme);
+        assert_eq!(lines[1].spans[1].content.as_ref(), "p");
+    }
+
+    #[test]
+    fn narrow_footers_pick_a_shorter_hint() {
+        assert_eq!(fitting(&["long hint", "short"], 20), "long hint");
+        assert_eq!(fitting(&["long hint", "short"], 6), "short");
+        assert_eq!(fitting(&["long hint", "short"], 2), "short");
+    }
+
+    #[test]
+    fn the_projects_dashboard_opens_a_clean_request_prompt() {
+        let (mut app, _dir) = seeded();
+        app.handle_key(key(KeyCode::Char('r')));
+        let Mode::Prompt(prompt) = &app.mode else {
+            panic!("expected the prompt, got {:?}", app.mode);
+        };
+        assert_eq!(prompt.project_id.as_str(), "0b1c2d3e");
+        let screen = rendered(&mut app);
+        for text in [
+            "New request · Portal",
+            "Request",
+            "e.g. Add password reset by email",
+            "Enter submit",
+            "Esc cancel",
+            "0 chars",
+        ] {
+            assert!(screen.contains(text), "{text}: {screen}");
+        }
+
+        // An empty request is not submitted.
+        app.handle_key(key(KeyCode::Enter));
+        let Mode::Prompt(prompt) = &app.mode else {
+            panic!("the prompt closed");
+        };
+        assert_eq!(prompt.notice, Some("Write a request first."));
+        assert!(rendered(&mut app).contains("Write a request first."));
+
+        for ch in "Add reset".chars() {
+            app.handle_key(key(KeyCode::Char(ch)));
+        }
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT));
+        for ch in "by email".chars() {
+            app.handle_key(key(KeyCode::Char(ch)));
+        }
+        assert!(rendered(&mut app).contains("18 chars"));
+        let deferred = app.handle_key(key(KeyCode::Enter));
+        assert_eq!(deferred, Some(Deferred::Plan));
+        let (project, text) = app.pending_request.clone().unwrap();
+        assert_eq!(project.as_str(), "0b1c2d3e");
+        assert_eq!(text, "Add reset\nby email");
+
+        app.pending_request = None;
+        app.handle_key(key(KeyCode::Char('r')));
+        app.handle_key(key(KeyCode::Char('x')));
+        assert_eq!(app.handle_key(key(KeyCode::Esc)), None);
+        assert!(matches!(app.mode, Mode::Browse));
+        assert!(app.pending_request.is_none());
+    }
+
+    #[test]
+    fn the_kanban_offers_a_request_from_the_empty_state() {
+        let (mut app, _dir) = kanban_fixture(Vec::new());
+        let screen = rendered(&mut app);
+        assert!(screen.contains("Press n to submit"), "{screen}");
+        assert!(!screen.contains("--new-request"), "{screen}");
+        assert!(screen.contains("[n]"), "{screen}");
+        app.handle_key(key(KeyCode::Char('n')));
+        let Mode::Prompt(prompt) = &app.mode else {
+            panic!("expected the prompt");
+        };
+        assert_eq!(prompt.project_name, "Portal");
+    }
+
+    #[test]
+    fn planning_outcomes_are_reported_and_sanitized() {
+        let (mut app, _dir) = kanban_fixture(Vec::new());
+        let request_id = crate::domain::ids::RequestId::parse("1c2d3e4f").unwrap();
+        let (title, lines) = app.outcome_lines(&PlanningOutcome::NeedsClarification {
+            request_id: request_id.clone(),
+            questions: vec!["Which \u{1b}[31memail provider?".to_owned()],
+        });
+        assert_eq!(title, "Request 1c2d3e4f needs clarification");
+        assert!(
+            lines
+                .join("\n")
+                .contains("Press n to submit a revised request.")
+        );
+        app.mode = Mode::Message { title, lines };
+        let screen = rendered(&mut app);
+        assert!(screen.contains("1. Which email provider?"), "{screen}");
+        assert!(!screen.contains('\u{1b}'), "{screen}");
+
+        let (title, lines) = app.outcome_lines(&PlanningOutcome::Cancelled {
+            request_id: request_id.clone(),
+        });
+        assert_eq!(title, "Request 1c2d3e4f cancelled");
+        assert!(lines.join(" ").contains("Provider-side processing"));
+
+        let (title, lines) = app.outcome_lines(&PlanningOutcome::Failed {
+            request_id,
+            code: "provider_timeout",
+            hint: "Try again later.",
+            validation: false,
+        });
+        assert_eq!(title, "Request 1c2d3e4f failed");
+        assert!(lines.contains(&"Code: provider_timeout".to_owned()));
+
+        app.mode = Mode::Planning {
+            project_name: "Portal".to_owned(),
+        };
+        let screen = rendered(&mut app);
+        assert!(screen.contains("Planning a request for Portal"), "{screen}");
+        assert!(screen.contains("Esc cancel"), "{screen}");
+    }
+
+    #[test]
+    fn only_esc_and_ctrl_c_cancel_planning() {
+        assert!(is_cancel_key(key(KeyCode::Esc)));
+        assert!(is_cancel_key(KeyEvent::new(
+            KeyCode::Char('c'),
+            KeyModifiers::CONTROL
+        )));
+        assert!(!is_cancel_key(key(KeyCode::Char('c'))));
+        assert!(!is_cancel_key(key(KeyCode::Enter)));
     }
 }

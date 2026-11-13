@@ -155,6 +155,13 @@ bound.
 
 ## 8. Submit a request
 
+Interactive route: in **Projects** select the project and press `r` (or press
+`n` on its Kanban board). Type or paste the request in the dialog and press
+`Enter`; `Esc` cancels. The outcome dialog lists the planned stories or the
+Tech Lead's questions.
+
+The hidden legacy flag still works for scripts:
+
 ```sh
 vlab --new-request "Add password reset"
 ```

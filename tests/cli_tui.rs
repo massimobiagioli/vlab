@@ -56,6 +56,15 @@ fn seed(sandbox: &Sandbox) -> (LabId, ProjectId, AgentId) {
 
 /// Runs `vlab <args>` in a 100x30 pseudo-terminal and sends timed key input.
 fn run_tui(sandbox: &Sandbox, args: &[&str], keys: &[(&str, u64)]) -> (String, bool) {
+    run_tui_with_env(sandbox, args, keys, &[])
+}
+
+fn run_tui_with_env(
+    sandbox: &Sandbox,
+    args: &[&str],
+    keys: &[(&str, u64)],
+    env: &[(&str, String)],
+) -> (String, bool) {
     let pty = native_pty_system();
     let pair = pty
         .openpty(PtySize {
@@ -73,6 +82,9 @@ fn run_tui(sandbox: &Sandbox, args: &[&str], keys: &[(&str, u64)]) -> (String, b
     command.env("TERM", "xterm-256color");
     command.env_remove("NO_COLOR");
     command.env_remove("CLICOLOR");
+    for (key, value) in env {
+        command.env(key, value);
+    }
     command.cwd(sandbox.home());
     let mut child = pair.slave.spawn_command(command).unwrap();
     drop(pair.slave);
@@ -390,7 +402,7 @@ fn the_projects_dashboard_renames_and_opens_the_full_screen_kanban() {
     assert!(output.contains("TODO 1"), "{output:?}");
     assert!(output.contains("Story 6f7a8b9c"), "{output:?}");
     assert!(output.contains("Acceptance criteria"), "{output:?}");
-    assert!(output.contains("Read-only board"), "{output:?}");
+    assert!(output.contains("Stories are read-only"), "{output:?}");
     assert!(output.contains("No stories in IN PROGRESS"), "{output:?}");
     let db = sandbox.seed_database();
     let name: String = db.block_on(async {
@@ -408,4 +420,117 @@ fn the_projects_dashboard_renames_and_opens_the_full_screen_kanban() {
             .unwrap()
     });
     assert_eq!(events, 1);
+}
+
+#[test]
+fn the_projects_dashboard_submits_a_request_through_the_prompt() {
+    let sandbox = Sandbox::new();
+    let (lab, project, _) = seed(&sandbox);
+    let db = sandbox.seed_database();
+    db.insert_agent(
+        &AgentProfile::new(
+            AgentId::parse("2d3e4f50").unwrap(),
+            Name::parse("Grace").unwrap(),
+            Role::Lead,
+            Description::parse("Plans work").unwrap(),
+            skills::parse_list("").unwrap(),
+            ProviderId::DeepSeek,
+            ModelId::parse("deepseek-chat").unwrap(),
+            None,
+        )
+        .unwrap(),
+        std::slice::from_ref(&lab),
+    )
+    .unwrap();
+    drop(db);
+    sandbox.write_settings(
+        "provider: deepseek\nmodel: deepseek-chat\ncredentials:\n  deepseek_api_key: \"sk-vlab-SECRET-MARKER\"\n",
+    );
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let server = runtime.block_on(wiremock::MockServer::start());
+    let plan = serde_json::json!({
+        "schema_version": 1,
+        "clarification_questions": [],
+        "stories": [{
+            "title": "Send reset email",
+            "description": "Email a single-use link",
+            "acceptance_criteria": ["Link expires"],
+            "priority": "high",
+            "complexity": "small",
+            "required_skills": ["rust"],
+            "assigned_agent_id": "1c2d3e4f",
+            "assignment_rationale": "Rust developer."
+        }]
+    });
+    let envelope = serde_json::json!({
+        "id": "req-1",
+        "model": "deepseek-chat",
+        "choices": [{"message": {"content": plan.to_string()}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 20}
+    });
+    runtime.block_on(async {
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/chat/completions"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(envelope))
+            .mount(&server)
+            .await;
+    });
+
+    let (output, success) = run_tui_with_env(
+        &sandbox,
+        &[],
+        &[
+            ("2", 300),
+            ("r", 300),
+            ("\r", 200),
+            ("Add password reset", 200),
+            ("\r", 2000),
+            ("x", 300),
+            ("v", 400),
+            ("q", 200),
+        ],
+        &[(
+            "VLAB_DEEPSEEK_ENDPOINT",
+            format!("{}/chat/completions", server.uri()),
+        )],
+    );
+    assert!(success, "dashboard did not exit cleanly: {output:?}");
+    assert_restored(&output);
+    assert!(output.contains("New request"), "{output:?}");
+    assert!(output.contains("Write a request first."), "{output:?}");
+    assert!(output.contains("planned"), "{output:?}");
+    assert!(output.contains("Send reset email"), "{output:?}");
+    assert!(output.contains("TODO 1"), "{output:?}");
+    assert!(!output.contains("SECRET-MARKER"), "{output:?}");
+
+    let db = sandbox.seed_database();
+    let (status, stories, content): (String, i64, String) = db.block_on(async {
+        let status = sqlx::query_scalar("SELECT status FROM requests")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        let stories = sqlx::query_scalar("SELECT count(*) FROM stories")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        let content = sqlx::query_scalar("SELECT content FROM requests")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        (status, stories, content)
+    });
+    assert_eq!(
+        (status.as_str(), stories, content.as_str()),
+        ("PLANNED", 1, "Add password reset")
+    );
+    assert_eq!(
+        db.get(vlab::app::storage::AppStateKey::ActiveProjectId)
+            .unwrap()
+            .as_deref(),
+        Some(project.as_str())
+    );
 }

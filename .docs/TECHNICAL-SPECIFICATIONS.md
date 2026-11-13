@@ -624,6 +624,12 @@ The Projects dashboard `Edit` action shall:
 
 ### 9.1 Input Syntax
 
+In the interactive dashboards, the Projects `Request` action (`r`) and the
+Kanban `n` key shall open a prompt dialog for the project (ADR-0044). The
+dialog accepts typed or pasted multi-line text, rejects empty text without
+submitting, and applies every rule below except those specific to arguments
+and standard input. The flag forms below remain for scripts.
+
 Requests shall support literal text:
 
 ```bash

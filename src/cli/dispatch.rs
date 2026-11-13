@@ -1005,7 +1005,7 @@ fn render_board_sections(board: &Board) -> String {
     out
 }
 
-fn provider_from_settings(
+pub(crate) fn provider_from_settings(
     settings: &crate::domain::settings::Settings,
     limits: ExecutionLimits,
 ) -> Result<DeepSeekProvider, AppError> {

@@ -1,12 +1,23 @@
 # Planning
 
-This document describes `--new-request`: input rules, the planning workflow,
+This document describes request intake (dashboard prompt and `--new-request`): input rules, the planning workflow,
 terminal outcomes, provider bounds, assignment and due-date rules, scoped memory
 context, and the security model. The conceptual entities are in
 [`DATA-MODEL.md`](DATA-MODEL.md); the provider port is recorded in
 [ADR-0026](adr/adr-0026.md).
 
 ## Input
+
+From the dashboards (ADR-0044): press `r` on a project in **Projects**, or `n`
+on its Kanban board. A prompt dialog collects the text (`Alt+Enter` line
+break, bracketed paste keeps line breaks and drops other control characters,
+`Enter` submits, `Esc` cancels; empty text is not submitted). The project
+becomes current, a `Planning…` dialog is shown while the single provider
+invocation runs on the dashboard's database connection, and `Esc` or `Ctrl-C`
+cancels with the same rules as SIGINT below. An outcome dialog reports the
+result; the exit-code column below applies only to the flag path.
+
+The hidden legacy flag remains for scripts:
 
 ```bash
 vlab --open-project <project-id>

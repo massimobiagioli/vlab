@@ -94,6 +94,7 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0041.md`](.docs/adr/adr-0041.md) | Optional laboratory description and dashboard actions. |
 | [`.docs/adr/adr-0042.md`](.docs/adr/adr-0042.md) | Reusable form modal for dashboard editing. |
 | [`.docs/adr/adr-0043.md`](.docs/adr/adr-0043.md) | Project editing and full-screen Kanban board. |
+| [`.docs/adr/adr-0044.md`](.docs/adr/adr-0044.md) | Request intake from the dashboards. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
 | [`.project/features/`](.project/features/) | Tracked feature plans with task checklists (ADR-0037). |
 
