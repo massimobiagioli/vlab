@@ -1194,22 +1194,20 @@ impl App {
         }
         frame.render_widget(Paragraph::new(lines).block(self.block("Groups")), chunks[1]);
 
-        let actions = vec![
-            Line::from(vec![
-                Span::styled("[↑/↓]", self.theme.key()),
-                Span::styled(" Select   ", self.theme.muted_style()),
-                Span::styled("[Enter]", self.theme.key()),
-                Span::styled(" Open   ", self.theme.muted_style()),
-                Span::styled("[1-4]", self.theme.key()),
-                Span::styled(" Direct   ", self.theme.muted_style()),
-                Span::styled("[q]", self.theme.key()),
-                Span::styled(" Quit", self.theme.muted_style()),
-            ]),
-            Line::from(Span::styled(
-                "Choose a group to manage; Esc in a dashboard returns here.",
-                self.theme.muted_style(),
-            )),
-        ];
+        let mut actions = action_grid(
+            &[
+                ("[↑/↓]", "Select"),
+                ("[Enter]", "Open"),
+                ("[1-4]", "Direct"),
+                ("[q]", "Quit"),
+            ],
+            self.theme,
+            usize::from(area.width.saturating_sub(2)),
+        );
+        actions.push(Line::from(Span::styled(
+            "Choose a group to manage; Esc in a dashboard returns here.",
+            self.theme.muted_style(),
+        )));
         frame.render_widget(
             Paragraph::new(actions).block(self.block("Actions")),
             chunks[2],
@@ -1217,12 +1215,26 @@ impl App {
     }
 
     fn render_group(&mut self, frame: &mut Frame<'_>, area: Rect, group: DashboardGroup) {
+        let mut footer = action_lines(group, self.theme, usize::from(area.width.saturating_sub(2)));
+        if !self.filter.is_empty() {
+            footer.push(Line::from(vec![
+                Span::styled("Filter: ", self.theme.key()),
+                Span::raw(clean(&self.filter)),
+            ]));
+        }
+        if let Some(status) = &self.status {
+            footer.push(Line::from(vec![
+                Span::styled("Status: ", self.theme.key()),
+                Span::styled(clean(status), self.theme.success_style()),
+            ]));
+        }
+        let footer_height = u16::try_from(footer.len() + 2).unwrap_or(6).max(4);
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(3),
                 Constraint::Min(1),
-                Constraint::Length(5),
+                Constraint::Length(footer_height),
             ])
             .split(area);
         let context = self.context_line(group);
@@ -1238,19 +1250,6 @@ impl App {
         self.page_size = usize::from(chunks[1].height.saturating_sub(2)).max(1);
         self.clamp_selection();
         self.render_body(frame, chunks[1], group);
-        let mut footer = action_lines(group, self.theme);
-        if !self.filter.is_empty() {
-            footer.push(Line::from(vec![
-                Span::styled("Filter: ", self.theme.key()),
-                Span::raw(clean(&self.filter)),
-            ]));
-        }
-        if let Some(status) = &self.status {
-            footer.push(Line::from(vec![
-                Span::styled("Status: ", self.theme.key()),
-                Span::styled(clean(status), self.theme.success_style()),
-            ]));
-        }
         frame.render_widget(
             Paragraph::new(footer).block(self.block("Actions")),
             chunks[2],
@@ -1610,50 +1609,90 @@ fn group_title(group: DashboardGroup) -> &'static str {
     }
 }
 
-fn action_lines(group: DashboardGroup, theme: Theme) -> Vec<Line<'static>> {
-    fn item(key: &'static str, label: &'static str, theme: Theme) -> Vec<Span<'static>> {
-        vec![
-            Span::styled(key, theme.key()),
-            Span::styled(format!(" {label}   "), theme.muted_style()),
-        ]
-    }
-    let first = match group {
+fn action_items(group: DashboardGroup) -> Vec<(&'static str, &'static str)> {
+    match group {
         DashboardGroup::Labs => vec![
-            item("[n]", "New", theme),
-            item("[c]", "Check", theme),
-            item("[a]", "Set active", theme),
-            item("[d]", "Delete", theme),
+            ("[n]", "New"),
+            ("[c]", "Check"),
+            ("[a]", "Set active"),
+            ("[d]", "Delete"),
+            ("[/]", "Filter"),
+            ("[?]", "Help"),
+            ("[Esc]", "Back"),
+            ("[q]", "Quit"),
         ],
         DashboardGroup::Projects => vec![
-            item("[n]", "New", theme),
-            item("[Enter]", "Open", theme),
-            item("[a]", "Assign", theme),
-            item("[v]", "Kanban", theme),
-            item("[d]", "Delete", theme),
+            ("[n]", "New"),
+            ("[Enter]", "Open"),
+            ("[a]", "Assign"),
+            ("[v]", "Kanban"),
+            ("[d]", "Delete"),
+            ("[/]", "Filter"),
+            ("[?]", "Help"),
+            ("[Esc]", "Back"),
+            ("[q]", "Quit"),
         ],
         DashboardGroup::Agents => vec![
-            item("[n]", "New", theme),
-            item("[Enter]", "Detail", theme),
-            item("[a]", "Assign", theme),
-            item("[d]", "Archive", theme),
+            ("[n]", "New"),
+            ("[Enter]", "Detail"),
+            ("[a]", "Assign"),
+            ("[d]", "Archive"),
+            ("[/]", "Filter"),
+            ("[?]", "Help"),
+            ("[Esc]", "Back"),
+            ("[q]", "Quit"),
         ],
         DashboardGroup::Settings => vec![
-            item("[e]", "Edit", theme),
-            item("[r]", "Reload", theme),
-            item("[p]", "Path", theme),
-            item("[c]", "Credentials", theme),
+            ("[e]", "Edit"),
+            ("[r]", "Reload"),
+            ("[p]", "Path"),
+            ("[c]", "Credentials"),
+            ("[/]", "Filter"),
+            ("[?]", "Help"),
+            ("[Esc]", "Back"),
+            ("[q]", "Quit"),
         ],
-    };
-    let second = vec![
-        item("[/]", "Filter", theme),
-        item("[?]", "Help", theme),
-        item("[Esc]", "Back", theme),
-        item("[q]", "Quit", theme),
-    ];
-    vec![
-        Line::from(first.into_iter().flatten().collect::<Vec<_>>()),
-        Line::from(second.into_iter().flatten().collect::<Vec<_>>()),
-    ]
+    }
+}
+
+fn action_lines(group: DashboardGroup, theme: Theme, width: usize) -> Vec<Line<'static>> {
+    action_grid(&action_items(group), theme, width)
+}
+
+fn action_grid(
+    items: &[(&'static str, &'static str)],
+    theme: Theme,
+    width: usize,
+) -> Vec<Line<'static>> {
+    if items.is_empty() {
+        return Vec::new();
+    }
+    let key_width = items.iter().map(|(key, _)| key.len()).max().unwrap_or(0);
+    let label_width = items
+        .iter()
+        .map(|(_, label)| label.len())
+        .max()
+        .unwrap_or(0);
+    let cell_width = key_width + 1 + label_width + 2;
+    let columns = (width / cell_width.max(1)).clamp(1, 4);
+    items
+        .chunks(columns)
+        .map(|chunk| {
+            let mut spans = Vec::new();
+            for (index, (key, label)) in chunk.iter().enumerate() {
+                if index > 0 {
+                    spans.push(Span::raw("  "));
+                }
+                spans.push(Span::styled(*key, theme.key()));
+                spans.push(Span::raw(" ".repeat(key_width - key.len() + 1)));
+                spans.push(Span::styled(
+                    format!("{label:<label_width$}"),
+                    theme.muted_style(),
+                ));
+            }
+            Line::from(spans)
+        })
+        .collect()
 }
 
 fn table_widths(group: DashboardGroup, available: usize) -> Vec<usize> {
@@ -1925,7 +1964,8 @@ mod tests {
         let (mut app, _dir) = fixture(Screen::Group(DashboardGroup::Labs));
         let screen = rendered(&mut app);
         assert!(screen.contains("Laboratories"), "{screen}");
-        assert!(screen.contains("[n] New"), "{screen}");
+        assert!(screen.contains("[n]"), "{screen}");
+        assert!(screen.contains("New"), "{screen}");
         assert!(screen.contains("No laboratories"), "{screen}");
     }
 
