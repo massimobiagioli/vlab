@@ -19,11 +19,64 @@ INSERT INTO events (\
     strftime('%Y-%m-%dT%H:%M:%fZ', 'now')\
 )";
 
+/// One content-free audit row for `--logs`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogEntry {
+    pub created_at: String,
+    pub kind: String,
+    pub outcome: String,
+    pub entity: Option<(String, String)>,
+    pub error_code: Option<String>,
+}
+
+type LogRow = (
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
 impl Database {
     /// Persists one event, returning storage failures to the caller.
     pub fn record(&self, event: &AuditEvent) -> Result<(), StorageError> {
         insert(self, event)
     }
+}
+
+/// Returns the newest audit events, content-free.
+pub fn recent(db: &Database, limit: u32) -> Result<Vec<LogEntry>, StorageError> {
+    db.block_on(async {
+        let mut connection = db
+            .pool()
+            .acquire()
+            .await
+            .map_err(|error| map_sqlx_error(db.path(), &error))?;
+        let rows: Vec<LogRow> = sqlx::query_as(
+            "SELECT created_at, kind, outcome, entity_type, entity_id, error_code \
+             FROM events ORDER BY created_at DESC, id DESC LIMIT ?1",
+        )
+        .bind(i64::from(limit))
+        .fetch_all(&mut *connection)
+        .await
+        .map_err(|error| map_sqlx_error(db.path(), &error))?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(created_at, kind, outcome, entity_type, entity_id, error_code)| LogEntry {
+                    created_at,
+                    kind,
+                    outcome,
+                    entity: match (entity_type, entity_id) {
+                        (Some(entity_type), Some(entity_id)) => Some((entity_type, entity_id)),
+                        _ => None,
+                    },
+                    error_code,
+                },
+            )
+            .collect())
+    })
 }
 
 impl EventSink for Database {

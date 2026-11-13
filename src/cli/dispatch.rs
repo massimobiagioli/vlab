@@ -17,7 +17,7 @@ use crate::app::memories;
 use crate::app::projects::{self, CreatedProject, ProjectOverview, ProjectStore};
 use crate::app::requests::{self, PlanningOutcome};
 use crate::app::settings::SettingsReport;
-use crate::app::workflow;
+use crate::app::workflow::{self, WorkflowStore};
 use crate::app::{AppError, settings, settings_edit};
 use crate::cli::args::Action;
 use crate::cli::confirm::{self, ConfirmationRequest};
@@ -181,33 +181,10 @@ pub fn dispatch(
             }
             render_plan_outcome(stdout, stderr, &db, &outcome)
         }
-        Action::RunWorkflow => {
-            let limits = ExecutionLimits::default();
+        Action::Logs => {
             let db = open_database(run_id)?;
-            let project = context::active_project(&db)?.require()?;
-            let settings = settings::show(&settings_file()?)?.settings;
-            let provider = provider_from_settings(&settings, limits)?;
-            let cancel = CancelToken::default();
-            let handler_token = cancel.clone();
-            let _ = ctrlc::set_handler(move || handler_token.cancel());
-            let report = workflow::run(
-                &db,
-                &db,
-                &project,
-                &settings,
-                &provider,
-                limits,
-                &crate::domain::clock::SystemClock,
-                cancel,
-                run_id,
-            )?;
-            write_stdout(
-                stdout,
-                &format!(
-                    "Workflow: {} completed, {} failed, {} remaining.\n",
-                    report.completed, report.failed, report.remaining
-                ),
-            )
+            let entries = crate::infra::db::events::recent(&db, 100)?;
+            write_stdout(stdout, &render_logs(&entries))
         }
         Action::ListProjects => {
             let db = open_database(run_id)?;
@@ -499,6 +476,121 @@ fn configured_secret() -> Option<String> {
 fn settings_file() -> Result<SettingsFile, AppError> {
     let paths = Paths::from_environment()?;
     Ok(SettingsFile::new(paths.config_dir(), paths.settings_file()))
+}
+
+/// Resumes pending simulated stories when the interactive application starts.
+///
+/// Startup is not a navigation action: it runs the same bounded workflow as a
+/// planning run, once, for the current project. Missing context or settings
+/// simply skip the resume; every failure is reported as a warning and never
+/// prevents the dashboard from opening.
+pub(crate) fn resume_pending_workflow(stderr: &mut dyn Write, run_id: RunId) {
+    let db = match open_database(run_id) {
+        Ok(db) => db,
+        Err(error) => {
+            let _ = write_stderr(
+                stderr,
+                &format!("Warning: workflow skipped: {} {}\n", error, error.hint()),
+            );
+            return;
+        }
+    };
+    let Some(project) = context::active_project(&db)
+        .ok()
+        .and_then(|active| active.require().ok())
+    else {
+        return;
+    };
+    if !db
+        .in_progress_stories(&project)
+        .is_ok_and(|stories| !stories.is_empty())
+    {
+        return;
+    }
+    let file = match settings_file() {
+        Ok(file) => file,
+        Err(error) => {
+            let _ = write_stderr(
+                stderr,
+                &format!("Warning: workflow skipped: {} {}\n", error, error.hint()),
+            );
+            return;
+        }
+    };
+    let settings = match settings::show(&file) {
+        Ok(report) => report.settings,
+        Err(_) => return,
+    };
+    let limits = ExecutionLimits::default();
+    let provider = match provider_from_settings(&settings, limits) {
+        Ok(provider) => provider,
+        Err(_) => return,
+    };
+    let cancel = CancelToken::default();
+    let handler = cancel.clone();
+    let _ = ctrlc::set_handler(move || handler.cancel());
+    let _ = write_stderr(stderr, "Resuming pending workflow...\n");
+    match workflow::run(
+        &db,
+        &db,
+        &project,
+        &settings,
+        &provider,
+        limits,
+        &crate::domain::clock::SystemClock,
+        cancel,
+        run_id,
+    ) {
+        Ok(report) => {
+            let _ = write_stderr(
+                stderr,
+                &format!(
+                    "Workflow: {} completed, {} failed, {} remaining.\n",
+                    report.completed, report.failed, report.remaining
+                ),
+            );
+        }
+        Err(error) => {
+            let _ = write_stderr(
+                stderr,
+                &format!("Warning: workflow skipped: {} {}\n", error, error.hint()),
+            );
+        }
+    }
+}
+
+fn render_logs(entries: &[crate::infra::db::events::LogEntry]) -> String {
+    if entries.is_empty() {
+        return "No application logs yet.\n".to_owned();
+    }
+    let columns = [
+        Column::text("TIME"),
+        Column::text("KIND"),
+        Column::text("OUTCOME"),
+        Column::text("ENTITY"),
+        Column::text("ERROR"),
+    ];
+    let rows: Vec<Vec<String>> = entries
+        .iter()
+        .map(|entry| {
+            let entity = entry
+                .entity
+                .as_ref()
+                .map(|(kind, id)| format!("{kind}:{id}"))
+                .unwrap_or_else(|| "—".to_owned());
+            vec![
+                entry.created_at.clone(),
+                entry.kind.clone(),
+                entry.outcome.clone(),
+                entity,
+                entry.error_code.clone().unwrap_or_default(),
+            ]
+        })
+        .collect();
+    format!(
+        "Application logs (newest first)\n{}",
+        render_table(terminal_width(), &columns, &rows)
+    )
 }
 
 fn open_database(run_id: RunId) -> Result<Database, AppError> {

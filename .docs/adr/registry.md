@@ -77,6 +77,7 @@ revises a technical decision must keep it current.
 | ADR-0046 | Manual laboratory and project memories from the floor | Accepted | 2026-11-13 | — | [adr-0046.md](adr-0046.md) |
 | ADR-0047 | Assigned stories start in IN PROGRESS | Accepted | 2026-11-13 | — | [adr-0047.md](adr-0047.md) |
 | ADR-0048 | Bounded no-tool story workflow simulation | Accepted | 2026-11-13 | — | [adr-0048.md](adr-0048.md) |
+| ADR-0049 | Automatic workflow resume on startup and application logs | Accepted | 2026-11-13 | — | [adr-0049.md](adr-0049.md) |
 
 ## Supersession map
 

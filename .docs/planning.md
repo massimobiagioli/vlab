@@ -73,7 +73,8 @@ submit a revised request and keep the previous record for traceability.
 
 ## Simulated workflow
 
-After planning, assigned stories in `IN_PROGRESS` without an outcome are
+After planning, and automatically when the interactive application starts,
+assigned stories in `IN_PROGRESS` or `IN_REVIEW` without an outcome are
 processed sequentially (ADR-0048):
 
 1. One work call as the assignee produces a strict JSON `work_outcome`

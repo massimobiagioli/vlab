@@ -99,6 +99,7 @@ where
     match cli.into_action()? {
         None => {
             if io::stdin().is_terminal() && io::stdout().is_terminal() {
+                dispatch::resume_pending_workflow(stderr, run_id);
                 crate::cli::tui::run_home(run_id)
             } else {
                 write_stdout(stdout, &Cli::command().render_help().to_string())

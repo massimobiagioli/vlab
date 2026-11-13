@@ -8,9 +8,15 @@ Run `vlab` or `vlab --help` for the grouped help.
 
 | Command | Behavior |
 |---|---|
-| `vlab` | Home dashboard in a terminal; help otherwise. |
+| `vlab` | Home dashboard in a terminal; resumes pending simulated stories for the current project first. Prints help otherwise. |
 | `-h`, `--help` | Print help. |
 | `-V`, `--version` | Print the version. |
+
+## Diagnostics
+
+| Command | Behavior |
+|---|---|
+| `--logs` | Print the newest 100 content-free application audit events, newest first: time, kind, outcome, entity, and error code. The view never contains request, story, memory, prompt, or credential content. |
 
 The Laboratories dashboard shows ID, name, description, agents, projects, and
 the active marker. Its actions are New, Check, Edit, Set active, Projects,
@@ -94,7 +100,6 @@ window but is hidden from `--help`. New work uses the group subcommands.
 | `--new-project <name> [--github-source <url>]` | Create a project and select it; the optional URL must be `https://github.com/<owner>/<repository>` and requires `credentials.github_api_key`. A source is cloned into `.workspace/<project-id>` before the project row is saved; a failed clone creates no project. |
 | `--open-project <project-id>` | Select a project in the active laboratory as the current project. |
 | `--assign-agent <agent-id>` | Assign an active laboratory member to the current project; repeated assignment is idempotent. |
-| `--run-workflow` | Resume the bounded no-tool workflow for the current project's pending stories; prints completed/failed/remaining counts. Hidden recovery path. |
 | `--show-project-kanban` | Read-only five-column board for the current project, plus counts and pending intake. |
 | `--delete-project` | Confirm, then delete the current project and cascade requests/stories/memories/assignments. |
 | `--new-request [text]` | Plan a request for the current project from literal text or piped stdin, then run the bounded no-tool work/review simulation. |

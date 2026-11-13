@@ -95,8 +95,11 @@ Run `vlab` in a terminal to open the home dashboard:
 vlab
 ```
 
-Choose Laboratories, Projects, Agents, Settings, or Lab floor with the arrow
-keys and `Enter` (or `1`–`5`). Inside a group use `j/k` or arrows to move, the action
+On startup the active project's pending simulated stories are resumed
+automatically before the dashboard appears. Choose Laboratories, Projects,
+Agents, Settings, or Lab floor with the arrow keys and `Enter` (or `1`–`5`).
+Run `vlab --logs` to print the newest content-free audit events. Inside a group
+use `j/k` or arrows to move, the action
 keys shown in the bottom bar, `/` to filter, `?` for help, `Esc` to return home,
 and `q` to quit. The Laboratories dashboard shows the optional description and
 provides Edit and Projects actions; New/Edit open a bordered form with a visible cursor and Tab/arrow field navigation. The Projects dashboard renames projects with `e` and opens a full-screen,

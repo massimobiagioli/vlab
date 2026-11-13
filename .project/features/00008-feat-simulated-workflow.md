@@ -80,8 +80,8 @@ outcomes and the reviewer. No code is executed and the model has no tools.
 - [x] **F01-03** Implement the bounded workflow use case, reviewer selection,
   failure handling, and tests.
 - [x] **F02-01** Trigger the workflow after planning from the flag and dashboard
-  paths; update the outcome messages. Add the hidden `--run-workflow` resume
-  path.
+  paths; update the outcome messages. Resume pending stories automatically on
+  interactive startup.
 - [x] **F02-02** Add the `DONE` outcome to the Kanban detail and render it at
   supported sizes.
 - [x] **F03-01** Update the planning, CLI reference, README, playbook, data
