@@ -118,7 +118,10 @@ provider call.
 
 After a successful plan, VLab makes one additional bounded provider call for a
 short project-memory summary. Its failure or cancellation does not change the
-`PLANNED` outcome. Memories are generated automatically; see ADR-0036.
+`PLANNED` outcome. Memories are generated automatically (ADR-0036). Laboratory
+and project memories can also be viewed, created, edited, and deleted from the
+Lab floor (ADR-0046); agent memories remain automatic. Manual content uses the
+same validation and is untrusted prompt context.
 
 ## Security
 

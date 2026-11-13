@@ -186,10 +186,11 @@ WP-4 adds the `memories` table ([ADR-0022](adr/adr-0022.md)).
 | `content` | Bounded application-managed text | Deterministic structural facts or a planning summary; untrusted prompt context. |
 | `created_at` | RFC 3339 UTC timestamp | Ordering and diagnosis. |
 
-Memories are immutable and application-managed. There is no memory command;
-deleting a laboratory or project removes its memories by cascade. Archiving an
-agent retains its memories for historical inspection but excludes them from
-prompts. Structural memories are deterministic. A successful plan makes one
+Memories are application-managed. Laboratory and project content can be
+created, viewed, edited, and deleted from the Lab floor (ADR-0046); agent
+memories have no manual surface. Deleting a laboratory or project removes its
+memories by cascade. Archiving an agent retains its memories for historical
+inspection but excludes them from prompts. Structural memories are deterministic. A successful plan makes one
 additional bounded provider call and stores its summary as a project memory;
 the summary is model output and therefore untrusted. Memory content is sent to
 the provider only when selected for a prompt, within 8 KiB, and is never

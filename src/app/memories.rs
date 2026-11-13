@@ -32,6 +32,8 @@ pub trait MemoryStore {
 
     fn memory_count(&self, scope: &MemoryScope) -> Result<u64, crate::app::storage::StorageError>;
 
+    fn update_memory(&self, memory: &Memory) -> Result<(), crate::app::storage::StorageError>;
+
     fn delete_memory(&self, id: &MemoryId) -> Result<(), crate::app::storage::StorageError>;
 }
 
@@ -187,6 +189,50 @@ pub fn preflight(store: &impl MemoryStore, raw_id: &str) -> Result<MemoryRecord,
     })
 }
 
+/// Replaces the content of a memory after checking its owner and the
+/// credential rule. The scope and creation time are unchanged.
+pub fn update(
+    store: &(impl MemoryStore + Directory + ProjectStore),
+    state: &impl AppStateStore,
+    raw_id: &str,
+    content: &str,
+    secret: Option<&str>,
+) -> Result<Memory, AppError> {
+    let record = preflight(store, raw_id)?;
+    validate_owner(store, state, &record.memory.scope)?;
+    if secret.is_some_and(|secret| !secret.is_empty() && content.contains(secret)) {
+        return Err(AppError::Validation {
+            problem: "the memory contains a value that looks like the provider credential."
+                .to_owned(),
+            hint: "Remove the credential from the memory and try again.".to_owned(),
+        });
+    }
+    let memory = Memory::new(
+        record.memory.id.clone(),
+        record.memory.scope.clone(),
+        content,
+    )
+    .map_err(|error| AppError::Validation {
+        problem: error.to_string(),
+        hint: "Shorten or correct the memory and try again.".to_owned(),
+    })?;
+    store.update_memory(&memory)?;
+    Ok(memory)
+}
+
+/// Deletes a memory only after its owner still belongs to the active
+/// laboratory context. The returned record is the exact target.
+pub fn delete_checked(
+    store: &(impl MemoryStore + Directory + ProjectStore),
+    state: &impl AppStateStore,
+    raw_id: &str,
+) -> Result<MemoryRecord, AppError> {
+    let record = preflight(store, raw_id)?;
+    validate_owner(store, state, &record.memory.scope)?;
+    store.delete_memory(&record.memory.id)?;
+    Ok(record)
+}
+
 pub fn delete(store: &impl MemoryStore, record: &MemoryRecord) -> Result<(), AppError> {
     store.delete_memory(&record.memory.id)?;
     Ok(())
@@ -306,6 +352,15 @@ mod tests {
                 .iter()
                 .filter(|record| &record.memory.scope == scope)
                 .count() as u64)
+        }
+        fn update_memory(&self, memory: &Memory) -> Result<(), StorageError> {
+            let mut records = self.memories.borrow_mut();
+            let record = records
+                .iter_mut()
+                .find(|record| record.memory.id == memory.id)
+                .ok_or(StorageError::Operation)?;
+            record.memory.content = memory.content.clone();
+            Ok(())
         }
         fn delete_memory(&self, id: &MemoryId) -> Result<(), StorageError> {
             self.memories
@@ -484,6 +539,63 @@ mod tests {
         let content = project_created_content(&project);
         assert!(content.contains("Portal"));
         assert!(content.contains("https://github.com/acme/portal"));
+    }
+
+    #[test]
+    fn memories_are_updated_without_changing_scope_or_creation_time() {
+        let mut store = Store::default();
+        let scope = MemoryScope::Lab(LabId::parse("a3f91c07").unwrap());
+        store.labs.push(LabId::parse("a3f91c07").unwrap());
+        let memory = create(&store, &state(), scope.clone(), "First", None).unwrap();
+        let created = store.memories.borrow()[0].created_at.clone();
+        let updated = update(&store, &state(), memory.id.as_str(), "Second", None).unwrap();
+        assert_eq!(updated.id, memory.id);
+        assert_eq!(updated.scope, scope);
+        let records = list(&store, scope.clone()).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].memory.content, "Second");
+        assert_eq!(records[0].created_at, created);
+    }
+
+    #[test]
+    fn update_rejects_the_configured_credential_and_bad_content() {
+        let mut store = Store::default();
+        let scope = MemoryScope::Lab(LabId::parse("a3f91c07").unwrap());
+        store.labs.push(LabId::parse("a3f91c07").unwrap());
+        let memory = create(&store, &state(), scope.clone(), "First", None).unwrap();
+        let error = update(
+            &store,
+            &state(),
+            memory.id.as_str(),
+            "contains sk-secret",
+            Some("sk-secret"),
+        )
+        .unwrap_err();
+        assert!(matches!(error, AppError::Validation { .. }));
+        let error = update(&store, &state(), memory.id.as_str(), "   ", None).unwrap_err();
+        assert!(matches!(error, AppError::Validation { .. }));
+        assert_eq!(list(&store, scope).unwrap()[0].memory.content, "First");
+    }
+
+    #[test]
+    fn delete_checked_rejects_a_cross_laboratory_project() {
+        let mut store = Store::default();
+        let other_lab = LabId::parse("1c2d3e4f").unwrap();
+        let project = ProjectId::parse("0b1c2d3e").unwrap();
+        store.projects.push((project.clone(), other_lab));
+        let memory = Memory::new(
+            MemoryId::parse("20000002").unwrap(),
+            MemoryScope::Project(project),
+            "Other lab",
+        )
+        .unwrap();
+        store.memories.borrow_mut().push(MemoryRecord {
+            memory: memory.clone(),
+            created_at: "2026-01-01T00:00:00Z".to_owned(),
+        });
+        let error = delete_checked(&store, &state(), memory.id.as_str()).unwrap_err();
+        assert!(matches!(error, AppError::NotFound { .. }));
+        assert_eq!(store.memories.borrow().len(), 1);
     }
 
     #[test]

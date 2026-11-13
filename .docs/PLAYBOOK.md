@@ -149,9 +149,10 @@ vlab --show-project-kanban
 ## 7. Automatic memories
 
 Memories are generated automatically when a laboratory, agent, or project is
-created, and when a request is planned successfully. There are no memory
-commands. Existing memories remain in the planning context within the 8 KiB
-bound.
+created, and when a request is planned successfully. Laboratory and project
+memories can also be viewed, created, edited, and deleted from the Lab floor
+(`m`); agent memories have no manual surface. Existing memories remain in the
+planning context within the 8 KiB bound.
 
 ## 8. Submit a request
 
@@ -220,7 +221,18 @@ remove them automatically yet. There is no backup command; stop VLab before copy
 not encrypted at rest; use OS disk encryption for sensitive data. Protect
 backups of `settings.yaml` as secrets.
 
-## 12. Common errors
+## 12. Watch the lab floor and manage memories
+
+From the home dashboard choose **Lab floor** (or press `5`). The scene shows
+project pods, the Tech Lead desk, `(zzz)` for idle agents, exchange bubbles for
+two working agents of different roles, and an isolated focus desk for an agent
+with several open stories. `↑/↓` selects agents, `←/→` pages pods, `Enter`
+opens the agent detail, and `r` reloads. Press `m` to open **Memories**:
+`Tab` switches between laboratory and project scope, `n` creates, `Enter`
+views, `e` edits, and `d` deletes after confirmation. Content is bounded and
+credentials are rejected. Agent memories have no manual surface.
+
+## 13. Common errors
 
 | Code | Meaning | Action |
 |---|---|---|

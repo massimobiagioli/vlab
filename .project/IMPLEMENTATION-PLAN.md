@@ -15,9 +15,11 @@ This plan converts the VLab technical specification into six sequential working 
 > `--open-project` select a current project for `--show-project-kanban`,
 > `--delete-project`, `--new-request`, and `--assign-agent`. ADR-0034 adds
 > project agent rosters. ADR-0035 removes the memory commands. ADR-0036 makes
-> memories automatic. Historical task text that still shows project
-> identifiers or memory commands is retained for traceability; the ADRs and
-> the current specification are authoritative.
+> memories automatic. ADR-0045 adds the read-only laboratory floor and
+> ADR-0046 adds laboratory/project memory management from that floor.
+> Historical task text that still shows project identifiers or memory commands
+> is retained for traceability; the ADRs and the current specification are
+> authoritative.
 
 Normative language follows `CONSTITUTION.md` §2: **MUST**, **SHOULD**, **MAY**.
 

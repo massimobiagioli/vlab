@@ -25,7 +25,7 @@ use crate::app::settings_edit;
 use crate::cli::args::DashboardGroup;
 use crate::cli::prompt::{TerminalEditor, TerminalPrompter};
 use crate::domain::budget::{CancelToken, ExecutionLimits};
-use crate::domain::ids::{AgentId, LabId, ProjectId};
+use crate::domain::ids::{AgentId, LabId, MemoryId, ProjectId};
 use crate::domain::memory::MemoryScope;
 use crate::domain::project::GithubSource;
 use crate::infra::config::SettingsFile;
@@ -34,6 +34,9 @@ use crate::infra::paths::Paths;
 use crate::infra::workspace::{DEFAULT_CLONE_TIMEOUT, GitWorkspace};
 use crate::obs::events::{AuditEvent, EntityRef, EntityType, EventKind, Outcome};
 use crate::obs::{ActionId, RunId};
+
+mod floor;
+mod memory;
 
 /// Opens a group dashboard.
 pub fn run(group: DashboardGroup, no_color: bool, run_id: RunId) -> Result<(), AppError> {
@@ -81,11 +84,17 @@ enum Screen {
     /// Full-screen board of one project (ADR-0043); state lives in
     /// `App::kanban`.
     Kanban,
+    /// Read-only laboratory floor (ADR-0045); state lives in `App::floor`.
+    Floor,
+    /// Laboratory and project memories (ADR-0046); state lives in
+    /// `App::memory`.
+    Memories,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScreenItem {
     Group(DashboardGroup),
+    Floor,
 }
 
 impl ScreenItem {
@@ -95,6 +104,7 @@ impl ScreenItem {
             Self::Group(DashboardGroup::Projects) => "Projects",
             Self::Group(DashboardGroup::Agents) => "Agents",
             Self::Group(DashboardGroup::Settings) => "Settings",
+            Self::Floor => "Lab floor",
         }
     }
 
@@ -104,15 +114,17 @@ impl ScreenItem {
             Self::Group(DashboardGroup::Projects) => "create, edit, request, board",
             Self::Group(DashboardGroup::Agents) => "inspect, create, assign, archive",
             Self::Group(DashboardGroup::Settings) => "inspect and edit settings",
+            Self::Floor => "watch agents cooperate, see memories",
         }
     }
 }
 
-const HOME_ITEMS: [ScreenItem; 4] = [
+const HOME_ITEMS: [ScreenItem; 5] = [
     ScreenItem::Group(DashboardGroup::Labs),
     ScreenItem::Group(DashboardGroup::Projects),
     ScreenItem::Group(DashboardGroup::Agents),
     ScreenItem::Group(DashboardGroup::Settings),
+    ScreenItem::Floor,
 ];
 
 #[derive(Debug, Clone)]
@@ -353,6 +365,11 @@ enum Mode {
         agents: Vec<(String, String)>,
         selected: usize,
     },
+    MemoryEditor(memory::MemoryEditor),
+    MemoryDetail {
+        record: crate::app::memories::MemoryRecord,
+        scroll: u16,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -360,6 +377,11 @@ enum ConfirmAction {
     Lab(LabId, String),
     Project(ProjectId, String),
     Agent(AgentId, String),
+    Memory {
+        id: MemoryId,
+        scope: String,
+        preview: String,
+    },
 }
 
 /// Navigation state of the Kanban screen. Moving never writes.
@@ -510,6 +532,9 @@ struct App {
     status: Option<String>,
     home_selected: usize,
     kanban: Option<KanbanView>,
+    floor: Option<floor::FloorView>,
+    floor_error: Option<String>,
+    memory: Option<memory::MemoryView>,
     pending_request: Option<(ProjectId, String)>,
 }
 
@@ -546,6 +571,9 @@ impl App {
             status: None,
             home_selected: 0,
             kanban: None,
+            floor: None,
+            floor_error: None,
+            memory: None,
             pending_request: None,
         };
         app.reload();
@@ -568,12 +596,17 @@ impl App {
                 kind: error.kind(),
             })?;
             match event {
-                Event::Paste(text) => {
-                    if let Mode::Prompt(prompt) = &mut self.mode {
+                Event::Paste(text) => match &mut self.mode {
+                    Mode::Prompt(prompt) => {
                         prompt.field.insert_text(&text);
                         prompt.notice = None;
                     }
-                }
+                    Mode::MemoryEditor(editor) => {
+                        editor.field.insert_text(&text);
+                        editor.notice = None;
+                    }
+                    _ => {}
+                },
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
                     if let Some(deferred) = self.handle_key(key) {
                         if deferred == Deferred::Plan {
@@ -615,6 +648,25 @@ impl App {
                     self.show_error(error);
                 }
                 return;
+            }
+            Screen::Floor => match crate::app::floor::show(&self.db, &self.db) {
+                Ok(model) => {
+                    self.floor_error = None;
+                    match &mut self.floor {
+                        Some(view) => view.replace(model),
+                        None => self.floor = Some(floor::FloorView::new(model)),
+                    }
+                }
+                Err(error) => {
+                    self.floor = None;
+                    self.floor_error = Some(format!("{} {}", error, error.hint()));
+                }
+            },
+            Screen::Memories => {
+                let db = &self.db;
+                if let Some(view) = self.memory.as_mut() {
+                    view.reload(db);
+                }
             }
             Screen::Group(DashboardGroup::Labs) => {
                 self.labs = labs::list(&self.db).unwrap_or_default();
@@ -694,7 +746,7 @@ impl App {
                 })
                 .count(),
             Screen::Group(DashboardGroup::Settings) => 1,
-            Screen::Kanban => 0,
+            Screen::Kanban | Screen::Floor | Screen::Memories => 0,
         }
     }
 
@@ -882,6 +934,64 @@ impl App {
                 self.mode = Mode::Prompt(prompt);
                 None
             }
+            Mode::MemoryEditor(mut editor) => {
+                editor.notice = None;
+                match key.code {
+                    KeyCode::Esc => return None,
+                    KeyCode::Enter if key.modifiers.contains(KeyModifiers::ALT) => {
+                        editor.field.insert_text("\n");
+                    }
+                    KeyCode::Enter => {
+                        if editor.field.value.trim().is_empty() {
+                            editor.notice = Some("Write a memory first.".to_owned());
+                            self.mode = Mode::MemoryEditor(editor);
+                        } else {
+                            let creating = editor.id.is_none();
+                            match self.save_memory(&editor) {
+                                Ok(()) => {
+                                    self.mode = Mode::Browse;
+                                    self.status = Some(if creating {
+                                        "Memory created.".to_owned()
+                                    } else {
+                                        "Memory updated.".to_owned()
+                                    });
+                                }
+                                Err(error) => {
+                                    editor.notice = Some(format!("{} {}", error, error.hint()));
+                                    self.mode = Mode::MemoryEditor(editor);
+                                }
+                            }
+                        }
+                        return None;
+                    }
+                    KeyCode::Backspace => editor.field.backspace(),
+                    KeyCode::Delete => editor.field.delete(),
+                    KeyCode::Left => editor.field.left(),
+                    KeyCode::Right => editor.field.right(),
+                    KeyCode::Home => editor.field.home(),
+                    KeyCode::End => editor.field.end(),
+                    KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        editor.field.insert(ch);
+                    }
+                    _ => {}
+                }
+                self.mode = Mode::MemoryEditor(editor);
+                None
+            }
+            Mode::MemoryDetail { record, mut scroll } => {
+                match key.code {
+                    KeyCode::Esc | KeyCode::Enter => return None,
+                    KeyCode::Up | KeyCode::Char('k') => scroll = scroll.saturating_sub(1),
+                    KeyCode::Down | KeyCode::Char('j') => scroll = scroll.saturating_add(1),
+                    KeyCode::PageUp => scroll = scroll.saturating_sub(10),
+                    KeyCode::PageDown | KeyCode::Char(' ') => scroll = scroll.saturating_add(10),
+                    KeyCode::Home | KeyCode::Char('g') => scroll = 0,
+                    KeyCode::End | KeyCode::Char('G') => scroll = u16::MAX,
+                    _ => {}
+                }
+                self.mode = Mode::MemoryDetail { record, scroll };
+                None
+            }
             Mode::Story { detail, mut scroll } => {
                 match key.code {
                     KeyCode::Esc | KeyCode::Enter => return None,
@@ -931,6 +1041,14 @@ impl App {
                 self.handle_kanban(key);
                 None
             }
+            Screen::Floor => {
+                self.handle_floor(key);
+                None
+            }
+            Screen::Memories => {
+                self.handle_memories(key);
+                None
+            }
             Screen::Home => {
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
@@ -940,19 +1058,15 @@ impl App {
                     KeyCode::Down | KeyCode::Char('j') => {
                         self.home_selected = (self.home_selected + 1).min(HOME_ITEMS.len() - 1)
                     }
-                    KeyCode::Enter => {
-                        self.screen = Screen::Group(match HOME_ITEMS[self.home_selected] {
-                            ScreenItem::Group(group) => group,
-                        });
-                        self.selected = 0;
-                        self.page = 0;
-                        self.filter.clear();
-                        self.reload();
-                    }
+                    KeyCode::Enter => match HOME_ITEMS[self.home_selected] {
+                        ScreenItem::Group(group) => self.open_group(group),
+                        ScreenItem::Floor => self.open_floor(),
+                    },
                     KeyCode::Char('1') => self.open_group(DashboardGroup::Labs),
                     KeyCode::Char('2') => self.open_group(DashboardGroup::Projects),
                     KeyCode::Char('3') => self.open_group(DashboardGroup::Agents),
                     KeyCode::Char('4') => self.open_group(DashboardGroup::Settings),
+                    KeyCode::Char('5') => self.open_floor(),
                     _ => {}
                 }
                 None
@@ -1355,6 +1469,263 @@ impl App {
         self.reload();
     }
 
+    fn open_floor(&mut self) {
+        self.screen = Screen::Floor;
+        self.status = None;
+        self.reload();
+    }
+
+    fn handle_floor(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('q') => self.quit = true,
+            KeyCode::Esc => {
+                self.home_selected = 4;
+                self.screen = Screen::Home;
+                self.status = None;
+            }
+            KeyCode::Char('?') => self.mode = Mode::Help,
+            KeyCode::Char('m') => self.open_memories(),
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(view) = self.floor.as_mut() {
+                    view.move_selection(-1);
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Some(view) = self.floor.as_mut() {
+                    view.move_selection(1);
+                }
+            }
+            KeyCode::Left | KeyCode::Char('h') => {
+                if let Some(view) = self.floor.as_mut() {
+                    view.change_page(-1);
+                }
+            }
+            KeyCode::Right | KeyCode::Char('l') => {
+                if let Some(view) = self.floor.as_mut() {
+                    view.change_page(1);
+                }
+            }
+            KeyCode::Home | KeyCode::Char('g') => {
+                if let Some(view) = self.floor.as_mut() {
+                    view.first_agent();
+                }
+            }
+            KeyCode::End | KeyCode::Char('G') => {
+                if let Some(view) = self.floor.as_mut() {
+                    view.last_agent();
+                }
+            }
+            KeyCode::Enter => self.open_floor_agent(),
+            KeyCode::Char('r') => {
+                self.reload();
+                self.status = Some("Floor reloaded.".to_owned());
+            }
+            _ => {}
+        }
+    }
+
+    fn open_memories(&mut self) {
+        let Some(lab) = self.active_lab.clone() else {
+            self.show_error(AppError::NoActiveLab);
+            return;
+        };
+        match memory::MemoryView::load(&self.db, &lab, self.active_project.as_ref()) {
+            Ok(view) => {
+                self.memory = Some(view);
+                self.screen = Screen::Memories;
+                self.status = None;
+            }
+            Err(error) => self.show_error(error),
+        }
+    }
+
+    fn handle_memories(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('q') => self.quit = true,
+            KeyCode::Esc => {
+                self.screen = Screen::Floor;
+                self.status = None;
+                self.reload();
+            }
+            KeyCode::Char('?') => self.mode = Mode::Help,
+            KeyCode::Tab | KeyCode::Right | KeyCode::Char('l') => {
+                if let Some(view) = self.memory.as_mut() {
+                    view.switch_tab(1);
+                }
+            }
+            KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h') => {
+                if let Some(view) = self.memory.as_mut() {
+                    view.switch_tab(-1);
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(view) = self.memory.as_mut() {
+                    view.move_selection(-1);
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Some(view) = self.memory.as_mut() {
+                    view.move_selection(1);
+                }
+            }
+            KeyCode::PageUp => {
+                if let Some(view) = self.memory.as_mut() {
+                    view.change_page(-1);
+                }
+            }
+            KeyCode::PageDown => {
+                if let Some(view) = self.memory.as_mut() {
+                    view.change_page(1);
+                }
+            }
+            KeyCode::Home | KeyCode::Char('g') => {
+                if let Some(view) = self.memory.as_mut() {
+                    view.first();
+                }
+            }
+            KeyCode::End | KeyCode::Char('G') => {
+                if let Some(view) = self.memory.as_mut() {
+                    view.last();
+                }
+            }
+            KeyCode::Char('n') => self.new_memory(),
+            KeyCode::Char('e') => self.edit_memory(),
+            KeyCode::Char('d') => self.confirm_memory_delete(),
+            KeyCode::Enter => self.open_memory_detail(),
+            KeyCode::Char('r') => {
+                let db = &self.db;
+                if let Some(view) = self.memory.as_mut() {
+                    view.reload(db);
+                }
+                self.status = Some("Memories reloaded.".to_owned());
+            }
+            _ => {}
+        }
+    }
+
+    fn new_memory(&mut self) {
+        let Some(view) = self.memory.as_ref() else {
+            return;
+        };
+        let Some(scope) = view.scope() else {
+            self.status = Some("Open a project before adding a project memory.".to_owned());
+            return;
+        };
+        let label = view.scope_label();
+        self.mode = Mode::MemoryEditor(memory::MemoryEditor::new(scope, label, None));
+    }
+
+    fn edit_memory(&mut self) {
+        let Some(view) = self.memory.as_ref() else {
+            return;
+        };
+        let Some(record) = view.selected_record().cloned() else {
+            self.status = Some("No memory is selected.".to_owned());
+            return;
+        };
+        let Some(scope) = view.scope() else {
+            self.status = Some("Open a project first.".to_owned());
+            return;
+        };
+        let label = view.scope_label();
+        self.mode = Mode::MemoryEditor(memory::MemoryEditor::new(scope, label, Some(&record)));
+    }
+
+    fn confirm_memory_delete(&mut self) {
+        let Some(view) = self.memory.as_ref() else {
+            return;
+        };
+        let Some(record) = view.selected_record() else {
+            self.status = Some("No memory is selected.".to_owned());
+            return;
+        };
+        let preview: String = record.memory.content.chars().take(80).collect();
+        self.mode = Mode::Confirm(ConfirmAction::Memory {
+            id: record.memory.id.clone(),
+            scope: format!(
+                "{} {}",
+                record.memory.scope.kind(),
+                record.memory.scope.owner_id()
+            ),
+            preview,
+        });
+    }
+
+    fn open_memory_detail(&mut self) {
+        let Some(record) = self
+            .memory
+            .as_ref()
+            .and_then(memory::MemoryView::selected_record)
+            .cloned()
+        else {
+            self.status = Some("No memory is selected.".to_owned());
+            return;
+        };
+        self.mode = Mode::MemoryDetail { record, scroll: 0 };
+    }
+
+    fn save_memory(&mut self, editor: &memory::MemoryEditor) -> Result<(), AppError> {
+        let secret = settings::show(&self.settings_file())
+            .ok()
+            .and_then(|report| report.settings.credentials.deepseek_api_key);
+        let memory = match &editor.id {
+            Some(id) => memories::update(
+                &self.db,
+                &self.db,
+                id.as_str(),
+                &editor.field.value,
+                secret.as_deref(),
+            )?,
+            None => memories::create(
+                &self.db,
+                &self.db,
+                editor.scope.clone(),
+                &editor.field.value,
+                secret.as_deref(),
+            )?,
+        };
+        let kind = if editor.id.is_some() {
+            EventKind::MemoryUpdated
+        } else {
+            EventKind::MemoryCreated
+        };
+        record_event(
+            &mut self.db,
+            self.run_id,
+            kind,
+            EntityType::Memory,
+            memory.id.as_str(),
+        );
+        let db = &self.db;
+        if let Some(view) = self.memory.as_mut() {
+            view.reload(db);
+            if editor.id.is_none() {
+                view.select_first();
+            }
+        }
+        Ok(())
+    }
+
+    fn open_floor_agent(&mut self) {
+        let Some(id) = self
+            .floor
+            .as_ref()
+            .and_then(floor::FloorView::selected_agent)
+            .map(|agent| agent.id.clone())
+        else {
+            return;
+        };
+        match agents::detail(&self.db, id.as_str()) {
+            Ok(detail) => {
+                self.mode = Mode::Message {
+                    title: format!("Agent {}", detail.profile.id),
+                    lines: agent_detail_lines(&detail),
+                };
+            }
+            Err(error) => self.show_error(error),
+        }
+    }
+
     fn move_selection(&mut self, delta: isize) {
         let len = self.visible_len();
         if len == 0 {
@@ -1511,7 +1882,11 @@ impl App {
                     agent.record.name.clone(),
                 ));
             }
-            Screen::Group(DashboardGroup::Settings) | Screen::Home | Screen::Kanban => {
+            Screen::Group(DashboardGroup::Settings)
+            | Screen::Home
+            | Screen::Kanban
+            | Screen::Floor
+            | Screen::Memories => {
                 self.status = Some("This group has no delete action.".to_owned());
             }
         }
@@ -1545,6 +1920,21 @@ impl App {
                     plan.id.as_str(),
                 );
                 self.status = Some(format!("Project {name} deleted."));
+            }
+            ConfirmAction::Memory { id, scope, .. } => {
+                let record = memories::delete_checked(&self.db, &self.db, id.as_str())?;
+                record_event(
+                    &mut self.db,
+                    self.run_id,
+                    EventKind::MemoryDeleted,
+                    EntityType::Memory,
+                    record.memory.id.as_str(),
+                );
+                let db = &self.db;
+                if let Some(view) = self.memory.as_mut() {
+                    view.reload(db);
+                }
+                self.status = Some(format!("Memory {} deleted ({scope}).", record.memory.id));
             }
             ConfirmAction::Agent(id, name) => {
                 let plan = deletions::preflight_agent(&self.db, id.as_str())?;
@@ -1881,6 +2271,8 @@ impl App {
             Screen::Home => self.render_home(frame, area),
             Screen::Group(group) => self.render_group(frame, area, group),
             Screen::Kanban => self.render_kanban(frame, area),
+            Screen::Floor => self.render_floor(frame, area),
+            Screen::Memories => self.render_memories(frame, area),
         }
         match &self.mode {
             Mode::Browse => {}
@@ -1890,6 +2282,15 @@ impl App {
                 let theme = self.theme;
                 if let Mode::Story { detail, scroll } = &mut self.mode {
                     render_story(frame, area, theme, detail, scroll);
+                }
+            }
+            Mode::MemoryEditor(editor) => {
+                memory::render_editor(frame, area, self.theme, editor);
+            }
+            Mode::MemoryDetail { .. } => {
+                let theme = self.theme;
+                if let Mode::MemoryDetail { record, scroll } = &mut self.mode {
+                    memory::render_detail(frame, area, theme, record, scroll);
                 }
             }
             _ => self.render_modal(frame, area),
@@ -1936,7 +2337,7 @@ impl App {
             &[
                 ("[↑/↓]", "Select"),
                 ("[Enter]", "Open"),
-                ("[1-4]", "Direct"),
+                ("[1-5]", "Direct"),
                 ("[q]", "Quit"),
             ],
             self.theme,
@@ -2119,6 +2520,29 @@ impl App {
             Paragraph::new(lines).block(self.block(group_title(group))),
             area,
         );
+    }
+
+    fn render_floor(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        if let Some(error) = &self.floor_error {
+            frame.render_widget(
+                Paragraph::new(format!("{error}\n\nPress r to reload or Esc to go home."))
+                    .wrap(Wrap { trim: false })
+                    .block(self.block("Laboratory floor")),
+                area,
+            );
+            return;
+        }
+        let status = self.status.as_deref();
+        if let Some(view) = self.floor.as_mut() {
+            floor::render(frame, area, self.theme, view, status);
+        }
+    }
+
+    fn render_memories(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        let status = self.status.as_deref();
+        if let Some(view) = self.memory.as_mut() {
+            memory::render(frame, area, self.theme, view, status);
+        }
     }
 
     fn render_kanban(&mut self, frame: &mut Frame<'_>, area: Rect) {
@@ -2536,6 +2960,10 @@ impl App {
                 "Help".to_owned(),
                 if self.screen == Screen::Kanban {
                     kanban_help_lines()
+                } else if self.screen == Screen::Floor {
+                    floor_help_lines()
+                } else if self.screen == Screen::Memories {
+                    memory::help_lines()
                 } else {
                     help_lines()
                 },
@@ -2564,7 +2992,12 @@ impl App {
                     "Esc cancel".to_owned(),
                 ],
             ),
-            Mode::Form(_) | Mode::Browse | Mode::Story { .. } | Mode::Prompt(_) => return,
+            Mode::Form(_)
+            | Mode::Browse
+            | Mode::Story { .. }
+            | Mode::Prompt(_)
+            | Mode::MemoryEditor(_)
+            | Mode::MemoryDetail { .. } => return,
         };
         let rect = centered_rect(78, 60, area);
         frame.render_widget(Clear, rect);
@@ -2577,14 +3010,7 @@ impl App {
     }
 
     fn block(&self, title: &str) -> Block<'static> {
-        Block::bordered()
-            .border_type(if self.theme.unicode {
-                BorderType::Rounded
-            } else {
-                BorderType::Plain
-            })
-            .title(title.to_owned())
-            .border_style(self.theme.border_style())
+        block(self.theme, title)
     }
 
     fn context_line(&self, group: DashboardGroup) -> String {
@@ -2609,6 +3035,17 @@ impl App {
                 .unwrap_or_else(|| "missing or invalid settings".to_owned()),
         }
     }
+}
+
+fn block(theme: Theme, title: &str) -> Block<'static> {
+    Block::bordered()
+        .border_type(if theme.unicode {
+            BorderType::Rounded
+        } else {
+            BorderType::Plain
+        })
+        .title(title.to_owned())
+        .border_style(theme.border_style())
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -3136,6 +3573,10 @@ fn confirm_label(action: &ConfirmAction) -> String {
                 clean(name)
             )
         }
+        ConfirmAction::Memory { id, scope, preview } => format!(
+            "Delete memory {id} ({scope}) — {}? This cannot be undone.",
+            clean(preview)
+        ),
     }
 }
 
@@ -3219,6 +3660,24 @@ fn kanban_help_lines() -> Vec<String> {
         "q           quit".to_owned(),
         String::new(),
         "The board is read-only; it never changes story state.".to_owned(),
+    ]
+}
+
+fn floor_help_lines() -> Vec<String> {
+    vec![
+        "j/k or ↑/↓  previous/next agent".to_owned(),
+        "h/l or ←/→  previous/next pod page".to_owned(),
+        "g/G         first/last agent".to_owned(),
+        "Enter       agent detail".to_owned(),
+        "m           laboratory and project memories".to_owned(),
+        "r           reload the floor".to_owned(),
+        "?           this help".to_owned(),
+        "Esc         back to home".to_owned(),
+        "q           quit".to_owned(),
+        String::new(),
+        "The floor is a read-only overview of assignments, not live activity.".to_owned(),
+        "(zzz) means no open stories; ( ? ) ( ! ) is an exchange;".to_owned(),
+        "(///) is focused work at an isolated desk.".to_owned(),
     ]
 }
 
@@ -3449,6 +3908,7 @@ mod tests {
     use super::*;
     use crate::app::directory::LabOverview;
     use crate::app::lab_validation::LabCheck;
+    use crate::app::memories::MemoryStore;
     use crate::domain::settings::Settings;
     use crate::infra::paths::PlatformDirs;
     use ratatui::Terminal;
@@ -3498,6 +3958,9 @@ mod tests {
             status: None,
             home_selected: 0,
             kanban: None,
+            floor: None,
+            floor_error: None,
+            memory: None,
             pending_request: None,
         };
         (app, dir)
@@ -4283,6 +4746,97 @@ mod tests {
             panic!("expected the prompt");
         };
         assert_eq!(prompt.project_name, "Portal");
+    }
+
+    fn memory_fixture() -> (App, tempfile::TempDir) {
+        let (mut app, dir) = seeded();
+        let lab = LabId::parse("a3f91c07").unwrap();
+        let project = ProjectId::parse("0b1c2d3e").unwrap();
+        context::save_active_lab(&app.db, &lab).unwrap();
+        context::save_active_project(&app.db, &project).unwrap();
+        app.reload();
+        app.memory = Some(memory::MemoryView::load(&app.db, &lab, Some(&project)).unwrap());
+        app.screen = Screen::Memories;
+        (app, dir)
+    }
+
+    #[test]
+    fn the_floor_opens_laboratory_and_project_memories() {
+        let (mut app, _dir) = memory_fixture();
+        app.screen = Screen::Floor;
+        app.reload();
+        app.handle_key(key(KeyCode::Char('m')));
+        assert_eq!(app.screen, Screen::Memories);
+        let screen = rendered_at(&mut app, 100, 30);
+        for text in ["Memories", "Lab (0)", "Project (0)", "[n]", "New", "Tab"] {
+            assert!(screen.contains(text), "{text}: {screen}");
+        }
+    }
+
+    #[test]
+    fn a_memory_can_be_created_edited_and_deleted_from_the_screen() {
+        let (mut app, _dir) = memory_fixture();
+        let lab = LabId::parse("a3f91c07").unwrap();
+
+        app.handle_key(key(KeyCode::Char('n')));
+        assert!(matches!(app.mode, Mode::MemoryEditor(_)), "{:?}", app.mode);
+        for ch in "Keep tests green".chars() {
+            app.handle_key(key(KeyCode::Char(ch)));
+        }
+        app.handle_key(key(KeyCode::Enter));
+        assert!(matches!(app.mode, Mode::Browse), "{:?}", app.mode);
+        let records = app.db.memories(&MemoryScope::Lab(lab.clone())).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].memory.content, "Keep tests green");
+        assert!(rendered_at(&mut app, 80, 24).contains("Keep tests green"));
+
+        app.handle_key(key(KeyCode::Char('e')));
+        let Mode::MemoryEditor(editor) = &mut app.mode else {
+            panic!("expected the editor");
+        };
+        editor.field = FormField::new("Memory", "Keep tests green and fast");
+        app.handle_key(key(KeyCode::Enter));
+        let records = app.db.memories(&MemoryScope::Lab(lab.clone())).unwrap();
+        assert_eq!(records[0].memory.content, "Keep tests green and fast");
+
+        app.handle_key(key(KeyCode::Char('d')));
+        assert!(matches!(app.mode, Mode::Confirm(_)), "{:?}", app.mode);
+        app.handle_key(key(KeyCode::Char('y')));
+        assert!(
+            app.db.memories(&MemoryScope::Lab(lab)).unwrap().is_empty(),
+            "{:?}",
+            app.mode
+        );
+    }
+
+    #[test]
+    fn the_project_scope_needs_a_current_project() {
+        let (mut app, _dir) = memory_fixture();
+        context::clear_active_project(&app.db).unwrap();
+        app.reload();
+        let lab = LabId::parse("a3f91c07").unwrap();
+        app.memory = Some(memory::MemoryView::load(&app.db, &lab, None).unwrap());
+        app.screen = Screen::Memories;
+        app.handle_key(key(KeyCode::Tab));
+        app.handle_key(key(KeyCode::Char('n')));
+        assert!(matches!(app.mode, Mode::Browse), "{:?}", app.mode);
+        assert!(
+            app.status
+                .as_deref()
+                .is_some_and(|status| status.contains("Open a project")),
+            "{:?}",
+            app.status
+        );
+    }
+
+    #[test]
+    fn memory_screen_renders_at_supported_sizes() {
+        let (mut app, _dir) = memory_fixture();
+        for (width, height) in [(60, 20), (80, 24), (100, 30)] {
+            let screen = rendered_at(&mut app, width, height);
+            assert!(screen.contains("Memories"), "{width}x{height}: {screen}");
+            assert!(screen.contains("[Tab]"), "{width}x{height}: {screen}");
+        }
     }
 
     #[test]

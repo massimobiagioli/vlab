@@ -4,7 +4,8 @@ Date: 2026-11-12
 Scope: WP-6 secrets, privacy, redaction, the settings-file credential change
 (ADR-0030), the project clone boundary (ADR-0032), current-project commands
 (ADR-0033), project rosters (ADR-0034), automatic memories (ADR-0035,
-ADR-0036), and interactive dashboards (ADR-0038).
+ADR-0036), interactive dashboards (ADR-0038), the laboratory floor (ADR-0045),
+and manual laboratory/project memories (ADR-0046).
 
 ## Trust boundaries and controls
 
@@ -20,6 +21,7 @@ ADR-0036), and interactive dashboards (ADR-0038).
 | Current project → commands | Stale or cross-laboratory project | Typed state reloaded per command; project must resolve in the active laboratory; switching labs clears it | `src/app/context.rs`, `tests/cli_kanban.rs`, `tests/cli_projects.rs` |
 | Project roster → planning | Unauthorized or unknown agent | Membership, archive, and laboratory checks; planning filters to the roster; empty result fails closed | `src/app/projects.rs`, `src/app/requests.rs`, `tests/cli_memories.rs`, `tests/planning_flow.rs` |
 | Automatic memory → prompt | Injected or secret content | Deterministic structural text; bounded model summary; secret check; 20-per-scope and 8 KiB prompt caps | `src/app/memories.rs`, `src/app/requests.rs`, `tests/planning_flow.rs` |
+| Manual memory editor → storage/prompt | Injected, secret, cross-scope, or oversized content | Active-lab/current-project ownership checks, 1–2,000-char validation, control-character rejection, credential check, 20-per-scope cap, edit preserves identifier/scope/time, bound delete confirmation, content-free events | `src/app/memories.rs`, `src/cli/tui/memory.rs`, `src/infra/db/memories.rs`, `tests/cli_memories.rs` |
 | Stored/model text → terminal | Escape-sequence injection, misleading UI | All rendered text sanitized; identifiers never silently truncated; color never the only signal | `src/cli/tui/mod.rs`, `tests/cli_dashboards.rs` |
 | Dashboard → destructive action | Accidental or bypassed deletion | Bound confirmation modal; exact target; `Esc` cancels; same app use cases as flags | `src/cli/tui/mod.rs` |
 | Settings file → application | Credential disclosure or malformed config | Strict bounded parser, token validation, content-free errors, `0600`/`0700`, Unix refusal of group/other-readable files | `tests/cli_settings_show.rs`, `src/infra/config.rs` |

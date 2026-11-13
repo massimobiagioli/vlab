@@ -191,7 +191,8 @@ case. Model-generated URLs are never implicitly trusted.
 - Confirm provider retention and processing requirements before transmitting
   sensitive information.
 - Treat scoped memories as data sent to the model provider for planning and
-  questions; automatic content is checked against the configured credential.
+  questions; automatic and manual laboratory/project content is checked against
+  the configured credential. Manual edits are local and never call the model.
 - Do not log memory content; audit only identifiers, scope, and outcomes.
 - Define retention and deletion rules before adding durable task storage;
   memories follow their owning laboratory or project and are retained for

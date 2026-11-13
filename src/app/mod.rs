@@ -12,6 +12,7 @@ pub mod context;
 pub mod deletions;
 pub mod directory;
 mod errors;
+pub mod floor;
 pub mod invocation;
 pub mod kanban;
 pub mod lab_validation;

@@ -37,10 +37,24 @@ in its border. Use `←/→` or `h/l` for lists, `↑/↓` or `j/k` for cards,
 `n` for a new request, `r` to reload, `?` for help, `Esc` to return to Projects, and `q` to quit. The
 board is read-only.
 
-The home dashboard lists Laboratories, Projects, Agents, and Settings. Use
-`Enter` to open the selected group, `1`–`4` to jump directly, `Esc` to return
-home, and `q` to quit. Inside a group use `j/k` or arrows, `h/l` for pages, the
-action keys in the bottom bar, `/` to filter, and `?` for help. Group
+The home dashboard lists Laboratories, Projects, Agents, Settings, and Lab
+floor. Use `Enter` to open the selected group, `1`–`5` to jump directly, `Esc`
+to return home, and `q` to quit. Inside a group use `j/k` or arrows, `h/l` for
+pages, the action keys in the bottom bar, `/` to filter, and `?` for help. The
+**Lab floor** is a read-only 2D scene of the active laboratory: project pods,
+the Tech Lead desk, `(zzz)` for idle agents, `( ? )`/`( ! )` exchange bubbles
+for two working agents of different roles, and `(///)` at an isolated focus
+desk for an agent with two or more open stories. Use `↑/↓` for agents,
+`←/→` for pods, `Enter` for agent detail, `m` for memories, `r` to reload,
+`?` for help, `Esc` home, and `q` to quit.
+
+The **Memories** screen opened with `m` has `Lab` and `Project` tabs. `Tab` or
+`←/→` switches scope, `↑/↓` moves, `Enter` shows the full memory, `n` creates
+with a multiline editor (`Alt+Enter` line break, `Enter` save, `Esc` cancel),
+`e` edits, `d` deletes after confirmation, `r` reloads, and `Esc` returns to the
+floor. The project tab requires a current project. Content is 1–2,000
+characters, credentials are rejected, and each scope holds at most 20
+memories. Group
 subcommands (`vlab labs`, `vlab projects`, `vlab agents`, `vlab settings`,
 `vlab help`) are removed; hidden legacy flags remain for script compatibility
 during the deprecation window. Stored and
@@ -82,9 +96,11 @@ window but is hidden from `--help`. New work uses the group subcommands.
 
 ## Memories
 
-Memories have no commands. VLab writes structural memories when a laboratory,
-agent, or project is created, and a bounded model summary after a successful
-plan. Deletion follows the owning laboratory or project.
+Memories have no CLI commands. VLab writes structural memories when a
+laboratory, agent, or project is created, and a bounded model summary after a
+successful plan. Laboratory and project memories can be viewed, created,
+edited, and deleted from the Lab floor (`m`); agent memories have no manual
+surface. Deletion follows the owning laboratory or project.
 
 ## Agents
 

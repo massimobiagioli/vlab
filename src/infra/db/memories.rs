@@ -10,6 +10,8 @@ const INSERT: &str = "\
 INSERT INTO memories (id, scope_type, lab_id, project_id, agent_id, content, created_at) \
 VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))";
 
+const UPDATE: &str = "UPDATE memories SET content = ?2 WHERE id = ?1";
+
 const SELECT_MEMORY: &str = "\
 SELECT id, scope_type, lab_id, project_id, agent_id, content, created_at \
 FROM memories WHERE id = ?1";
@@ -50,6 +52,15 @@ pub async fn insert(connection: &mut SqliteConnection, memory: &Memory) -> Resul
         .bind(lab)
         .bind(project)
         .bind(agent)
+        .bind(&memory.content)
+        .execute(connection)
+        .await
+        .map(|_| ())
+}
+
+pub async fn update(connection: &mut SqliteConnection, memory: &Memory) -> Result<(), sqlx::Error> {
+    sqlx::query(UPDATE)
+        .bind(memory.id.as_str())
         .bind(&memory.content)
         .execute(connection)
         .await

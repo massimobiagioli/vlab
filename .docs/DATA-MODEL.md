@@ -71,9 +71,11 @@ Application-managed context attached to exactly one scope:
 - a project;
 - an agent profile.
 
-A memory has bounded text and a creation timestamp. It is immutable. Structural
-memories are deterministic facts written when a laboratory, agent, or project
-is created; a successful plan adds one bounded model-generated summary.
+A memory has bounded text and a creation timestamp. Its scope and creation time
+are immutable; laboratory and project content may be edited from the floor
+(ADR-0046). Structural memories are deterministic facts written when a
+laboratory, agent, or project is created; a successful plan adds one bounded
+model-generated summary.
 Memories are untrusted data: they are selected and delimitated for prompts,
 never executed and never treated as permission. Agent memories survive
 archival but are excluded from prompts while the agent is archived.

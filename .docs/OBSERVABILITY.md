@@ -36,7 +36,8 @@ Event kinds: `migration_applied`, `lab_created`, `lab_updated`, `lab_opened`, `l
 `agent_created`, `agent_archived`, `project_created`, `project_updated`, `project_deleted`,
 `request_accepted`, `planning_started`, `planning_completed`,
 `planning_failed`, `provider_attempt`, `question_answered`, `confirmation_granted`, `confirmation_declined`,
-`budget_exhausted`, `cancelled`, `memory_created`, `memory_deleted`.
+`budget_exhausted`, `cancelled`, `memory_created`, `memory_updated`,
+`memory_deleted`.
 
 Memory events carry only the memory entity identifier; the scope is looked up
 from storage when needed. They never carry memory content.

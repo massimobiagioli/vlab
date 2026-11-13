@@ -73,6 +73,8 @@ revises a technical decision must keep it current.
 | ADR-0042 | Reusable form modal for dashboard editing | Accepted | 2026-11-13 | — | [adr-0042.md](adr-0042.md) |
 | ADR-0043 | Project editing and full-screen Kanban board | Accepted | 2026-11-13 | — | [adr-0043.md](adr-0043.md) |
 | ADR-0044 | Request intake from the dashboards | Accepted | 2026-11-13 | — | [adr-0044.md](adr-0044.md) |
+| ADR-0045 | Read-only laboratory floor view | Accepted | 2026-11-13 | — | [adr-0045.md](adr-0045.md) |
+| ADR-0046 | Manual laboratory and project memories from the floor | Accepted | 2026-11-13 | — | [adr-0046.md](adr-0046.md) |
 
 ## Supersession map
 

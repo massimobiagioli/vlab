@@ -95,15 +95,23 @@ Run `vlab` in a terminal to open the home dashboard:
 vlab
 ```
 
-Choose Laboratories, Projects, Agents, or Settings with the arrow keys and
-`Enter` (or `1`–`4`). Inside a group use `j/k` or arrows to move, the action
+Choose Laboratories, Projects, Agents, Settings, or Lab floor with the arrow
+keys and `Enter` (or `1`–`5`). Inside a group use `j/k` or arrows to move, the action
 keys shown in the bottom bar, `/` to filter, `?` for help, `Esc` to return home,
 and `q` to quit. The Laboratories dashboard shows the optional description and
 provides Edit and Projects actions; New/Edit open a bordered form with a visible cursor and Tab/arrow field navigation. The Projects dashboard renames projects with `e` and opens a full-screen,
 Trello-style Kanban board with `v`: lists side by side, cards with the short
 description only, independent scrolling per list, and `Enter` for a dialog
 with the full story. Press `r` on a project (or `n` on its board) to submit a
-new request in a simple prompt dialog; the Tech Lead plans it into stories. In a non-TTY stream VLab prints help instead of blocking.
+new request in a simple prompt dialog; the Tech Lead plans it into stories.
+
+The **Lab floor** is a deterministic 2D laboratory scene: project pods, the
+Tech Lead at a central desk, `(zzz)` for idle agents, `( ? )`/`( ! )` exchange
+bubbles for two working agents of different roles, and an isolated `focus desk`
+with `(///)` when an agent has several open stories. Press `m` to manage
+laboratory and project memories: `n` creates, `Enter` views, `e` edits, and `d`
+deletes after confirmation. Agent memories remain automatic. In a non-TTY
+stream VLab prints help instead of blocking.
 
 ## Local walkthrough
 
@@ -171,12 +179,13 @@ implemented.
 
 ### Automatic memories
 
-Memories are application-managed and have no user commands. Creating a
-laboratory, an agent, or a project writes a short deterministic memory; a
-successful planning run stores one bounded model-generated summary. They are
-limited to 2,000 characters and 20 per scope, treated as untrusted context,
-and included within an 8 KiB prompt budget. Automatic writes never fail the
-triggering action.
+Memories are application-managed. Creating a laboratory, an agent, or a
+project writes a short deterministic memory; a successful planning run stores
+one bounded model-generated summary. Laboratory and project memories can also
+be viewed, created, edited, and deleted from the Lab floor; agent memories do
+not have a manual surface. They are limited to 2,000 characters and 20 per
+scope, treated as untrusted context, and included within an 8 KiB prompt
+budget. Automatic writes never fail the triggering action.
 
 ### Destructive commands
 
@@ -275,8 +284,9 @@ budget.
 - No JSON output mode, packaging/licensing, or Windows-specific hardening.
 - Semantic quality of assignments and answers is an evaluation criterion, not
   a deterministic proof.
-- Memories are immutable and generated automatically; there is no manual
-  create/list/delete command or editing.
+- Memories are generated automatically; laboratory and project memories can be
+  managed from the Lab floor, while agent memories have no manual command or
+  editing surface.
 - A live provider contract and cost/quality evaluation are Go-Live activities.
 
 ## Documentation

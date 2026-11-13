@@ -171,6 +171,20 @@ impl MemoryStore for Database {
         })
     }
 
+    fn update_memory(&self, memory: &Memory) -> Result<(), StorageError> {
+        let memory = memory.clone();
+        self.block_on(async {
+            let mut connection = self
+                .pool()
+                .acquire()
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))?;
+            memories::update(&mut connection, &memory)
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))
+        })
+    }
+
     fn delete_memory(&self, id: &MemoryId) -> Result<(), StorageError> {
         self.block_on(async {
             let mut connection = self
