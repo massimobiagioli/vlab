@@ -305,7 +305,7 @@ Check a task only when its deliverable and verification exist. The feature is
   absence, and confirmation bypass attempts.
 - [x] **F08-06** Add a performance test with 10,000 rows and verify bounded
   render time and memory.
-- [ ] **F08-07** Run the full `make check` gate and the hosted CI matrix.
+- [x] **F08-07** Run the full `make check` gate and the hosted CI matrix.
 
 ### Phase 9 — Documentation and closure
 
@@ -334,7 +334,7 @@ checklist items are still open:
 
 - removal of the legacy flags after the deprecation window (F01-04);
 - PTY-driven end-to-end tests (F03-06, F04-07, F05-06, F08-03);
-- final gate and closure evidence (F08-07, F09-05).
+- final closure evidence and status (F09-05).
 
 ## Completion rule
 
