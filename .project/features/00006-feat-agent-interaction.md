@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00006` |
 | Branch | `feat/agent-interaction` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-13 |
 | Related ADRs | ADR-0045 (laboratory floor), ADR-0046 (manual memories), ADR-0038 (dashboards), ADR-0039 (home navigation), ADR-0034 (project roster), ADR-0028 (content-free interactions), ADR-0022/0035/0036 (memories) |
 | Scope | Laboratory floor screen and laboratory/project memory management |
@@ -87,13 +87,12 @@ The view is an overview of stored assignments, not a live simulation.
 
 - Local gate (2026-11-13): `make check` passed (fmt, clippy, tests, audit,
   deny).
+- Hosted CI run `43431288813` passed on Ubuntu, macOS, and audit/deny.
 - `TestBackend` renders at 60×20, 80×24, and 100×30.
 - Read-model tests for assignments, whole-lab fallback, lounge, lead, archived
   agents, activity states, exchange pairs, and open-story counts.
 - Memory tests for create, edit, delete, ownership, the credential rule, the
   editor, the detail dialog, and the list at supported sizes.
-- Hosted CI is required before the feature is marked `Done`; it has not been
-  run for this branch.
 
 ## Task checklist
 
@@ -114,5 +113,5 @@ The view is an overview of stored assignments, not a live simulation.
 - [x] **F03-01** Update the CLI reference, technical specification, planning,
   retention, observability, README, playbook, and feature docs.
 - [x] **F04-01** Run `make check` and fix every failure.
-- [ ] **F04-02** Push the branch, confirm hosted CI is green, and set the status
+- [x] **F04-02** Push the branch, confirm hosted CI is green, and set the status
   to `Done`.
