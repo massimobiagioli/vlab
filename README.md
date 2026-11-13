@@ -105,8 +105,9 @@ description only, independent scrolling per list, and `Enter` for a dialog
 with the full story. Press `r` on a project (or `n` on its board) to submit a
 new request in a simple prompt dialog; the Tech Lead plans it into stories.
 
-The **Lab floor** is a deterministic 2D laboratory scene: project pods, the
-Tech Lead at a central desk, `(zzz)` for idle agents, `( ? )`/`( ! )` exchange
+The **Lab floor** is a deterministic MSX-style 2D laboratory scene: a tiled
+floor, accent-colored project pods, two-line block sprites at wide sizes,
+the Tech Lead at a central desk, `(zzz)` for idle agents, `( ? )`/`( ! )` exchange
 bubbles for two working agents of different roles, and an isolated `focus desk`
 with `(///)` when an agent has several open stories. Press `m` to manage
 laboratory and project memories: `n` creates, `Enter` views, `e` edits, and `d`

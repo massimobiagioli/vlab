@@ -1077,6 +1077,8 @@ The floor is a read-only, deterministic, MSX-inspired terminal scene:
 - `↑/↓` select agents, `←/→` page pods, `Enter` opens the existing agent detail,
   `r` reloads, and `?` shows help. Layout works at 60×20, 80×24, and 100×30;
   hidden pods and members use explicit indicators.
+- The scene uses a tiled floor, accent-colored project pods, and block sprites:
+  two-line pixel sprites at wide sizes, compact one-line sprites at 60×20.
 - The scene is an overview of stored assignments, not a live trace. It calls no
   provider, writes nothing, and renders no model text, CV, or credential.
 

@@ -5,7 +5,7 @@
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -310,10 +310,16 @@ fn render_scene(frame: &mut Frame<'_>, area: Rect, theme: Theme, view: &mut Floo
     }
     canvas.frame(frame_tl, frame_tr, frame_bl, frame_br, frame_h, frame_v);
     let lab = clean(&view.floor.lab.name);
-    canvas.title(1, 0, &format!("LAB FLOOR · {lab}"), theme.title());
+    canvas.title(1, 0, &format!("LAB FLOOR · MSX · {lab}"), theme.title());
 
     let inner_w = canvas.width.saturating_sub(2);
     let inner_h = canvas.height.saturating_sub(2);
+    for y in 1..canvas.height.saturating_sub(1) {
+        for x in 1..canvas.width.saturating_sub(1) {
+            let tile = if (x + y) % 2 == 0 { '░' } else { '·' };
+            canvas.set(x, y, tile, floor_style(theme));
+        }
+    }
     if view.floor.agents.is_empty() {
         canvas.centered(
             1,
@@ -358,13 +364,14 @@ fn render_scene(frame: &mut Frame<'_>, area: Rect, theme: Theme, view: &mut Floo
     };
     let pod_area_height = inner_h.saturating_sub(reserved).max(3);
     let member_capacity = pod_area_height.saturating_sub(2).max(1);
+    let pixel = inner_w >= 78;
     let plans: Vec<PodPlan> = view.floor.pods[start..start + visible]
         .iter()
-        .map(|pod| PodPlan::new(&view.floor, pod, member_capacity, theme))
+        .map(|pod| PodPlan::new(&view.floor, pod, member_capacity, pixel, theme))
         .collect();
     let content_height = plans
         .iter()
-        .map(|plan| plan.rows_height())
+        .map(|plan| plan.rows_height(pixel))
         .max()
         .unwrap_or(1)
         .min(member_capacity)
@@ -384,6 +391,30 @@ fn render_scene(frame: &mut Frame<'_>, area: Rect, theme: Theme, view: &mut Floo
     for (index, pod) in view.floor.pods[start..start + visible].iter().enumerate() {
         let x = start_x + index * (pod_width + POD_GAP);
         centers.push(x + pod_width / 2);
+        let title = if pod.whole_lab {
+            format!("{} · whole lab", clean(&pod.name))
+        } else {
+            clean(&pod.name)
+        };
+        let accent = accent_style(index, theme);
+        canvas.box_frame(
+            x,
+            pods_y,
+            pod_width,
+            pod_height,
+            &title,
+            accent,
+            accent,
+            theme.unicode,
+        );
+        canvas.fill(
+            x + 1,
+            pods_y + 1,
+            pod_width.saturating_sub(2),
+            pod_height.saturating_sub(2),
+            ' ',
+            Style::default(),
+        );
         plans[index].draw(
             &mut canvas,
             &view.floor,
@@ -392,21 +423,6 @@ fn render_scene(frame: &mut Frame<'_>, area: Rect, theme: Theme, view: &mut Floo
             pod_width,
             view.selected,
             theme,
-        );
-        let title = if pod.whole_lab {
-            format!("{} · whole lab", clean(&pod.name))
-        } else {
-            clean(&pod.name)
-        };
-        canvas.box_frame(
-            x,
-            pods_y,
-            pod_width,
-            pod_height,
-            &title,
-            theme.border_style(),
-            theme.title(),
-            theme.unicode,
         );
     }
 
@@ -470,12 +486,28 @@ fn draw_compact_lead(
     };
     let text = truncate_width(&text, inner_w);
     let x = 1 + inner_w.saturating_sub(text.width()) / 2;
-    if lead.is_some_and(|agent| view.selected_agent().is_some_and(|sel| sel.id == agent.id)) {
-        for column in 0..text.width().min(inner_w) {
-            canvas.set(x + column, y, ' ', theme.selected());
-        }
+    let selected =
+        lead.is_some_and(|agent| view.selected_agent().is_some_and(|sel| sel.id == agent.id));
+    let base = if selected {
+        theme.selected()
+    } else {
+        Style::default()
+    };
+    for column in 0..text.width().min(inner_w) {
+        canvas.set(x + column, y, ' ', base);
     }
-    paint_text(canvas, x, y, inner_w, &text, theme.warning_style());
+    paint_text(
+        canvas,
+        x,
+        y,
+        inner_w,
+        &text,
+        if selected {
+            base
+        } else {
+            theme.warning_style()
+        },
+    );
 }
 
 fn finish(frame: &mut Frame<'_>, area: Rect, canvas: Canvas) {
@@ -642,6 +674,105 @@ fn sprite<'a>(agent: &'a FloorAgent, floor: &'a Floor, theme: Theme) -> &'a str 
 }
 
 #[allow(clippy::too_many_arguments)]
+fn paint_agent(
+    canvas: &mut Canvas,
+    x: usize,
+    y: usize,
+    width: usize,
+    floor: &Floor,
+    agent: &FloorAgent,
+    bubble: &str,
+    selected: bool,
+    pixel: bool,
+    theme: Theme,
+) {
+    if pixel {
+        paint_agent_pixel(canvas, x, y, width, floor, agent, bubble, selected, theme);
+    } else {
+        paint_agent_row(canvas, x, y, width, floor, agent, bubble, selected, theme);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_agent_pixel(
+    canvas: &mut Canvas,
+    x: usize,
+    y: usize,
+    width: usize,
+    floor: &Floor,
+    agent: &FloorAgent,
+    bubble: &str,
+    selected: bool,
+    theme: Theme,
+) {
+    let base = if selected {
+        theme.selected()
+    } else {
+        Style::default()
+    };
+    let prefix = if selected {
+        if theme.unicode { "▶ " } else { "> " }
+    } else {
+        "  "
+    };
+    let lead = floor.lead.as_ref() == Some(&agent.id);
+    let (sprite_top, sprite_bottom) = match (theme.unicode, lead) {
+        (true, true) => ("▗▄▖", "█★█"),
+        (true, false) => ("▗▄▖", "█◕█"),
+        (false, true) => (".-.", "|*|"),
+        (false, false) => (".-.", "|o|"),
+    };
+    let inner_x = x + 1;
+    let inner_w = width.saturating_sub(2);
+    for row in 0..2 {
+        for column in 0..inner_w {
+            canvas.set(inner_x + column, y + row, ' ', base);
+        }
+    }
+    for (row, sprite) in [sprite_top, sprite_bottom].iter().enumerate() {
+        paint_text(
+            canvas,
+            inner_x + prefix.width(),
+            y + row,
+            inner_w.saturating_sub(prefix.width()),
+            sprite,
+            if selected {
+                base
+            } else if lead {
+                theme.warning_style()
+            } else {
+                Style::default()
+            },
+        );
+    }
+    paint_text(canvas, inner_x, y, inner_w, prefix, base);
+    let name_x = inner_x + prefix.width() + 4;
+    let name_width = (inner_x + inner_w).saturating_sub(name_x + 1);
+    paint_text(
+        canvas,
+        name_x,
+        y,
+        name_width,
+        &clean(&agent.name),
+        if selected { base } else { Style::default() },
+    );
+    let bubble_w = bubble.width();
+    if bubble_w > 0 {
+        let bubble_x = (inner_x + inner_w).saturating_sub(bubble_w + 1);
+        let bubble_style = if selected {
+            base
+        } else if bubble == "(zzz)" {
+            theme.muted_style()
+        } else if bubble.contains("///") {
+            theme.warning_style()
+        } else {
+            theme.title()
+        };
+        paint_text(canvas, bubble_x, y + 1, bubble_w, bubble, bubble_style);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn paint_agent_row(
     canvas: &mut Canvas,
     x: usize,
@@ -742,11 +873,27 @@ enum RowPlan {
 }
 
 impl RowPlan {
-    fn height(&self) -> usize {
+    fn height(&self, pixel: bool) -> usize {
         match self {
-            Self::Pair { .. } => 3,
-            Self::Agent(_) | Self::More(_) => 1,
-            Self::Focus(agents) => agents.len() + 2,
+            Self::Pair { .. } => {
+                if pixel {
+                    5
+                } else {
+                    3
+                }
+            }
+            Self::Agent(_) => {
+                if pixel {
+                    2
+                } else {
+                    1
+                }
+            }
+            Self::More(_) => 1,
+            Self::Focus(agents) => {
+                let rows = if pixel { 2 } else { 1 };
+                agents.len() * rows + 2
+            }
         }
     }
 }
@@ -754,10 +901,11 @@ impl RowPlan {
 struct PodPlan {
     rows: Vec<RowPlan>,
     empty: bool,
+    pixel: bool,
 }
 
 impl PodPlan {
-    fn new(floor: &Floor, pod: &FloorPod, capacity: usize, _theme: Theme) -> Self {
+    fn new(floor: &Floor, pod: &FloorPod, capacity: usize, pixel: bool, _theme: Theme) -> Self {
         let lead = floor.lead.as_ref();
         let pairs = floor.exchange_pairs(pod);
         let paired: Vec<&AgentId> = pairs
@@ -782,34 +930,37 @@ impl PodPlan {
             .map(|agent| agent.id.clone())
             .collect();
 
+        let pair_h = if pixel { 5 } else { 3 };
+        let single_h = if pixel { 2 } else { 1 };
+        let focus_h = if pixel { 2 } else { 1 };
         let mut rows = Vec::new();
         let mut used = 0;
         let mut hidden = 0;
         for pair in pairs {
-            if used + 3 <= capacity {
+            if used + pair_h <= capacity {
                 rows.push(RowPlan::Pair {
                     first: pair.first,
                     second: pair.second,
                 });
-                used += 3;
+                used += pair_h;
             } else {
                 hidden += 2;
             }
         }
         for id in singles {
-            if used < capacity {
+            if used + single_h <= capacity {
                 rows.push(RowPlan::Agent(id));
-                used += 1;
+                used += single_h;
             } else {
                 hidden += 1;
             }
         }
         if !focused.is_empty() {
             let available = capacity.saturating_sub(used);
-            if available >= 3 {
-                let fit = (available - 2).min(focused.len());
+            if available >= 2 + focus_h {
+                let fit = ((available - 2) / focus_h).min(focused.len());
                 rows.push(RowPlan::Focus(focused[..fit].to_vec()));
-                used += 2 + fit;
+                used += 2 + fit * focus_h;
                 hidden += focused.len() - fit;
             } else {
                 hidden += focused.len();
@@ -836,11 +987,11 @@ impl PodPlan {
         if empty {
             rows.push(RowPlan::More(0));
         }
-        Self { rows, empty }
+        Self { rows, empty, pixel }
     }
 
-    fn rows_height(&self) -> usize {
-        self.rows.iter().map(RowPlan::height).sum()
+    fn rows_height(&self, pixel: bool) -> usize {
+        self.rows.iter().map(|row| row.height(pixel)).sum()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -856,6 +1007,9 @@ impl PodPlan {
     ) {
         let inner_x = x + 1;
         let inner_w = width.saturating_sub(2);
+        let pair_h = if self.pixel { 5 } else { 3 };
+        let single_h = if self.pixel { 2 } else { 1 };
+        let focus_h = if self.pixel { 2 } else { 1 };
         let mut row_y = y + 1;
         let mut pair_index = 0;
         let mut focus_index = 0;
@@ -868,7 +1022,7 @@ impl PodPlan {
                         ("( ! )", "( ? )")
                     };
                     if let Some(agent) = floor.agent(first) {
-                        paint_agent_row(
+                        paint_agent(
                             canvas,
                             x,
                             row_y,
@@ -877,33 +1031,36 @@ impl PodPlan {
                             agent,
                             first_bubble,
                             selected == selected_index(floor, &agent.id),
+                            self.pixel,
                             theme,
                         );
                     }
+                    let link_y = row_y + if self.pixel { 2 } else { 1 };
                     if theme.unicode {
-                        canvas.set(inner_x + 2, row_y + 1, '⇅', theme.muted_style());
+                        canvas.set(inner_x + 2, link_y, '⇅', theme.muted_style());
                     } else {
-                        canvas.set(inner_x + 2, row_y + 1, ':', theme.muted_style());
+                        canvas.set(inner_x + 2, link_y, ':', theme.muted_style());
                     }
                     if let Some(agent) = floor.agent(second) {
-                        paint_agent_row(
+                        paint_agent(
                             canvas,
                             x,
-                            row_y + 2,
+                            row_y + pair_h - single_h,
                             width,
                             floor,
                             agent,
                             second_bubble,
                             selected == selected_index(floor, &agent.id),
+                            self.pixel,
                             theme,
                         );
                     }
-                    row_y += 3;
+                    row_y += pair_h;
                     pair_index += 1;
                 }
                 RowPlan::Agent(id) => {
                     if let Some(agent) = floor.agent(id) {
-                        paint_agent_row(
+                        paint_agent(
                             canvas,
                             x,
                             row_y,
@@ -912,13 +1069,14 @@ impl PodPlan {
                             agent,
                             status_bubble(agent, theme),
                             selected == selected_index(floor, &agent.id),
+                            self.pixel,
                             theme,
                         );
                     }
-                    row_y += 1;
+                    row_y += single_h;
                 }
                 RowPlan::Focus(agents) => {
-                    let box_height = agents.len() + 2;
+                    let box_height = agents.len() * focus_h + 2;
                     let (focus_x, focus_w) = if inner_w >= 16 {
                         (inner_x + 1, inner_w - 2)
                     } else {
@@ -941,15 +1099,16 @@ impl PodPlan {
                             } else {
                                 "(</>)"
                             };
-                            paint_agent_row(
+                            paint_agent(
                                 canvas,
                                 focus_x,
-                                row_y + 1 + index,
+                                row_y + 1 + index * focus_h,
                                 focus_w,
                                 floor,
                                 agent,
                                 bubble,
                                 selected == selected_index(floor, &agent.id),
+                                self.pixel,
                                 theme,
                             );
                         }
@@ -1025,6 +1184,22 @@ impl Canvas {
             width,
             height,
             cells: vec![Cell::default(); width * height],
+        }
+    }
+
+    fn fill(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+        symbol: char,
+        style: Style,
+    ) {
+        for row in 0..height {
+            for column in 0..width {
+                self.set(x + column, y + row, symbol, style);
+            }
         }
     }
 
@@ -1151,6 +1326,27 @@ impl Canvas {
         }
         lines
     }
+}
+
+fn floor_style(theme: Theme) -> Style {
+    if theme.color {
+        Style::default().fg(Color::Rgb(38, 38, 58))
+    } else {
+        Style::default()
+    }
+}
+
+fn accent_style(index: usize, theme: Theme) -> Style {
+    if !theme.color {
+        return theme.title();
+    }
+    let color = match index % 4 {
+        0 => Color::Cyan,
+        1 => Color::Magenta,
+        2 => Color::Green,
+        _ => Color::Yellow,
+    };
+    Style::default().fg(color).add_modifier(Modifier::BOLD)
 }
 
 fn truncate_width(value: &str, width: usize) -> String {
@@ -1287,6 +1483,8 @@ mod tests {
             assert!(screen.contains(text), "{text}: {screen}");
         }
         assert!(!screen.contains("10000001"), "{screen}");
+        assert!(screen.contains("▗▄▖"), "{screen}");
+        assert!(screen.contains("░"), "{screen}");
     }
 
     #[test]
@@ -1303,10 +1501,19 @@ mod tests {
     fn ascii_fallback_uses_plain_sprite_and_borders() {
         let mut view = FloorView::new(floor());
         let screen = scene(&mut view, 80, 24, theme(false));
-        assert!(screen.contains("(o_o)"), "{screen}");
+        assert!(screen.contains(".-."), "{screen}");
+        assert!(screen.contains("|o|"), "{screen}");
         assert!(screen.contains("TECH LEAD"), "{screen}");
         assert!(!screen.contains("(◕‿◕)"), "{screen}");
         assert!(!screen.contains('╔'), "{screen}");
+    }
+
+    #[test]
+    fn the_compact_fallback_stays_on_one_line() {
+        let mut view = FloorView::new(floor());
+        let screen = scene(&mut view, 60, 20, theme(true));
+        assert!(screen.contains("(◕‿◕)"), "{screen}");
+        assert!(!screen.contains("▗▄▖"), "{screen}");
     }
 
     #[test]
