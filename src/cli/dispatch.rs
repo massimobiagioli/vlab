@@ -17,6 +17,7 @@ use crate::app::memories;
 use crate::app::projects::{self, CreatedProject, ProjectOverview, ProjectStore};
 use crate::app::requests::{self, PlanningOutcome};
 use crate::app::settings::SettingsReport;
+use crate::app::workflow;
 use crate::app::{AppError, settings, settings_edit};
 use crate::cli::args::Action;
 use crate::cli::confirm::{self, ConfirmationRequest};
@@ -146,9 +147,38 @@ pub fn dispatch(
                 &provider,
                 limits,
                 &crate::domain::clock::SystemClock,
-                cancel,
+                cancel.clone(),
                 run_id,
             )?;
+            if matches!(&outcome, PlanningOutcome::Planned { .. }) {
+                match workflow::run(
+                    &db,
+                    &db,
+                    &project,
+                    &settings,
+                    &provider,
+                    limits,
+                    &crate::domain::clock::SystemClock,
+                    cancel,
+                    run_id,
+                ) {
+                    Ok(report) => write_stdout(
+                        stdout,
+                        &format!(
+                            "Workflow: {} completed, {} failed, {} remaining.\n",
+                            report.completed, report.failed, report.remaining
+                        ),
+                    )?,
+                    Err(error) => write_stderr(
+                        stderr,
+                        &format!(
+                            "Warning: the workflow could not start: {} {}\n",
+                            error,
+                            error.hint()
+                        ),
+                    )?,
+                }
+            }
             render_plan_outcome(stdout, stderr, &db, &outcome)
         }
         Action::ListProjects => {

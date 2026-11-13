@@ -18,6 +18,8 @@ use crate::obs::{ActionId, RunId};
 pub enum InvocationKind {
     Planning,
     Question,
+    /// One bounded simulated work or review call (ADR-0048).
+    Workflow,
 }
 
 impl InvocationKind {
@@ -25,6 +27,7 @@ impl InvocationKind {
         match self {
             Self::Planning => "planning",
             Self::Question => "question",
+            Self::Workflow => "workflow",
         }
     }
 }

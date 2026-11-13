@@ -46,8 +46,9 @@ cat request.md | vlab --new-request
 7. Apply project-roster and due-date rules locally.
 8. In one transaction, insert every story as `IN PROGRESS` when it has an
    assignee and as `TODO` otherwise, then set the terminal status (ADR-0047).
-9. Record `planning_started`, `provider_attempt`, and `planning_completed` or
-   `planning_failed` events with no content.
+9. Run the bounded no-tool workflow for pending assigned stories (ADR-0048).
+10. Record `planning_started`, `provider_attempt`, workflow events, and
+    `planning_completed` or `planning_failed` with no content.
 
 No partial story set is committed. The request row is written before the
 provider call and is preserved on clarification, validation failure, provider
@@ -70,6 +71,30 @@ A stale `PLANNING` request older than the 240-second lease is recovered as
 retried automatically. There is no dedicated retry command in this release;
 submit a revised request and keep the previous record for traceability.
 
+## Simulated workflow
+
+After planning, assigned stories in `IN_PROGRESS` without an outcome are
+processed sequentially (ADR-0048):
+
+1. One work call as the assignee produces a strict JSON `work_outcome`
+   (1–2,000 characters). The prompt contains the story, project, and a bounded
+   request excerpt; it is delimited data.
+2. The story is committed as `IN_REVIEW`.
+3. The reviewer is the first active QA in the project roster, or in the active
+   laboratory roster when the project roster is empty; if there is no QA, the
+   Tech Lead reviews. One review call produces a strict JSON `review_outcome`.
+4. On success, one `story_outcomes` row stores both texts, the reviewer, and the
+   completion time, and the story becomes `DONE`.
+5. On provider or validation failure, the story returns to `IN_PROGRESS`, a
+   `workflow_failed` event is recorded with an error code, and planning remains
+   `PLANNED`. A later planning run retries it.
+
+The review is advisory and bounded: it cannot loop indefinitely. `DONE` means
+the textual simulation completed, not that code was written, tested, or
+deployed. The model has no tools and never executes output. Limits: two calls
+per story, one attempt per call, 60-second call timeout, 512 output tokens, and
+a 240-second total workflow deadline.
+
 ## Provider contract
 
 - DeepSeek chat-completions endpoint:
@@ -79,9 +104,11 @@ submit a revised request and keep the previous record for traceability.
   the `Authorization` header.
 - Attempt timeout 60 s, connect timeout 10 s, total planning deadline 240 s,
   response body cap 256 KiB, max output tokens 4096.
-- At most one logical invocation and two retries. Only rate-limit, timeout,
-  transport, and 5xx failures are retried; authentication, malformed output,
-  oversized output, validation failures, and cancellation are not.
+- Planning uses at most one logical invocation and two retries. Only
+  rate-limit, timeout, transport, and 5xx failures are retried; authentication,
+  malformed output, oversized output, validation failures, and cancellation are
+  not. Workflow calls use one attempt per call and are bounded separately
+  (ADR-0048).
 - Backoff is 500 ms doubling to 8 s; `Retry-After` takes precedence.
 - Retries may incur additional provider charges. Exactly-once remote execution
   is not promised.

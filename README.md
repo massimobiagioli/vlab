@@ -175,8 +175,11 @@ ignored by git and can be reset with `make clean-workspace`.
 The board is read-only: it shows the five states, cards, assignee or
 `Unassigned`, priority, due date, story counts, completed count, and pending
 intake. Planning creates assigned stories in `IN PROGRESS` and unassigned
-stories in `TODO`; manual state transitions are not implemented, and
-`IN PROGRESS` means the story has an owner.
+stories in `TODO`. After planning, the application runs a bounded no-tool
+simulation: the assignee produces a work outcome, the first active QA (or the
+Tech Lead) produces a review outcome, and the story becomes `DONE`. The `DONE`
+card detail shows both outcomes and the reviewer. No code is executed; `DONE`
+means the textual simulation completed. There are no manual state transitions.
 
 ### Automatic memories
 
@@ -280,9 +283,9 @@ budget.
 
 - SQLite is unencrypted at rest; use OS disk encryption for sensitive data.
 - No backup/restore command; stop VLab before copying the database file.
-- Story state transitions and execution are not implemented; the board is
-  read-only. Planning creates assigned stories in `IN PROGRESS` and unassigned
-  stories in `TODO`.
+- Story states advance only through the bounded no-tool simulation; there are
+  no manual transitions and no real code execution. `DONE` is a simulated
+  work/review outcome, not a delivered change.
 - No JSON output mode, packaging/licensing, or Windows-specific hardening.
 - Semantic quality of assignments and answers is an evaluation criterion, not
   a deterministic proof.

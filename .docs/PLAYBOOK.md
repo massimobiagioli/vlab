@@ -159,7 +159,9 @@ planning context within the 8 KiB bound.
 Interactive route: in **Projects** select the project and press `r` (or press
 `n` on its Kanban board). Type or paste the request in the dialog and press
 `Enter`; `Esc` cancels. The outcome dialog lists the planned stories or the
-Tech Lead's questions.
+Tech Lead's questions. After planning, assigned stories run through the
+bounded no-tool simulation: work by the assignee, review by the first active QA
+(or the Tech Lead), then `DONE` with the outcomes stored.
 
 The hidden legacy flag still works for scripts:
 
@@ -187,7 +189,10 @@ vlab --show-project-kanban
 ```
 
 The board shows `TODO`, `IN PROGRESS`, `IN REVIEW`, `BLOCKED`, and `DONE`,
-with assignee, priority, due date, counts, and pending intake. It is read-only.
+with assignee, priority, due date, counts, and pending intake. It is read-only;
+states are changed only by the application workflow. Open a `DONE` card with
+`Enter` to read its work outcome, review outcome, reviewer, and completion
+time. No code is executed; this is a textual simulation.
 
 ## 10. Ask a question
 

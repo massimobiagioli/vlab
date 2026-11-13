@@ -141,6 +141,32 @@ fn assigned_progress_migration_moves_only_assigned_todo_stories() {
 }
 
 #[test]
+fn workflow_schema_accepts_workflow_interactions_and_outcomes() {
+    let (_dir, db) = open();
+    db.migrate(RunId::generate()).unwrap();
+    for sql in [
+        "INSERT INTO labs (id, name, created_at, updated_at) VALUES ('a3f91c07', 'Lab', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "INSERT INTO agents (id, name, role, description, skills_json, provider, model, created_at, updated_at) VALUES ('0b1c2d3e', 'Ada', 'dev', 'x', '[]', 'deepseek', 'm', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "INSERT INTO projects (id, lab_id, name, created_at, updated_at) VALUES ('1c2d3e4f', 'a3f91c07', 'Portal', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "INSERT INTO requests (id, project_id, content, status, created_at, updated_at) VALUES ('2d3e4f50', '1c2d3e4f', 'R', 'PLANNED', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "INSERT INTO stories (id, project_id, request_id, title, description, acceptance_criteria_json, priority, complexity, required_skills_json, assigned_agent_id, assignment_rationale, state, due_date, created_at, updated_at) VALUES ('3e4f5061', '1c2d3e4f', '2d3e4f50', 'T', 'D', '[]', 'high', 'small', '[]', '0b1c2d3e', 'R', 'DONE', '2026-01-03', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "INSERT INTO story_outcomes (story_id, work_outcome, review_outcome, reviewer_agent_id) VALUES ('3e4f5061', 'Work', 'Review', '0b1c2d3e')",
+        "INSERT INTO interactions (id, run_id, agent_id, kind, provider, model, outcome, duration_ms, created_at) VALUES ('4f506172', 'run', '0b1c2d3e', 'workflow', 'deepseek', 'm', 'success', 1, '2026-01-01T00:00:00Z')",
+    ] {
+        db.execute(sql).unwrap();
+    }
+    let (work, review): (String, String) = db.block_on(async {
+        sqlx::query_as(
+            "SELECT work_outcome, review_outcome FROM story_outcomes WHERE story_id = '3e4f5061'",
+        )
+        .fetch_one(db.pool())
+        .await
+        .unwrap()
+    });
+    assert_eq!((work.as_str(), review.as_str()), ("Work", "Review"));
+}
+
+#[test]
 fn a_broken_migration_rolls_back_without_leaving_partial_schema() {
     let (_dir, db) = open();
     let migrations = support::private_tempdir();

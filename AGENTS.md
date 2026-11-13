@@ -98,6 +98,7 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0045.md`](.docs/adr/adr-0045.md) | Read-only laboratory floor view. |
 | [`.docs/adr/adr-0046.md`](.docs/adr/adr-0046.md) | Manual laboratory and project memories from the floor. |
 | [`.docs/adr/adr-0047.md`](.docs/adr/adr-0047.md) | Assigned stories start in IN PROGRESS. |
+| [`.docs/adr/adr-0048.md`](.docs/adr/adr-0048.md) | Bounded no-tool story workflow simulation. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
 | [`.project/features/`](.project/features/) | Tracked feature plans with task checklists (ADR-0037). |
 
@@ -226,8 +227,11 @@ Material post-release features are planned in tracked files under
 - **Language:** Rust, pinned stable toolchain, safe Rust first.
 - **Layering:** `cli -> app -> domain`; `infra` implements ports. Domain code
   performs no I/O.
-- **No agent framework:** do not add multi-agent orchestration, autonomous
-  execution, or a plugin system.
+- **No general agent framework:** do not add a plugin system, arbitrary
+  multi-agent orchestration, or unbounded autonomous execution. The only
+  automated sequence is the bounded, no-tool story workflow simulation in
+  ADR-0048: fixed provider calls, strict schemas, explicit budgets, and no
+  code execution.
 - **No tools for the model:** model output is data, never authority. No shell,
   filesystem, network, or code execution through the model.
 - **Persistence:** SQLite through SQLx, one connection initially, foreign keys

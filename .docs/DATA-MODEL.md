@@ -62,7 +62,15 @@ A planned work item linked to one project and one originating request. It
 records title, description, acceptance criteria, required skills, priority,
 complexity, optional assignment and rationale, a Kanban state, and a locally
 computed due date. Planning creates assigned stories in `IN PROGRESS` and
-unassigned stories in `TODO` (ADR-0047).
+unassigned stories in `TODO` (ADR-0047). The bounded workflow simulation may
+advance a story to `IN_REVIEW` and then `DONE`.
+
+### Story outcome
+
+One optional row per completed story, linked by `story_id`. It stores the
+simulated work text, review text, reviewer agent, and completion timestamp
+(ADR-0048). The row is project data, not audit metadata; the text is untrusted
+and displayed sanitized. Deleting the story cascades the outcome.
 
 ### Memory
 
@@ -105,6 +113,7 @@ content. It is added by WP-6.
 | Request → Story | one to many | Stories retain the originating request; deleting the request cascades. |
 | Project → Story | one to many | A story belongs to the project of its request. |
 | Agent → Story assignment | one to many, optional | Stories may be assigned to an active member; archiving preserves the reference. |
+| Story → Story outcome | one to zero or one | A completed simulated story stores one work/review outcome; deleting the story cascades it. |
 | Laboratory/Project/Agent → Memory | one to many | Exactly one owner scope per memory; laboratory and project deletion cascade, agent archival retains. |
 | Any entity → Event | optional reference | Events are append-only metadata, not ownership edges. |
 | Agent/Operation → Interaction | one to many | Added in WP-6; metadata only. |

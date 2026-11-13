@@ -25,6 +25,7 @@ pub mod requests;
 pub mod settings;
 pub mod settings_edit;
 pub mod storage;
+pub mod workflow;
 
 pub use errors::{AppError, EntityKind, ProviderFailure};
 

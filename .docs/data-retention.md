@@ -174,6 +174,20 @@ WP-4 adds these tables ([ADR-0023](adr/adr-0023.md), [ADR-0022](adr/adr-0022.md)
 | `due_date` | `YYYY-MM-DD` | Locally computed estimate, not a commitment. |
 | `created_at`, `updated_at` | RFC 3339 UTC timestamps | Ordering and diagnosis. |
 
+#### `story_outcomes`
+
+ADR-0048 adds one optional row per completed simulated story:
+
+| Column | Contents | Why it is stored |
+|---|---|---|
+| `story_id` | Story identifier | Primary key and cascade owner. |
+| `work_outcome`, `review_outcome` | Bounded model text, locally validated | Simulated work and review record shown in the card detail. |
+| `reviewer_agent_id` | Reviewer agent | Who reviewed the work. |
+| `completed_at` | RFC 3339 UTC timestamp | Completion ordering and diagnosis. |
+
+The outcome text is project data, not audit metadata. It is untrusted, never
+executed, and rendered sanitized.
+
 #### `memories`
 
 WP-4 adds the `memories` table ([ADR-0022](adr/adr-0022.md)).
@@ -198,9 +212,9 @@ logged. Credentials are rejected from memory content and are never stored.
 
 ### Schema v5: interaction metadata
 
-WP-6 adds `interactions` with run and agent identifiers, kind (`planning` or
-`question`), provider, model, outcome, error code, duration, input/output token
-counts, and a timestamp. It stores **no content**: no question, answer, prompt,
+WP-6 adds `interactions` with run and agent identifiers, kind (`planning`,
+`question`, or `workflow`), provider, model, outcome, error code, duration,
+input/output token counts, and a timestamp. It stores **no content**: no question, answer, prompt,
 request text, memory, CV, or provider body. This is operational metadata used
 for diagnostics and evaluation, not project data.
 
@@ -215,6 +229,5 @@ ADR-0034 adds `project_agents`:
 
 The table contains identifiers only, no content or credentials.
 
-No further schema changes are planned in the deterministic release. Any future
-change must justify each stored field and update this document before the
-migration lands.
+Schema changes must justify each stored field and update this document before
+the migration lands. The current schema version is v9 (ADR-0048).

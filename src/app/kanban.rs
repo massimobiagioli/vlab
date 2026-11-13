@@ -98,6 +98,15 @@ impl Board {
     }
 }
 
+/// Simulated work and review text shown on a completed story (ADR-0048).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoryOutcome {
+    pub work: String,
+    pub review: String,
+    pub reviewer: String,
+    pub completed_at: String,
+}
+
 /// Full story content for the dashboard card detail (ADR-0043).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoryDetail {
@@ -114,6 +123,7 @@ pub struct StoryDetail {
     pub acceptance_criteria: Vec<String>,
     pub required_skills: Vec<String>,
     pub rationale: Option<String>,
+    pub outcome: Option<StoryOutcome>,
 }
 
 pub trait BoardStore {

@@ -2,7 +2,7 @@
 
 use sqlx::SqliteConnection;
 
-use crate::app::kanban::{Board, BoardCounts, Card, StoryDetail, StoryState};
+use crate::app::kanban::{Board, BoardCounts, Card, StoryDetail, StoryOutcome, StoryState};
 use crate::domain::ids::{LabId, ProjectId, RequestId, StoryId};
 
 const SELECT_PROJECT: &str = "\
@@ -139,7 +139,7 @@ pub async fn story(
         .bind(story.as_str())
         .bind(project.as_str())
         .bind(lab.as_str())
-        .fetch_optional(connection)
+        .fetch_optional(&mut *connection)
         .await?;
     let Some((
         id,
@@ -166,6 +166,20 @@ pub async fn story(
         .iter()
         .map(|tag| tag.as_str().to_owned())
         .collect();
+    let outcome: Option<(String, String, Option<String>, String)> = sqlx::query_as(
+        "SELECT o.work_outcome, o.review_outcome, a.name, o.completed_at \
+         FROM story_outcomes o LEFT JOIN agents a ON a.id = o.reviewer_agent_id \
+         WHERE o.story_id = ?1",
+    )
+    .bind(story.as_str())
+    .fetch_optional(connection)
+    .await?;
+    let outcome = outcome.map(|(work, review, reviewer, completed_at)| StoryOutcome {
+        work,
+        review,
+        reviewer: reviewer.unwrap_or_else(|| "Unknown reviewer".to_owned()),
+        completed_at,
+    });
     Ok(Some(StoryDetail {
         id: StoryId::parse(&id).ok_or(sqlx::Error::RowNotFound)?,
         request_id: RequestId::parse(&request_id).ok_or(sqlx::Error::RowNotFound)?,
@@ -180,5 +194,6 @@ pub async fn story(
         acceptance_criteria,
         required_skills,
         rationale,
+        outcome,
     }))
 }

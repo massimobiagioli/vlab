@@ -37,10 +37,16 @@ Event kinds: `migration_applied`, `lab_created`, `lab_updated`, `lab_opened`, `l
 `request_accepted`, `planning_started`, `planning_completed`,
 `planning_failed`, `provider_attempt`, `question_answered`, `confirmation_granted`, `confirmation_declined`,
 `budget_exhausted`, `cancelled`, `memory_created`, `memory_updated`,
-`memory_deleted`.
+`memory_deleted`, `story_work_completed`, `story_reviewed`, `story_completed`,
+`workflow_failed`.
 
 Memory events carry only the memory entity identifier; the scope is looked up
-from storage when needed. They never carry memory content.
+from storage when needed. They never carry memory content. Workflow events
+carry only the story identifier and an error code; work and review text is
+project data and is never written to events.
+
+Interaction metadata records `planning`, `question`, and `workflow`
+invocations. It stores no prompt, response, outcome text, or provider body.
 
 Sinks:
 

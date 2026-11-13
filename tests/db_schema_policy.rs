@@ -29,7 +29,7 @@ fn the_policy_rejects_a_forbidden_column() {
 }
 
 #[test]
-fn schema_v3_contains_only_the_documented_application_tables() {
+fn the_migrated_schema_contains_only_the_documented_application_tables() {
     let dir = support::private_tempdir();
     let db = Database::open(dir.path().join("vlab.db")).unwrap();
     db.migrate(RunId::generate()).unwrap();
@@ -57,7 +57,8 @@ fn schema_v3_contains_only_the_documented_application_tables() {
             "project_agents",
             "projects",
             "requests",
-            "stories"
+            "stories",
+            "story_outcomes"
         ]
     );
 }

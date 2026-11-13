@@ -22,6 +22,7 @@ use crate::app::projects::{self, CreatedProject, ProjectOverview};
 use crate::app::requests::{self, PlanningOutcome};
 use crate::app::settings::{self, SettingsReport, SettingsStore};
 use crate::app::settings_edit;
+use crate::app::workflow;
 use crate::cli::args::DashboardGroup;
 use crate::cli::prompt::{TerminalEditor, TerminalPrompter};
 use crate::domain::budget::{CancelToken, ExecutionLimits};
@@ -1381,11 +1382,38 @@ impl App {
             &provider,
             limits,
             &crate::domain::clock::SystemClock,
-            cancel,
+            cancel.clone(),
             self.run_id,
         );
+        let workflow_report = match &outcome {
+            Ok(PlanningOutcome::Planned { .. }) => Some(workflow::run(
+                &self.db,
+                &self.db,
+                project_id,
+                &settings,
+                &provider,
+                limits,
+                &crate::domain::clock::SystemClock,
+                cancel,
+                self.run_id,
+            )),
+            _ => None,
+        };
         watcher.stop();
-        Ok(self.outcome_lines(&outcome?))
+        let (title, mut lines) = self.outcome_lines(&outcome?);
+        if let Some(report) = workflow_report {
+            lines.insert(
+                1,
+                match report {
+                    Ok(report) => format!(
+                        "Workflow: {} completed, {} failed, {} remaining.",
+                        report.completed, report.failed, report.remaining
+                    ),
+                    Err(error) => format!("Workflow could not start: {} {}", error, error.hint()),
+                },
+            );
+        }
+        Ok((title, lines))
     }
 
     fn outcome_lines(&self, outcome: &PlanningOutcome) -> (String, Vec<String>) {
@@ -1404,20 +1432,7 @@ impl App {
                     .into_iter()
                     .map(|member| (member.id.to_string(), member.name))
                     .collect();
-                let in_progress = stories
-                    .iter()
-                    .filter(|story| story.assigned_agent_id.is_some())
-                    .count();
-                let todo = stories.len().saturating_sub(in_progress);
-                let mut lines = vec![
-                    format!(
-                        "{} stories added ({} in progress, {} TODO).",
-                        stories.len(),
-                        in_progress,
-                        todo
-                    ),
-                    String::new(),
-                ];
+                let mut lines = vec![format!("{} stories planned.", stories.len()), String::new()];
                 for story in stories {
                     let assignee = story
                         .assigned_agent_id
@@ -2997,7 +3012,7 @@ impl App {
                 vec![
                     format!("Planning a request for {}…", clean(project_name)),
                     String::new(),
-                    "The Tech Lead is drafting stories; this can take up to 4 minutes.".to_owned(),
+                    "The Tech Lead is drafting stories and running the simulated workflow; this can take up to 8 minutes.".to_owned(),
                     String::new(),
                     "Esc cancel".to_owned(),
                 ],
@@ -3495,6 +3510,33 @@ fn story_lines(story: &kanban::StoryDetail, theme: Theme, width: usize) -> Vec<L
             .collect(),
         "",
     );
+    if let Some(outcome) = &story.outcome {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled("Outcome", label_style)));
+        field(&mut lines, "Work", clean(&outcome.work), Style::default());
+        field(
+            &mut lines,
+            "Review",
+            clean(&outcome.review),
+            Style::default(),
+        );
+        field(
+            &mut lines,
+            "Reviewer",
+            clean(&outcome.reviewer),
+            Style::default(),
+        );
+        field(
+            &mut lines,
+            "Completed",
+            clean(&outcome.completed_at),
+            Style::default(),
+        );
+        lines.push(Line::from(Span::styled(
+            "No code was executed; this is a bounded simulation.",
+            theme.muted_style(),
+        )));
+    }
     lines
 }
 
@@ -4472,6 +4514,7 @@ mod tests {
             acceptance_criteria: (0..30).map(|index| format!("Criterion {index}")).collect(),
             required_skills: Vec::new(),
             rationale: Some("Last line of the dialog".to_owned()),
+            outcome: None,
         };
         let (mut app, _dir) = kanban_fixture(Vec::new());
         app.mode = Mode::Story {

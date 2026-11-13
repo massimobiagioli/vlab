@@ -72,6 +72,7 @@ Prompts are behavioral guidance, not security boundaries.
 | Application → model provider | Minimize transmitted data and apply provider-specific privacy requirements. |
 | Application → GitHub | Validate the project source; clone only the validated repository; pass the global credential through a short-lived askpass helper and child environment; bound time; discard output; no token in arguments or logs. |
 | Model → orchestrator | Validate responses; never interpret proposals as authorization. |
+| Workflow output → story state | Accept only strict work/review JSON; the application owns `IN_REVIEW`/`DONE` and outcome persistence; the model has no tools and cannot choose a transition. |
 | Tool output → orchestrator | Treat content as data, not instructions or policy. |
 | Memory content → orchestrator | Validate scope, encoding, and size; include only within the memory budget; delimit as data; never let it change policy, permissions, or assignment rules. |
 | Orchestrator → tool | Enforce permissions, approval, and execution limits. |
@@ -89,6 +90,7 @@ before exposure.
 | Prompt injection | External content, including memory content, cannot modify policy, permissions, or approval requirements. |
 | Memory poisoning | Memory text cannot grant capabilities, alter rules, or be treated as an instruction; it is bounded and delimited. |
 | Memory data leakage | Only the scoped memories selected by the specification are sent to the provider; content is never logged or rendered unsanitized. |
+| Simulated outcome mistaken for real execution | `DONE` is documented and displayed as a no-tool simulation; no shell, filesystem, network, or repository capability exists in the workflow. |
 | Unauthorized tool use | Use an explicit tool registry and validate every invocation. |
 | Data exfiltration | Restrict outbound destinations, transmitted data, and credential access. |
 | Filesystem escape | Restrict operations to approved resources and address traversal and symlink attacks. |
@@ -109,6 +111,10 @@ before exposure.
 - Enforce token or cost limits where supported; otherwise enforce conservative
   request and size limits without claiming exact cost control.
 - Stop safely when required validation or authorization fails.
+- Bound the simulated workflow to two provider calls per story, one attempt per
+  call, a 60-second call timeout, 512 output tokens, and a 240-second total
+  deadline. Validate both outputs before persisting the outcome and `DONE`.
+  Treat the outcome text as untrusted project data and never execute it.
 
 Retrieved documents, repository files, tool outputs, and memory content may
 contain malicious instructions. Their apparent source or formatting does not

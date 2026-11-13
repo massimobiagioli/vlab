@@ -25,6 +25,7 @@ pub mod planning;
 pub mod policy;
 pub mod project_agents;
 pub mod projects;
+pub mod workflow;
 pub mod workspace;
 
 use std::fs::{self, OpenOptions};
@@ -47,7 +48,7 @@ use crate::infra::paths::ensure_private_dir;
 pub const DEFAULT_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Schema version this binary creates and supports (ADR-0016).
-pub const SUPPORTED_SCHEMA_VERSION: i64 = 8;
+pub const SUPPORTED_SCHEMA_VERSION: i64 = 9;
 
 struct Inner {
     runtime: tokio::runtime::Runtime,

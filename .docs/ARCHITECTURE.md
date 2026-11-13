@@ -4,8 +4,10 @@
 
 **Proposed baseline — not a description of verified implementation.**
 
-This document assumes a Rust application that uses an AI agent to complete
-bounded tasks through explicitly authorized tools.
+The current implementation is a planning-only Rust CLI. It has no tools and
+does not execute model output. The only automated sequence is the bounded
+no-tool work/review simulation in ADR-0048; the tool-oriented diagram below is
+the original architectural baseline, not a current capability.
 
 The product domain, deployment environment, model provider, and persistence
 requirements are not yet defined. These assumptions must be confirmed before
@@ -23,7 +25,9 @@ implementation decisions depend on them.
 
 The initial architecture does not include:
 
-- Multi-agent orchestration.
+- General multi-agent orchestration. The fixed, bounded work/review simulation
+  in ADR-0048 is the only exception; it has no tools and no model-chosen
+  control flow.
 - Distributed execution.
 - Autonomous permission escalation.
 - Arbitrary shell execution.
@@ -59,6 +63,12 @@ AI provider.
 
 Prefer a deterministic workflow without a model whenever it satisfies the
 requirement.
+
+The simulated workflow is a separate application component: after planning it
+selects pending assigned stories, calls the provider for one work outcome and
+one review outcome, validates both locally, and owns the `IN_REVIEW`/`DONE`
+transitions and the outcome row. It has no tools, no filesystem or network
+effects, and no model-chosen state changes (ADR-0048).
 
 ## Components
 
