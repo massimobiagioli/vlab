@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00012` |
 | Branch | `feat/metrics-dashboard` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-13 |
 | Related ADRs | ADR-0051 (metrics), ADR-0038 (dashboards), ADR-0043 (board counts) |
 | Scope | Read-only laboratory metrics from the home menu |
@@ -49,6 +49,7 @@ completion percentage, pending intake, and a per-project breakdown.
 
 - Local gate (2026-11-13): `make check` passed (fmt, clippy, tests, audit,
   deny).
+- Hosted CI run `43466416036` passed on Ubuntu, macOS, and audit/deny.
 - `tests/db_metrics.rs` covers the aggregate, an empty project, and an unknown
   laboratory.
 - The TUI test opens Metrics from the home menu and asserts the labels and
@@ -66,4 +67,4 @@ completion percentage, pending intake, and a per-project breakdown.
 - [x] **F03-01** Update the CLI reference, README, playbook, specification, and
   feature docs.
 - [x] **F04-01** Run `make check` and fix every failure.
-- [ ] **F04-02** Push, confirm hosted CI is green, and set the status to `Done`.
+- [x] **F04-02** Push, confirm hosted CI is green, and set the status to `Done`.
