@@ -78,7 +78,7 @@ fn an_empty_project_list_is_actionable() {
     outcome.assert_success();
     assert_eq!(
         outcome.stdout,
-        "No projects in the active laboratory.\nHint: Run `vlab --new-project \"Name\"` to create one.\n"
+        "No projects in the active laboratory.\nHint: Run `vlab projects` to create one.\n"
     );
 }
 

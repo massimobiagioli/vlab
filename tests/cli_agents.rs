@@ -141,7 +141,7 @@ fn an_empty_membership_list_is_actionable() {
     outcome.assert_success();
     assert_eq!(
         outcome.stdout,
-        "No agents in the active laboratory.\nHint: Run `vlab --new-agent` to create one.\n"
+        "No agents in the active laboratory.\nHint: Run `vlab agents` to create one.\n"
     );
 }
 

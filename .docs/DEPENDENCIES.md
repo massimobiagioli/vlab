@@ -30,6 +30,7 @@ a point in time, not proof of absence of vulnerabilities.
 | `serde_json` | 1.0.154 | default | Strict planning JSON and bounded JSON columns (WP-5, ADR-0026). | MIT OR Apache-2.0 | 2026-11-12 |
 | `serde-saphyr` | 2.1.1 | `deserialize` (default features off) | Strict YAML parsing for `settings.yaml` (ADR-0008, ADR-0015). | MIT OR Apache-2.0 | 2026-11-12 |
 | `shell-words` | 1.1.1 | default | Splits `VISUAL`/`EDITOR` into executable and arguments without a shell (ADR-0015). | MIT OR Apache-2.0 | 2026-11-12 |
+| `ratatui` | 0.30.2 | `crossterm`, `std` (default features off) | Interactive dashboards: layout, widgets, terminal lifecycle, and the re-exported `crossterm` backend (ADR-0038). | MIT | 2026-11-13 |
 | `reqwest` | 0.13.5 | `blocking`, `json`, `rustls` (default features off) | Outbound DeepSeek HTTPS client with bounded timeout/size (ADR-0026). | MIT OR Apache-2.0 | 2026-11-12 |
 | `sqlx` | 0.9.0 | `runtime-tokio`, `sqlite`, `migrate`, `macros` (default features off) | SQLite access and embedded migrations (`STACK.md`, ADR-0002, ADR-0016). | MIT OR Apache-2.0 | 2026-11-12 |
 | `thiserror` | 2.0.21 | default | Typed errors (`STACK.md`). | MIT OR Apache-2.0 | 2026-11-12 |
@@ -40,6 +41,10 @@ a point in time, not proof of absence of vulnerabilities.
 | `tracing-subscriber` | 0.3.23 | `std`, `fmt`, `env-filter` (no `ansi`) | Stderr diagnostics filtered by `RUST_LOG`. | MIT | 2026-11-12 |
 | `unicode-width` | 0.2.3 | default | Display width for aligned tables, including wide characters (ADR-0021). | MIT OR Apache-2.0 | 2026-11-12 |
 | `uuid` | 1.29.2 | `std`, `v4` | Run and action identifiers; entity identifiers in WP-3 (ADR-0004). | Apache-2.0 OR MIT | 2026-11-12 |
+
+`crossterm` 0.29.0 is a transitive runtime dependency of `ratatui-crossterm`; it
+is not declared directly. It is MIT licensed and provides terminal setup, raw
+mode, and key events for ADR-0038.
 
 ## Development dependencies
 

@@ -11,9 +11,10 @@ pub mod exit;
 pub mod input;
 pub mod prompt;
 pub mod render;
+pub mod tui;
 
 use std::ffi::OsString;
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::panic::{self, UnwindSafe};
 
 use clap::error::ErrorKind;
@@ -96,9 +97,21 @@ where
         }
     };
     match cli.into_action()? {
-        None => write_stdout(stdout, &Cli::command().render_help().to_string()),
+        None => {
+            if io::stdin().is_terminal() && io::stdout().is_terminal() {
+                crate::cli::tui::run_home(run_id)
+            } else {
+                write_stdout(stdout, &Cli::command().render_help().to_string())
+            }
+        }
         Some(action) => {
             tracing::debug!(action = action.flag(), "dispatching");
+            if !matches!(action, args::Action::Dashboard { .. }) && io::stderr().is_terminal() {
+                write_stderr(
+                    stderr,
+                    "Warning: action flags are deprecated; use `vlab labs`, `vlab projects`, `vlab agents`, or `vlab settings`.\n",
+                )?;
+            }
             dispatch::dispatch(action, stdout, stderr, run_id)
         }
     }

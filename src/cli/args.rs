@@ -5,7 +5,7 @@
 //! a `requires` rule whose target conflicts with an argument already present,
 //! so it cannot enforce them alone.
 
-use clap::{ArgGroup, Parser};
+use clap::{ArgGroup, Parser, Subcommand};
 
 use crate::app::AppError;
 
@@ -116,6 +116,56 @@ pub struct Cli {
     /// Confirm a deletion without prompting
     #[arg(long)]
     yes: bool,
+
+    /// Open a dashboard for a group
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Subcommand)]
+pub enum DashboardGroup {
+    /// Laboratories dashboard
+    Labs,
+    /// Projects dashboard for the active laboratory
+    Projects,
+    /// Agents dashboard for the active laboratory
+    Agents,
+    /// Settings dashboard
+    Settings,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
+enum Command {
+    /// Open the laboratories dashboard
+    Labs {
+        /// Print a plain table instead of the interactive dashboard
+        #[arg(long)]
+        plain: bool,
+        /// Disable color and styling
+        #[arg(long = "no-color")]
+        no_color: bool,
+    },
+    /// Open the projects dashboard
+    Projects {
+        #[arg(long)]
+        plain: bool,
+        #[arg(long = "no-color")]
+        no_color: bool,
+    },
+    /// Open the agents dashboard
+    Agents {
+        #[arg(long)]
+        plain: bool,
+        #[arg(long = "no-color")]
+        no_color: bool,
+    },
+    /// Open the settings dashboard
+    Settings {
+        #[arg(long)]
+        plain: bool,
+        #[arg(long = "no-color")]
+        no_color: bool,
+    },
 }
 
 /// One validated primary action with its operands.
@@ -158,6 +208,11 @@ pub enum Action {
     AssignAgent {
         agent_id: String,
     },
+    Dashboard {
+        group: DashboardGroup,
+        plain: bool,
+        no_color: bool,
+    },
     ListAgents,
     NewAgent,
     DeleteAgent {
@@ -191,6 +246,12 @@ impl Action {
             Self::DeleteProject { .. } => "--delete-project",
             Self::NewRequest { .. } => "--new-request",
             Self::AssignAgent { .. } => "--assign-agent",
+            Self::Dashboard { group, .. } => match group {
+                DashboardGroup::Labs => "labs",
+                DashboardGroup::Projects => "projects",
+                DashboardGroup::Agents => "agents",
+                DashboardGroup::Settings => "settings",
+            },
             Self::ListAgents => "--list-agents",
             Self::NewAgent => "--new-agent",
             Self::DeleteAgent { .. } => "--delete-agent",
@@ -205,6 +266,59 @@ impl Cli {
     ///
     /// Fails when a modifier is used without the action that declares it.
     pub fn into_action(self) -> Result<Option<Action>, AppError> {
+        if self.command.is_some() {
+            let conflict = self.show_settings
+                || self.edit_settings
+                || self.list_labs
+                || self.new_lab.is_some()
+                || self.open_lab.is_some()
+                || self.delete_lab.is_some()
+                || self.check_lab.is_some()
+                || self.list_projects
+                || self.new_project.is_some()
+                || self.github_source.is_some()
+                || self.open_project.is_some()
+                || self.show_project_kanban
+                || self.delete_project
+                || self.new_request.is_some()
+                || self.assign_agent.is_some()
+                || self.list_agents
+                || self.new_agent
+                || self.delete_agent.is_some()
+                || self.show_agent_detail.is_some()
+                || self.ask.is_some()
+                || self.to_agent.is_some()
+                || self.yes;
+            if conflict {
+                return Err(modifier_error(
+                    "a group subcommand cannot be combined with action flags.",
+                ));
+            }
+        }
+        if let Some(command) = self.command {
+            return Ok(Some(match command {
+                Command::Labs { plain, no_color } => Action::Dashboard {
+                    group: DashboardGroup::Labs,
+                    plain,
+                    no_color,
+                },
+                Command::Projects { plain, no_color } => Action::Dashboard {
+                    group: DashboardGroup::Projects,
+                    plain,
+                    no_color,
+                },
+                Command::Agents { plain, no_color } => Action::Dashboard {
+                    group: DashboardGroup::Agents,
+                    plain,
+                    no_color,
+                },
+                Command::Settings { plain, no_color } => Action::Dashboard {
+                    group: DashboardGroup::Settings,
+                    plain,
+                    no_color,
+                },
+            }));
+        }
         if self.to_agent.is_some() && self.ask.is_none() {
             return Err(modifier_error(
                 "`--to-agent` can only be used with `--ask`.",

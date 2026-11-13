@@ -161,6 +161,7 @@ work.
 | `vlab-sqlite-migration` | [`.agents/skills/vlab-sqlite-migration/SKILL.md`](.agents/skills/vlab-sqlite-migration/SKILL.md) | Changing the schema, migrations, repositories, constraints, or transactions. |
 | `vlab-ai-provider` | [`.agents/skills/vlab-ai-provider/SKILL.md`](.agents/skills/vlab-ai-provider/SKILL.md) | Changing provider calls, prompts, planning output, budgets, retries, or questions. |
 | `vlab-security-review` | [`.agents/skills/vlab-security-review/SKILL.md`](.agents/skills/vlab-security-review/SKILL.md) | Reviewing a change that touches trust boundaries, secrets, model output, or destructive actions. |
+| `vlab-tui` | [`.agents/skills/vlab-tui/SKILL.md`](.agents/skills/vlab-tui/SKILL.md) | Adding or changing dashboards, themes, keymaps, terminal lifecycle, or TUI tests. |
 
 Do not duplicate these procedures in tool-specific files. If a tool cannot
 discover `.agents/skills` natively, configure it to load that directory.

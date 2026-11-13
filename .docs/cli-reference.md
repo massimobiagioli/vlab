@@ -4,6 +4,22 @@ VLab is a single-binary, text-only CLI. Results go to stdout; errors, warnings,
 and prompts go to stderr. Every invocation selects exactly one primary action.
 Run `vlab` or `vlab --help` for the grouped help.
 
+## Group dashboards
+
+| Command | Behavior |
+|---|---|
+| `vlab` | Home dashboard in a terminal; help otherwise. |
+| `vlab labs` | Interactive laboratories dashboard. |
+| `vlab projects` | Interactive projects dashboard for the active laboratory. |
+| `vlab agents` | Interactive agents dashboard for the active laboratory. |
+| `vlab settings` | Interactive settings dashboard. |
+| `--plain` | With a group subcommand, print the plain table/report instead of the dashboard. |
+| `--no-color` | Keep the dashboard but disable color and styling. |
+
+Dashboards use `j/k` or arrows, `h/l` for pages, `Enter` to open, the action
+keys in the bottom bar, `/` to filter, `?` for help, and `q` to quit. Stored and
+model-generated text is sanitized before display. Credentials are never shown.
+
 ## Settings
 
 | Command | Behavior |

@@ -64,8 +64,12 @@ Prefer safe Rust. Justify, isolate, review, and test any necessary unsafe code.
 
 Use `clap` as the CLI framework.
 
-The initial interface is line-oriented, not a full-screen terminal UI.
-A text-only application does not inherently require a TUI framework.
+The interface has two presentation modes (ADR-0038):
+
+- plain, width-aware output for scripts, pipes, `--plain`, and non-TTY use;
+- full-screen, keyboard-driven dashboards for interactive terminals.
+
+`ratatui` with its re-exported `crossterm` backend is the only TUI stack.
 
 Conventions:
 
@@ -79,8 +83,8 @@ Conventions:
 - Never accept secrets through command-line arguments when safer input
   mechanisms are available.
 
-Do not add a full-screen TUI framework unless an explicit interaction
-requirement justifies it.
+The dashboard requirement is recorded in ADR-0038. Do not add another TUI
+framework or a second terminal backend.
 
 ## SQLite Persistence
 

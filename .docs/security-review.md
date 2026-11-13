@@ -3,8 +3,8 @@
 Date: 2026-11-12
 Scope: WP-6 secrets, privacy, redaction, the settings-file credential change
 (ADR-0030), the project clone boundary (ADR-0032), current-project commands
-(ADR-0033), project rosters (ADR-0034), and automatic memories (ADR-0035,
-ADR-0036).
+(ADR-0033), project rosters (ADR-0034), automatic memories (ADR-0035,
+ADR-0036), and interactive dashboards (ADR-0038).
 
 ## Trust boundaries and controls
 
@@ -20,6 +20,8 @@ ADR-0036).
 | Current project → commands | Stale or cross-laboratory project | Typed state reloaded per command; project must resolve in the active laboratory; switching labs clears it | `src/app/context.rs`, `tests/cli_kanban.rs`, `tests/cli_projects.rs` |
 | Project roster → planning | Unauthorized or unknown agent | Membership, archive, and laboratory checks; planning filters to the roster; empty result fails closed | `src/app/projects.rs`, `src/app/requests.rs`, `tests/cli_memories.rs`, `tests/planning_flow.rs` |
 | Automatic memory → prompt | Injected or secret content | Deterministic structural text; bounded model summary; secret check; 20-per-scope and 8 KiB prompt caps | `src/app/memories.rs`, `src/app/requests.rs`, `tests/planning_flow.rs` |
+| Stored/model text → terminal | Escape-sequence injection, misleading UI | All rendered text sanitized; identifiers never silently truncated; color never the only signal | `src/cli/tui/mod.rs`, `tests/cli_dashboards.rs` |
+| Dashboard → destructive action | Accidental or bypassed deletion | Bound confirmation modal; exact target; `Esc` cancels; same app use cases as flags | `src/cli/tui/mod.rs` |
 | Settings file → application | Credential disclosure or malformed config | Strict bounded parser, token validation, content-free errors, `0600`/`0700`, Unix refusal of group/other-readable files | `tests/cli_settings_show.rs`, `src/infra/config.rs` |
 | Application → logs | Payload leakage | Typed events, `Redacted`, content-free diagnostics; marker tests with `RUST_LOG=trace` | `tests/redaction.rs`, `tests/security_secrets.rs` |
 | Application → confirmation | Bypass in scripts | Bound `y/N`, explicit `--yes`, non-TTY exit 4, snapshot re-check | `src/cli/confirm.rs`, `tests/cli_confirmation.rs` |
@@ -75,6 +77,9 @@ real credential values; `settings.yaml` is git-ignored, and the synthetic
   operating-system keyring is deferred.
 - A debug build selects `.data` next to its `target/debug` directory. Debug
   binaries must not be distributed as release artifacts.
+- The dashboard creates the SQLite file even when only the Settings screen is
+  opened; this is a local side effect, not a secret exposure. A later refinement
+  can make database opening lazy for Settings.
 - A clone writes a full checkout under `.workspace/`. The checkout is not
   encrypted or backed up, and project deletion does not remove it yet; users
   must use `make clean-workspace` for an explicit reset.

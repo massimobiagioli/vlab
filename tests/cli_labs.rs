@@ -91,7 +91,7 @@ fn an_empty_listing_is_actionable() {
     outcome.assert_success();
     assert_eq!(
         outcome.stdout,
-        "No laboratories yet.\nHint: Run `vlab --new-lab \"Name\"` to create the first one.\n"
+        "No laboratories yet.\nHint: Run `vlab labs` to create the first one.\n"
     );
 }
 

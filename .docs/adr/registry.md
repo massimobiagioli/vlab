@@ -66,6 +66,7 @@ revises a technical decision must keep it current.
 | ADR-0035 | Remove manual memory commands | Accepted | 2026-11-12 | — | [adr-0035.md](adr-0035.md) |
 | ADR-0036 | Automatic memory generation | Accepted | 2026-11-12 | — | [adr-0036.md](adr-0036.md) |
 | ADR-0037 | Tracked feature plans with task checklists | Accepted | 2026-11-13 | — | [adr-0037.md](adr-0037.md) |
+| ADR-0038 | Interactive colored terminal dashboards | Accepted | 2026-11-13 | ADR-0005 | [adr-0038.md](adr-0038.md) |
 
 ## Supersession map
 
@@ -75,3 +76,4 @@ revises a technical decision must keep it current.
 | ADR-0012 | ADR-0013 |
 | ADR-0013 | ADR-0029 |
 | ADR-0015 | ADR-0030 |
+| ADR-0005 | ADR-0038 |

@@ -18,7 +18,7 @@ use crate::app::projects::{self, CreatedProject, ProjectOverview, ProjectStore};
 use crate::app::requests::{self, PlanningOutcome};
 use crate::app::settings::SettingsReport;
 use crate::app::{AppError, settings, settings_edit};
-use crate::cli::args::Action;
+use crate::cli::args::{Action, DashboardGroup};
 use crate::cli::confirm::{self, ConfirmationRequest};
 use crate::cli::input;
 use crate::cli::prompt::{TerminalEditor, TerminalPrompter};
@@ -334,6 +334,28 @@ pub fn dispatch(
             );
             write_stdout(stdout, &render_archived_agent(&plan))
         }
+        Action::Dashboard {
+            group,
+            plain,
+            no_color,
+        } => {
+            let interactive = !plain && io::stdin().is_terminal() && io::stdout().is_terminal();
+            if interactive {
+                crate::cli::tui::run(group, no_color, run_id)
+            } else {
+                dispatch(
+                    match group {
+                        DashboardGroup::Labs => Action::ListLabs,
+                        DashboardGroup::Projects => Action::ListProjects,
+                        DashboardGroup::Agents => Action::ListAgents,
+                        DashboardGroup::Settings => Action::ShowSettings,
+                    },
+                    stdout,
+                    stderr,
+                    run_id,
+                )
+            }
+        }
         Action::Ask { question, to_agent } => {
             if let Some(raw) = &to_agent {
                 agents::parse_agent_id(raw)?;
@@ -501,7 +523,7 @@ fn render_labs(items: &[LabListItem], active: &ActiveLab) -> String {
     if items.is_empty() {
         return empty_state(
             "No laboratories yet.",
-            "Run `vlab --new-lab \"Name\"` to create the first one.",
+            "Run `vlab labs` to create the first one.",
         );
     }
     let columns = [
@@ -536,7 +558,7 @@ fn render_created_lab(lab: &crate::domain::lab::Lab) -> String {
          Name: {}\n\
          \n\
          A Tech Lead is required before requests can be processed.\n\
-         Run `vlab --new-agent` to add one.\n",
+         Run `vlab agents` to add one.\n",
         lab.id,
         sanitize(lab.name.as_str()),
     )
@@ -603,7 +625,7 @@ fn render_agents(records: &[AgentListItem]) -> String {
     if records.is_empty() {
         return empty_state(
             "No agents in the active laboratory.",
-            "Run `vlab --new-agent` to create one.",
+            "Run `vlab agents` to create one.",
         );
     }
     let columns = [
@@ -818,7 +840,7 @@ fn render_projects(projects: &[ProjectOverview]) -> String {
     if projects.is_empty() {
         return empty_state(
             "No projects in the active laboratory.",
-            "Run `vlab --new-project \"Name\"` to create one.",
+            "Run `vlab projects` to create one.",
         );
     }
     let columns = [

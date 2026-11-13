@@ -87,7 +87,25 @@ a settings file readable by group or other users.
 Overrides are operational facilities for tests and controlled deployments,
 not product commands.
 
+## Dashboards
+
+For interactive use, VLab opens a keyboard-driven dashboard for each group:
+
+```sh
+vlab labs        # laboratories: new, check, set active, delete
+vlab projects    # projects: new, open, assign agent, Kanban, delete
+vlab agents      # agents: detail, new, assign, archive
+vlab settings    # settings: edit, reload, path, credential state
+```
+
+Use `j/k` or arrows to move, `Enter` to open, the action keys shown in the
+bottom bar, `/` to filter, `?` for help, and `q` to quit. `--plain` (or a
+redirected, non-TTY stream) prints the width-aware plain table instead.
+
 ## Local walkthrough
+
+The commands below remain the stable non-interactive surface. The same
+operations are available from the dashboards.
 
 WP-3 delivers laboratories and agent profiles; WP-4 adds projects, the
 read-only Kanban, automatic memories, and safe deletion. Settings must be valid

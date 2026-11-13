@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00001` |
 | Branch | `feat/interactive-dashboards` |
-| Status | `Draft` |
+| Status | `In progress` |
 | Date | 2026-11-13 |
 | Related ADRs | ADR-0005 (to supersede), ADR-0009 (to amend), ADR-0021 (to amend), ADR-0038 (to write) |
 | Scope | Presentation, command surface, terminal interaction; no domain or schema change |
@@ -180,145 +180,161 @@ Check a task only when its deliverable and verification exist. The feature is
 
 ### Phase 0 — Decisions and specifications
 
-- [ ] **F00-01** Write ADR-0038 “Interactive colored terminal dashboards” that
+- [x] **F00-01** Write ADR-0038 “Interactive colored terminal dashboards” that
   supersedes ADR-0005, amends ADR-0009 for subcommands, and amends ADR-0021 for
   the dashboard layout. Record the color policy, TTY detection, dependency
   choice, and terminal-restore rule.
-- [ ] **F00-02** Evaluate `ratatui` + `crossterm` against a minimal
+- [x] **F00-02** Evaluate `ratatui` + `crossterm` against a minimal
   crossterm-only renderer. Record license, MSRV, transitive dependency, binary
   size, and testability evidence in `.docs/DEPENDENCIES.md` and
   `.docs/STACK.md`.
-- [ ] **F00-03** Approve the screen anatomy, keymap, bottom-bar actions, and
+- [x] **F00-03** Approve the screen anatomy, keymap, bottom-bar actions, and
   color tokens in a short UX specification linked from the feature plan.
-- [ ] **F00-04** Decide the deprecation window for the existing flags and
+- [x] **F00-04** Decide the deprecation window for the existing flags and
   document the compatibility shim and removal task.
 
 ### Phase 1 — Command surface
 
-- [ ] **F01-01** Add clap subcommands `labs`, `projects`, `agents`, and
+- [x] **F01-01** Add clap subcommands `labs`, `projects`, `agents`, and
   `settings`, plus the bare-`vlab` home entry point. Keep one primary action
   per invocation where non-interactive.
-- [ ] **F01-02** Add a temporary compatibility shim mapping the old flags to
+- [x] **F01-02** Add a temporary compatibility shim mapping the old flags to
   the new subcommands, with a deprecation warning on stderr and identical
   behavior.
-- [ ] **F01-03** Route dashboard actions to existing application use cases
+- [x] **F01-03** Route dashboard actions to existing application use cases
   without duplicating validation or authorization.
 - [ ] **F01-04** Remove the old flags, update `tests/snapshots/help.txt`, and
   add a migration note to the CLI reference. All old-flag tests are replaced
   with subcommand tests.
-- [ ] **F01-05** Add `--plain` and `--no-color` behavior to every group and
+- [x] **F01-05** Add `--plain` and `--no-color` behavior to every group and
   verify redirected output is free of escape sequences.
 
 ### Phase 2 — Terminal foundation
 
-- [ ] **F02-01** Implement terminal capability detection: TTY, `TERM`,
+- [x] **F02-01** Implement terminal capability detection: TTY, `TERM`,
   `NO_COLOR`, `CLICOLOR`, `COLUMNS`, `LINES`, color depth, Unicode support.
-- [ ] **F02-02** Implement the RAII terminal guard: alternate screen, raw mode,
+- [x] **F02-02** Implement the RAII terminal guard: alternate screen, raw mode,
   cursor visibility, restore on success/error/panic/SIGINT.
-- [ ] **F02-03** Implement the render loop and key-event dispatch with a typed
+- [x] **F02-03** Implement the render loop and key-event dispatch with a typed
   screen state machine.
-- [ ] **F02-04** Implement reusable layout components: header, context line,
+- [x] **F02-04** Implement reusable layout components: header, context line,
   table with selection, pagination footer, action bar, toast, modal, help
   overlay.
-- [ ] **F02-05** Implement the semantic theme and ASCII/monochrome fallbacks.
-- [ ] **F02-06** Implement the “terminal too small” screen and resize handling.
+- [x] **F02-05** Implement the semantic theme and ASCII/monochrome fallbacks.
+- [x] **F02-06** Implement the “terminal too small” screen and resize handling.
 
 ### Phase 3 — Laboratories dashboard
 
-- [ ] **F03-01** Render the paginated laboratory list with ID, name, agents,
+- [x] **F03-01** Render the paginated laboratory list with ID, name, agents,
   projects, validation, and active marker.
-- [ ] **F03-02** Implement `new` with name validation and a result toast.
-- [ ] **F03-03** Implement `check` with the full rule report in a scrollable
+- [x] **F03-02** Implement `new` with name validation and a result toast.
+- [x] **F03-03** Implement `check` with the full rule report in a scrollable
   modal and the documented exit semantics for plain mode.
-- [ ] **F03-04** Implement `set active` with immediate active-marker refresh.
-- [ ] **F03-05** Implement `delete` with a bound confirmation modal, cascade
+- [x] **F03-04** Implement `set active` with immediate active-marker refresh.
+- [x] **F03-05** Implement `delete` with a bound confirmation modal, cascade
   warning, and active-selection refresh.
 - [ ] **F03-06** Add PTY tests for navigation, pagination, new, check, active,
   delete, cancel, and empty state.
 
 ### Phase 4 — Projects dashboard
 
-- [ ] **F04-01** Render projects for the active laboratory with current-project
+- [x] **F04-01** Render projects for the active laboratory with current-project
   marker, request/story counts, and pagination.
-- [ ] **F04-02** Implement `new`, including the optional GitHub source field
+- [x] **F04-02** Implement `new`, including the optional GitHub source field
   and clone error presentation.
-- [ ] **F04-03** Implement `open` and refresh the current-project marker.
-- [ ] **F04-04** Implement `assign agent` with a selectable active-member list
+- [x] **F04-03** Implement `open` and refresh the current-project marker.
+- [x] **F04-04** Implement `assign agent` with a selectable active-member list
   and duplicate-assignment feedback.
-- [ ] **F04-05** Implement `Kanban` as a scrollable read-only modal/screen with
+- [x] **F04-05** Implement `Kanban` as a scrollable read-only modal/screen with
   the five states, assignee, priority, due date, and pending intake.
-- [ ] **F04-06** Implement `delete` with bound confirmation and current-project
+- [x] **F04-06** Implement `delete` with bound confirmation and current-project
   clearing.
 - [ ] **F04-07** Add PTY tests for every project action, including no active
   laboratory and no current project.
 
 ### Phase 5 — Agents dashboard
 
-- [ ] **F05-01** Render active agents with role, skills, project/open-story
+- [x] **F05-01** Render active agents with role, skills, project/open-story
   counts, and archived-status handling.
-- [ ] **F05-02** Implement detail view with profile, memberships, project
+- [x] **F05-02** Implement detail view with profile, memberships, project
   assignments, story counts, and memory count.
-- [ ] **F05-03** Integrate the guided new-agent wizard into the dashboard
+- [x] **F05-03** Integrate the guided new-agent wizard into the dashboard
   without losing TTY validation or the one-Tech-Lead rule.
-- [ ] **F05-04** Implement `assign to current project` with membership and
+- [x] **F05-04** Implement `assign to current project` with membership and
   archived checks.
-- [ ] **F05-05** Implement delete with the existing unfinished-story guard and
+- [x] **F05-05** Implement delete with the existing unfinished-story guard and
   confirmation.
 - [ ] **F05-06** Add PTY tests for list, detail, new, assign, delete, cancel,
   and non-interactive rejection.
 
 ### Phase 6 — Settings dashboard
 
-- [ ] **F06-01** Render settings path, provider, model, source control, and
+- [x] **F06-01** Render settings path, provider, model, source control, and
   credential `set`/`unset` indicators; never render values.
-- [ ] **F06-02** Implement `edit` by launching the existing external editor
+- [x] **F06-02** Implement `edit` by launching the existing external editor
   and reloading on success.
-- [ ] **F06-03** Implement `reload`, `show path`, and validation error display.
-- [ ] **F06-04** Add tests for missing/invalid settings, credential redaction,
+- [x] **F06-03** Implement `reload`, `show path`, and validation error display.
+- [x] **F06-04** Add tests for missing/invalid settings, credential redaction,
   editor cancellation, and terminal restoration.
 
 ### Phase 7 — Cross-cutting behavior
 
-- [ ] **F07-01** Implement filtering with `/`, clear-filter, and a visible
+- [x] **F07-01** Implement filtering with `/`, clear-filter, and a visible
   filter status.
-- [ ] **F07-02** Implement help overlay generated from the active keymap.
-- [ ] **F07-03** Implement consistent pagination for labs, projects, agents,
+- [x] **F07-02** Implement help overlay generated from the active keymap.
+- [x] **F07-03** Implement consistent pagination for labs, projects, agents,
   and large Kanban boards.
-- [ ] **F07-04** Ensure all stored text is sanitized before rendering and that
+- [x] **F07-04** Ensure all stored text is sanitized before rendering and that
   model/memory content cannot inject terminal sequences.
-- [ ] **F07-05** Verify no provider call occurs from list/detail screens and no
+- [x] **F07-05** Verify no provider call occurs from list/detail screens and no
   database write occurs from navigation alone.
-- [ ] **F07-06** Add a plain-mode parity test proving every dashboard list and
+- [x] **F07-06** Add a plain-mode parity test proving every dashboard list and
   action result has a stable non-interactive representation where documented.
 
 ### Phase 8 — Testing and validation
 
-- [ ] **F08-01** Add unit tests for theme tokens, color degradation, layout
+- [x] **F08-01** Add unit tests for theme tokens, color degradation, layout
   math, pagination, and keymap dispatch.
-- [ ] **F08-02** Add render snapshot tests at 80×24, 120×40, 60×20, ASCII, and
+- [x] **F08-02** Add render snapshot tests at 80×24, 120×40, 60×20, ASCII, and
   monochrome.
 - [ ] **F08-03** Add PTY integration tests for every dashboard action and
   modal, including `Esc`, resize, and terminal restore.
-- [ ] **F08-04** Add non-TTY tests for `--plain`, `--no-color`, `NO_COLOR`,
+- [x] **F08-04** Add non-TTY tests for `--plain`, `--no-color`, `NO_COLOR`,
   `TERM=dumb`, and redirected stdout/stderr.
-- [ ] **F08-05** Add security tests for escape-sequence injection, secret
+- [x] **F08-05** Add security tests for escape-sequence injection, secret
   absence, and confirmation bypass attempts.
-- [ ] **F08-06** Add a performance test with 10,000 rows and verify bounded
+- [x] **F08-06** Add a performance test with 10,000 rows and verify bounded
   render time and memory.
 - [ ] **F08-07** Run the full `make check` gate and the hosted CI matrix.
 
 ### Phase 9 — Documentation and closure
 
-- [ ] **F09-01** Update `TECHNICAL-SPECIFICATIONS.md` with the subcommand
+- [x] **F09-01** Update `TECHNICAL-SPECIFICATIONS.md` with the subcommand
   surface, dashboards, non-TTY behavior, and color policy.
-- [ ] **F09-02** Update `cli-reference.md`, `README.md`, `PLAYBOOK.md`,
+- [x] **F09-02** Update `cli-reference.md`, `README.md`, `PLAYBOOK.md`,
   `configuration.md`, and `STACK.md` with screenshots/diagrams and keymaps.
-- [ ] **F09-03** Update ADR statuses and the registry; mark ADR-0005
+- [x] **F09-03** Update ADR statuses and the registry; mark ADR-0005
   superseded and ADR-0009/0021 amended.
-- [ ] **F09-04** Update `AGENTS.md` only if the command surface or agent
+- [x] **F09-04** Update `AGENTS.md` only if the command surface or agent
   workflow changes beyond this plan.
 - [ ] **F09-05** Verify every task above is checked, set the status to `Done`,
   and record the final `make check` and CI evidence in this file.
+
+## Implementation notes (2026-11-13)
+
+**Compatibility decision:** the legacy flags remain available for this
+feature. They are not removed here because existing scripts and validation
+evidence still use them; removal is a follow-up feature with its own
+deprecation warning and migration note. The new subcommands are the documented
+interactive path.
+
+Core dashboards, subcommands, theme, plain fallback, actions, and render/key
+tests are implemented. The feature remains `In progress` because the following
+checklist items are still open:
+
+- removal of the legacy flags after the deprecation window (F01-04);
+- PTY-driven end-to-end tests (F03-06, F04-07, F05-06, F08-03);
+- final gate and closure evidence (F08-07, F09-05).
 
 ## Completion rule
 

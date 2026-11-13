@@ -182,7 +182,17 @@ change the triggering action's outcome.
 vlab --help
 ```
 
-Help shall group commands as follows:
+Help shall present the group subcommands first:
+
+```text
+Commands
+  labs       Open the laboratories dashboard
+  projects   Open the projects dashboard
+  agents     Open the agents dashboard
+  settings   Open the settings dashboard
+```
+
+The compatibility flag surface remains available during the feature migration:
 
 ```text
 Settings
@@ -213,7 +223,10 @@ Agents
   --ask <question> [--to-agent <agent-id>]
 ```
 
-Exactly one primary action shall be accepted per invocation.
+Exactly one primary action or group subcommand shall be accepted per
+invocation. A group subcommand opens a dashboard in a terminal; `--plain` or a
+non-TTY stream selects plain output. A bare `vlab` opens the home dashboard in
+a terminal and prints help otherwise.
 
 `--to-agent` is a modifier and is valid only with `--ask`.
 
@@ -755,12 +768,13 @@ The board shall include:
 
 UX requirements:
 
-- Use aligned columns on wide terminals.
-- Fall back to vertically stacked sections on narrow terminals.
+- Use aligned columns on wide terminals and interactive dashboards in a TTY.
+- Fall back to vertically stacked sections on narrow terminals and plain output.
 - Truncate long titles predictably.
-- Remain understandable without color.
-- Respect `NO_COLOR`.
-- Avoid ANSI decoration when output is redirected.
+- Use semantic color, box drawing, and a persistent action bar in dashboards.
+- Remain understandable without color; never rely on color alone.
+- Respect `NO_COLOR`, `--no-color`, and `TERM=dumb`.
+- Avoid ANSI decoration and cursor control when output is redirected or `--plain` is used.
 - Sanitize untrusted terminal-control sequences.
 - Provide useful empty-state guidance.
 
