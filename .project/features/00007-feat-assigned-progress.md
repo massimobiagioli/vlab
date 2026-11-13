@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00007` |
 | Branch | `feat/assigned-progress` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-13 |
 | Related ADRs | ADR-0047 (assigned initial state), ADR-0023 (story state), ADR-0043 (Kanban), ADR-0034 (roster) |
 | Scope | Story initial state after planning |
@@ -47,18 +47,21 @@ not "an agent process is running".
 
 ## Validation
 
+- Local gate (2026-11-13): `make check` passed (fmt, clippy, tests, audit,
+  deny).
+- Hosted CI run `43435910952` passed on Ubuntu, macOS, and audit/deny.
 - Planning tests for assigned and unassigned stories.
 - Kanban rendering test for an assigned story in the `IN PROGRESS` column.
-- `make check` and hosted CI.
+- Schema v8 data-migration test for existing assigned `TODO` stories.
 
 ## Task checklist
 
-- [ ] **F00-01** Write ADR-0047 and update the registry and `AGENTS.md`.
-- [ ] **F01-01** Add the initial-state policy, bind it in the story insert, and
+- [x] **F00-01** Write ADR-0047 and update the registry and `AGENTS.md`.
+- [x] **F01-01** Add the initial-state policy, bind it in the story insert, and
   add the schema v8 data migration for existing assigned stories.
-- [ ] **F01-02** Update planning, Kanban, migration, and outcome tests for both
+- [x] **F01-02** Update planning, Kanban, migration, and outcome tests for both
   states.
-- [ ] **F02-01** Update the outcome dialog, specification, planning, CLI
+- [x] **F02-01** Update the outcome dialog, specification, planning, CLI
   reference, README, and feature docs.
-- [ ] **F03-01** Run `make check` and fix every failure.
-- [ ] **F04-01** Push, confirm hosted CI is green, and set the status to `Done`.
+- [x] **F03-01** Run `make check` and fix every failure.
+- [x] **F04-01** Push, confirm hosted CI is green, and set the status to `Done`.
