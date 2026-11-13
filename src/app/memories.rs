@@ -367,6 +367,7 @@ mod tests {
             Ok(self.labs.contains(id).then(|| LabOverview {
                 id: id.clone(),
                 name: "L".to_owned(),
+                description: String::new(),
                 agent_count: 0,
                 project_count: 0,
             }))

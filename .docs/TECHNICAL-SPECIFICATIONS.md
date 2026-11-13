@@ -51,6 +51,7 @@ A laboratory is a workspace containing projects and agent memberships.
 A laboratory:
 
 - Has a unique identifier and a non-empty name.
+- May have an optional single-line description of at most 2,000 characters.
 - May initially be empty.
 - May share agents with other laboratories.
 - Must contain at least one agent and exactly one designated Tech Lead to pass validation.

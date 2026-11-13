@@ -134,7 +134,11 @@ fn migration_from_v2_preserves_earlier_data() {
         .unwrap();
     db.migrate_with(&migrator, 2, vlab::obs::RunId::generate())
         .unwrap();
-    db.insert_lab(&lab("a3f91c07", "Preserved")).unwrap();
+    db.execute(
+        "INSERT INTO labs (id, name, created_at, updated_at) \
+         VALUES ('a3f91c07', 'Preserved', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+    )
+    .unwrap();
 
     let report = db.migrate(vlab::obs::RunId::generate()).unwrap();
     assert_eq!(report.to, SUPPORTED_SCHEMA_VERSION);
@@ -207,7 +211,11 @@ fn migration_from_v3_adds_the_github_source_column() {
     db.migrate_with(&migrator, 3, vlab::obs::RunId::generate())
         .unwrap();
     let lab = lab("a3f91c07", "Payments");
-    db.insert_lab(&lab).unwrap();
+    db.execute(
+        "INSERT INTO labs (id, name, created_at, updated_at) \
+         VALUES ('a3f91c07', 'Payments', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+    )
+    .unwrap();
     db.execute(
         "INSERT INTO projects (id, lab_id, name, created_at, updated_at) \
          VALUES ('0b1c2d3e', 'a3f91c07', 'Portal', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",

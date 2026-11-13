@@ -105,6 +105,7 @@ WP-3 adds three tables ([ADR-0019](adr/adr-0019.md)).
 |---|---|---|
 | `id` | 8-character identifier | Primary key and command operand. |
 | `name` | Trimmed user-provided name | Displayed in lists and summaries. |
+| `description` | Optional trimmed user-provided text (max 2,000 chars) | Laboratory context shown in the dashboard. |
 | `created_at`, `updated_at` | RFC 3339 UTC timestamps | Ordering and diagnosis. |
 
 #### `agents`

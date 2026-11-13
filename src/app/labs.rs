@@ -5,7 +5,7 @@ use crate::app::directory::{Directory, LabOverview};
 use crate::app::lab_validation::{self, LabCheck, RuleResult};
 use crate::app::storage::AppStateStore;
 use crate::domain::ids::{LabId, UniqueIdError, unique_short_id};
-use crate::domain::lab::Lab;
+use crate::domain::lab::{Lab, LabDescription};
 use crate::domain::name::Name;
 
 /// One row of `--list-labs`.
@@ -26,7 +26,17 @@ pub struct OpenSummary {
 /// `--new-lab`: validates the name, allocates a collision-free identifier, and
 /// inserts exactly one row. The active laboratory is not changed.
 pub fn create(store: &impl Directory, raw_name: &str) -> Result<Lab, AppError> {
+    create_with_description(store, raw_name, "")
+}
+
+/// Creates a laboratory with an optional description.
+pub fn create_with_description(
+    store: &impl Directory,
+    raw_name: &str,
+    raw_description: &str,
+) -> Result<Lab, AppError> {
     let name = validated_name(raw_name)?;
+    let description = validate_description(raw_description)?;
     let generated = unique_short_id(|candidate| match LabId::parse(candidate) {
         Some(id) => store.lab_exists(&id),
         // Generated identifiers are always well formed; treating an
@@ -35,9 +45,37 @@ pub fn create(store: &impl Directory, raw_name: &str) -> Result<Lab, AppError> {
     })
     .map_err(map_unique)?;
     let id = LabId::parse(&generated).ok_or(AppError::Internal)?;
-    let lab = Lab::new(id, name);
+    let lab = Lab::with_description(id, name, description);
     store.insert_lab(&lab)?;
     Ok(lab)
+}
+
+/// Updates a laboratory's name and optional description.
+pub fn update(
+    store: &impl Directory,
+    raw_id: &str,
+    raw_name: &str,
+    raw_description: &str,
+) -> Result<Lab, AppError> {
+    let id = parse_lab_id(raw_id)?;
+    if store.lab(&id)?.is_none() {
+        return Err(AppError::NotFound {
+            entity: crate::app::EntityKind::Laboratory,
+            id: id.to_string(),
+        });
+    }
+    let name = validated_name(raw_name)?;
+    let description = validate_description(raw_description)?;
+    let lab = Lab::with_description(id, name, description);
+    store.update_lab(&lab)?;
+    Ok(lab)
+}
+
+fn validate_description(raw: &str) -> Result<Option<LabDescription>, AppError> {
+    LabDescription::parse(raw).map_err(|error| AppError::Validation {
+        problem: error.to_string(),
+        hint: "Shorten the description or remove control characters.".to_owned(),
+    })
 }
 
 /// Validates a laboratory name before any storage is opened, so malformed
@@ -138,6 +176,11 @@ mod tests {
                 LabOverview {
                     id: lab.id.clone(),
                     name: lab.name.to_string(),
+                    description: lab
+                        .description
+                        .as_ref()
+                        .map(|d| d.as_str().to_owned())
+                        .unwrap_or_default(),
                     agent_count: 0,
                     project_count: 0,
                 },

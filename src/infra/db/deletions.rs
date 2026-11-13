@@ -394,6 +394,7 @@ async fn agent_plan_on(
                 Some(LabOverview {
                     id: LabId::parse(&id)?,
                     name,
+                    description: String::new(),
                     agent_count: 0,
                     project_count: 0,
                 })

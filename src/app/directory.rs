@@ -9,6 +9,7 @@ use crate::domain::agent::{
     AgentError, AgentProfile, Description, DescriptionError, Role, RoleError,
 };
 use crate::domain::ids::{AgentId, LabId, ProjectId};
+use crate::domain::lab::Lab;
 use crate::domain::name::{Name, NameError};
 use crate::domain::settings::{ModelId, ProviderId, SettingsError};
 use crate::domain::skills::{self, SkillError, SkillTag};
@@ -18,6 +19,7 @@ use crate::domain::skills::{self, SkillError, SkillTag};
 pub struct LabOverview {
     pub id: LabId,
     pub name: String,
+    pub description: String,
     pub agent_count: u64,
     pub project_count: u64,
 }
@@ -113,6 +115,11 @@ pub trait Directory {
     fn lab_exists(&self, id: &LabId) -> Result<bool, StorageError>;
 
     fn lab(&self, id: &LabId) -> Result<Option<LabOverview>, StorageError>;
+
+    /// Replaces the laboratory name and description.
+    fn update_lab(&self, _: &Lab) -> Result<(), StorageError> {
+        Err(StorageError::Operation)
+    }
 
     fn labs(&self) -> Result<Vec<LabOverview>, StorageError>;
 

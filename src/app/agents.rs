@@ -169,6 +169,7 @@ mod tests {
         LabOverview {
             id: LabId::parse(id).unwrap(),
             name: "Lab".to_owned(),
+            description: String::new(),
             agent_count: 1,
             project_count: 0,
         }

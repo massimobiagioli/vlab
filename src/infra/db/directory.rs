@@ -34,6 +34,19 @@ impl Directory for Database {
         })
     }
 
+    fn update_lab(&self, lab: &Lab) -> Result<(), StorageError> {
+        self.block_on(async {
+            let mut connection = self
+                .pool()
+                .acquire()
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))?;
+            crate::infra::db::labs::update(&mut connection, lab)
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))
+        })
+    }
+
     fn lab(&self, id: &LabId) -> Result<Option<LabOverview>, StorageError> {
         self.block_on(async {
             let mut connection = self

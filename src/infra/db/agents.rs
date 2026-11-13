@@ -116,6 +116,7 @@ pub async fn memberships(
             Ok(LabOverview {
                 id,
                 name,
+                description: String::new(),
                 agent_count: u64::try_from(count).unwrap_or(0),
                 project_count: 0,
             })

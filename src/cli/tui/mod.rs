@@ -95,7 +95,12 @@ const HOME_ITEMS: [ScreenItem; 4] = [
 enum Mode {
     Browse,
     Filter(String),
-    LabName(String),
+    LabForm {
+        id: Option<LabId>,
+        name: String,
+        description: String,
+        description_focus: bool,
+    },
     ProjectForm {
         name: String,
         source: String,
@@ -410,24 +415,65 @@ impl App {
                 self.clamp_selection();
                 None
             }
-            Mode::LabName(mut text) => {
+            Mode::LabForm {
+                id,
+                mut name,
+                mut description,
+                description_focus,
+            } => {
                 match key.code {
                     KeyCode::Esc => {}
+                    KeyCode::Tab => {
+                        self.mode = Mode::LabForm {
+                            id,
+                            name,
+                            description,
+                            description_focus: !description_focus,
+                        };
+                    }
                     KeyCode::Enter => {
-                        if !text.trim().is_empty() {
-                            let result = self.create_lab(&text);
+                        if !name.trim().is_empty() {
+                            let result = match &id {
+                                Some(id) => self.update_lab(id, &name, &description),
+                                None => self.create_lab(&name, &description),
+                            };
                             self.apply_result(result);
                         }
                     }
                     KeyCode::Backspace => {
-                        text.pop();
-                        self.mode = Mode::LabName(text);
+                        if description_focus {
+                            description.pop();
+                        } else {
+                            name.pop();
+                        }
+                        self.mode = Mode::LabForm {
+                            id,
+                            name,
+                            description,
+                            description_focus,
+                        };
                     }
                     KeyCode::Char(ch) => {
-                        text.push(ch);
-                        self.mode = Mode::LabName(text);
+                        if description_focus {
+                            description.push(ch);
+                        } else {
+                            name.push(ch);
+                        }
+                        self.mode = Mode::LabForm {
+                            id,
+                            name,
+                            description,
+                            description_focus,
+                        };
                     }
-                    _ => self.mode = Mode::LabName(text),
+                    _ => {
+                        self.mode = Mode::LabForm {
+                            id,
+                            name,
+                            description,
+                            description_focus,
+                        };
+                    }
                 }
                 None
             }
@@ -597,7 +643,14 @@ impl App {
                         self.apply_result(result);
                     }
                     KeyCode::Char('n') => match group {
-                        DashboardGroup::Labs => self.mode = Mode::LabName(String::new()),
+                        DashboardGroup::Labs => {
+                            self.mode = Mode::LabForm {
+                                id: None,
+                                name: String::new(),
+                                description: String::new(),
+                                description_focus: false,
+                            }
+                        }
                         DashboardGroup::Projects => {
                             self.mode = Mode::ProjectForm {
                                 name: String::new(),
@@ -610,6 +663,22 @@ impl App {
                     },
                     KeyCode::Char('c') if group == DashboardGroup::Labs => {
                         let result = self.check_selected_lab();
+                        self.apply_result(result);
+                    }
+                    KeyCode::Char('e') if group == DashboardGroup::Labs => {
+                        if let Some(lab) = self.selected_lab() {
+                            self.mode = Mode::LabForm {
+                                id: Some(lab.lab.id.clone()),
+                                name: lab.lab.name.clone(),
+                                description: lab.lab.description.clone(),
+                                description_focus: false,
+                            };
+                        } else {
+                            self.status = Some("Select a laboratory to edit.".to_owned());
+                        }
+                    }
+                    KeyCode::Char('p') if group == DashboardGroup::Labs => {
+                        let result = self.open_projects_for_selected_lab();
                         self.apply_result(result);
                     }
                     KeyCode::Char('a') => match group {
@@ -893,8 +962,8 @@ impl App {
         Ok(())
     }
 
-    fn create_lab(&mut self, name: &str) -> Result<(), AppError> {
-        let lab = labs::create(&self.db, name)?;
+    fn create_lab(&mut self, name: &str, description: &str) -> Result<(), AppError> {
+        let lab = labs::create_with_description(&self.db, name, description)?;
         if let Some(memory) = memories::remember(
             &self.db,
             &self.db,
@@ -919,6 +988,49 @@ impl App {
         );
         self.reload();
         self.status = Some(format!("Laboratory {} created.", lab.id));
+        Ok(())
+    }
+
+    fn update_lab(&mut self, id: &LabId, name: &str, description: &str) -> Result<(), AppError> {
+        let lab = labs::update(&self.db, id.as_str(), name, description)?;
+        record_event(
+            &mut self.db,
+            self.run_id,
+            EventKind::LabUpdated,
+            EntityType::Laboratory,
+            lab.id.as_str(),
+        );
+        self.reload();
+        self.status = Some(format!("Laboratory {} updated.", lab.id));
+        Ok(())
+    }
+
+    fn open_projects_for_selected_lab(&mut self) -> Result<(), AppError> {
+        let id = self
+            .selected_lab()
+            .map(|lab| lab.lab.id.clone())
+            .ok_or_else(|| AppError::Precondition {
+                problem: "no laboratory is selected.".to_owned(),
+                hint: "Move the selection or create a laboratory.".to_owned(),
+            })?;
+        let summary = labs::open(&self.db, &self.db, id.as_str())?;
+        context::clear_active_project(&self.db)?;
+        record_event(
+            &mut self.db,
+            self.run_id,
+            EventKind::LabOpened,
+            EntityType::Laboratory,
+            summary.lab.id.as_str(),
+        );
+        self.screen = Screen::Group(DashboardGroup::Projects);
+        self.selected = 0;
+        self.page = 0;
+        self.filter.clear();
+        self.status = Some(format!(
+            "Active laboratory: {} — {}",
+            summary.lab.id, summary.lab.name
+        ));
+        self.reload();
         Ok(())
     }
 
@@ -1264,7 +1376,7 @@ impl App {
         match group {
             DashboardGroup::Labs => {
                 lines.push(table_header(
-                    &["ID", "NAME", "AGENTS", "PROJECTS", "VALID", "ACTIVE"],
+                    &["ID", "NAME", "DESCRIPTION", "AGENTS", "PROJECTS", "ACTIVE"],
                     &widths,
                     self.theme,
                 ));
@@ -1278,10 +1390,18 @@ impl App {
                         lines.push(table_row(
                             &[
                                 item.lab.id.to_string(),
-                                item.lab.name.clone(),
+                                if item.check.valid() {
+                                    item.lab.name.clone()
+                                } else {
+                                    format!("! {}", item.lab.name)
+                                },
+                                if item.lab.description.is_empty() {
+                                    "—".to_owned()
+                                } else {
+                                    item.lab.description.clone()
+                                },
                                 item.lab.agent_count.to_string(),
                                 item.lab.project_count.to_string(),
-                                if item.check.valid() { "ok" } else { "fail" }.to_owned(),
                                 if active { "*" } else { "" }.to_owned(),
                             ],
                             &widths,
@@ -1384,11 +1504,26 @@ impl App {
                     clean(text)
                 )],
             ),
-            Mode::LabName(text) => (
-                "New laboratory".to_owned(),
+            Mode::LabForm {
+                id,
+                name,
+                description,
+                description_focus,
+            } => (
+                if id.is_some() {
+                    "Edit laboratory".to_owned()
+                } else {
+                    "New laboratory".to_owned()
+                },
                 vec![format!(
-                    "Name: {}\n\nEnter create · Esc cancel",
-                    clean(text)
+                    "Name: {}\nDescription (optional): {}\n\nTab switch · Enter save · Esc cancel{}",
+                    clean(name),
+                    clean(description),
+                    if *description_focus {
+                        "  [description]"
+                    } else {
+                        "  [name]"
+                    }
                 )],
             ),
             Mode::ProjectForm {
@@ -1614,7 +1749,9 @@ fn action_items(group: DashboardGroup) -> Vec<(&'static str, &'static str)> {
         DashboardGroup::Labs => vec![
             ("[n]", "New"),
             ("[c]", "Check"),
+            ("[e]", "Edit"),
             ("[a]", "Set active"),
+            ("[p]", "Projects"),
             ("[d]", "Delete"),
             ("[/]", "Filter"),
             ("[?]", "Help"),
@@ -1699,8 +1836,11 @@ fn table_widths(group: DashboardGroup, available: usize) -> Vec<usize> {
     const GAP: usize = 2;
     match group {
         DashboardGroup::Labs => {
-            let fixed = 8 + 6 + 8 + 5 + 6 + GAP * 5;
-            vec![8, available.saturating_sub(fixed).clamp(12, 45), 6, 8, 5, 6]
+            let fixed = 8 + 5 + 6 + 6 + GAP * 5;
+            let text = available.saturating_sub(fixed);
+            let name = (text * 2 / 5).clamp(10, 30);
+            let description = text.saturating_sub(name).max(10);
+            vec![8, name, description, 5, 6, 6]
         }
         DashboardGroup::Projects => {
             let fixed = 8 + 5 + 5 + 5 + 8 + GAP * 5;
@@ -2027,7 +2167,7 @@ mod tests {
     fn keyboard_state_machine_opens_forms_and_quits() {
         let (mut app, _dir) = fixture(Screen::Group(DashboardGroup::Labs));
         app.handle_key(key(KeyCode::Char('n')));
-        assert!(matches!(app.mode, Mode::LabName(_)));
+        assert!(matches!(app.mode, Mode::LabForm { .. }));
         app.mode = Mode::Browse;
         app.handle_key(key(KeyCode::Char('?')));
         assert!(matches!(app.mode, Mode::Help));
@@ -2082,6 +2222,7 @@ mod tests {
         let lab = LabOverview {
             id,
             name: format!("Lab {index}"),
+            description: String::new(),
             agent_count: 0,
             project_count: 0,
         };

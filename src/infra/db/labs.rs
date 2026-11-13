@@ -8,13 +8,13 @@ use crate::domain::ids::LabId;
 use crate::domain::lab::Lab;
 
 const INSERT_LAB: &str = "\
-INSERT INTO labs (id, name, created_at, updated_at) \
-VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))";
+INSERT INTO labs (id, name, description, created_at, updated_at) \
+VALUES (?1, ?2, ?3, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))";
 
 const LAB_EXISTS: &str = "SELECT 1 FROM labs WHERE id = ?1";
 
 const SELECT_LAB: &str = "\
-SELECT l.id, l.name, (\
+SELECT l.id, l.name, l.description, (\
     SELECT count(*) FROM lab_memberships m \
     JOIN agents a ON a.id = m.agent_id \
     WHERE m.lab_id = l.id AND a.archived_at IS NULL\
@@ -22,7 +22,7 @@ SELECT l.id, l.name, (\
 FROM labs l WHERE l.id = ?1";
 
 const SELECT_LABS: &str = "\
-SELECT l.id, l.name, (\
+SELECT l.id, l.name, l.description, (\
     SELECT count(*) FROM lab_memberships m \
     JOIN agents a ON a.id = m.agent_id \
     WHERE m.lab_id = l.id AND a.archived_at IS NULL\
@@ -41,6 +41,12 @@ pub async fn insert(connection: &mut SqliteConnection, lab: &Lab) -> Result<(), 
     sqlx::query(INSERT_LAB)
         .bind(lab.id.as_str())
         .bind(lab.name.as_str())
+        .bind(
+            lab.description
+                .as_ref()
+                .map(|description| description.as_str())
+                .unwrap_or(""),
+        )
         .execute(connection)
         .await
         .map(|_| ())
@@ -58,7 +64,7 @@ pub async fn get(
     connection: &mut SqliteConnection,
     id: &LabId,
 ) -> Result<Option<LabOverview>, sqlx::Error> {
-    let row: Option<(String, String, i64, i64)> = sqlx::query_as(SELECT_LAB)
+    let row: Option<(String, String, String, i64, i64)> = sqlx::query_as(SELECT_LAB)
         .bind(id.as_str())
         .fetch_optional(connection)
         .await?;
@@ -66,7 +72,7 @@ pub async fn get(
 }
 
 pub async fn list(connection: &mut SqliteConnection) -> Result<Vec<LabOverview>, sqlx::Error> {
-    let rows: Vec<(String, String, i64, i64)> =
+    let rows: Vec<(String, String, String, i64, i64)> =
         sqlx::query_as(SELECT_LABS).fetch_all(connection).await?;
     rows.into_iter().map(map_overview).collect()
 }
@@ -83,13 +89,32 @@ pub async fn agents(
 }
 
 fn map_overview(
-    (id, name, agent_count, project_count): (String, String, i64, i64),
+    (id, name, description, agent_count, project_count): (String, String, String, i64, i64),
 ) -> Result<LabOverview, sqlx::Error> {
     let id = LabId::parse(&id).ok_or(sqlx::Error::RowNotFound)?;
     Ok(LabOverview {
         id,
         name,
+        description,
         agent_count: u64::try_from(agent_count).unwrap_or(0),
         project_count: u64::try_from(project_count).unwrap_or(0),
     })
+}
+
+pub async fn update(connection: &mut SqliteConnection, lab: &Lab) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE labs SET name = ?2, description = ?3, \
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?1",
+    )
+    .bind(lab.id.as_str())
+    .bind(lab.name.as_str())
+    .bind(
+        lab.description
+            .as_ref()
+            .map(|description| description.as_str())
+            .unwrap_or(""),
+    )
+    .execute(connection)
+    .await
+    .map(|_| ())
 }

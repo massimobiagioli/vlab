@@ -9,7 +9,7 @@ use vlab::app::projects::ProjectStore;
 use vlab::app::storage::StorageError;
 use vlab::domain::agent::{AgentProfile, Description, Role};
 use vlab::domain::ids::{AgentId, LabId, ProjectId};
-use vlab::domain::lab::Lab;
+use vlab::domain::lab::{Lab, LabDescription};
 use vlab::domain::name::Name;
 use vlab::domain::project::Project;
 use vlab::domain::settings::{ModelId, ProviderId, Settings};
@@ -216,4 +216,15 @@ fn an_agents_projects_include_the_project_roster() {
         db.agent_project_names(&profile.id).unwrap(),
         vec![(project, "Portal".to_owned())]
     );
+}
+
+#[test]
+fn a_laboratory_description_can_be_created_and_updated() {
+    let (_dir, db) = migrated();
+    let mut lab = lab("Payments");
+    db.insert_lab(&lab).unwrap();
+    assert_eq!(db.labs().unwrap()[0].description, "");
+    lab.description = LabDescription::parse("Platform team").unwrap();
+    db.update_lab(&lab).unwrap();
+    assert_eq!(db.labs().unwrap()[0].description, "Platform team");
 }

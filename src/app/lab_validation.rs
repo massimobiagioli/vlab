@@ -181,6 +181,7 @@ mod tests {
         LabOverview {
             id: LabId::parse("a3f91c07").unwrap(),
             name: "Payments".to_owned(),
+            description: String::new(),
             agent_count: 0,
             project_count: 0,
         }

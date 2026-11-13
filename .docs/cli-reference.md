@@ -12,6 +12,11 @@ Run `vlab` or `vlab --help` for the grouped help.
 | `-h`, `--help` | Print help. |
 | `-V`, `--version` | Print the version. |
 
+The Laboratories dashboard shows ID, name, description, agents, projects, and
+the active marker. Its actions are New, Check, Edit, Set active, Projects,
+Delete, Filter, Help, Back, and Quit. **Projects** activates the selected
+laboratory and opens its Projects dashboard.
+
 The home dashboard lists Laboratories, Projects, Agents, and Settings. Use
 `Enter` to open the selected group, `1`–`4` to jump directly, `Esc` to return
 home, and `q` to quit. Inside a group use `j/k` or arrows, `h/l` for pages, the
@@ -37,7 +42,7 @@ window but is hidden from `--help`. New work uses the group subcommands.
 
 | Command | Behavior |
 |---|---|
-| `--list-labs` | ID, name, agent count, project count, validation result, active marker. |
+| `--list-labs` | ID, name, description, agent count, project count, validation result, active marker. |
 | `--new-lab <name>` | Create a laboratory; print its ID. The active selection is unchanged. |
 | `--open-lab <lab-id>` | Select the active laboratory; show warnings for an incomplete laboratory. |
 | `--check-lab <lab-id>` | One line per structural rule; exit 4 if invalid. |

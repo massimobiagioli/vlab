@@ -10,6 +10,7 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use vlab::app::context::save_active_lab;
 use vlab::app::directory::Directory;
 use vlab::app::projects::ProjectStore;
+use vlab::app::storage::AppStateStore;
 use vlab::domain::agent::{AgentProfile, Description, Role};
 use vlab::domain::ids::{AgentId, LabId, ProjectId};
 use vlab::domain::lab::Lab;
@@ -184,6 +185,43 @@ fn the_labs_dashboard_paginates_and_cancels_a_new_form() {
     let plain = sandbox.run(&["--list-labs"]);
     plain.assert_success();
     assert!(plain.stdout.contains("No laboratories"), "{}", plain.stdout);
+}
+
+#[test]
+fn the_labs_dashboard_edits_the_description_and_opens_projects() {
+    let sandbox = Sandbox::new();
+    let (lab, _, _) = seed(&sandbox);
+    let (output, success) = run_tui(
+        &sandbox,
+        &[],
+        &[
+            ("1", 300),
+            ("e", 200),
+            ("\t", 200),
+            ("Platform team", 200),
+            ("\r", 400),
+            ("p", 400),
+            ("q", 200),
+        ],
+    );
+    assert!(success, "dashboard did not exit cleanly: {output:?}");
+    assert_restored(&output);
+    assert!(output.contains("Projects"), "{output:?}");
+    let db = sandbox.seed_database();
+    let description: String = db.block_on(async {
+        sqlx::query_scalar("SELECT description FROM labs WHERE id = ?1")
+            .bind(lab.as_str())
+            .fetch_one(db.pool())
+            .await
+            .unwrap()
+    });
+    assert_eq!(description, "Platform team");
+    assert_eq!(
+        db.get(vlab::app::storage::AppStateKey::ActiveLabId)
+            .unwrap()
+            .as_deref(),
+        Some(lab.as_str())
+    );
 }
 
 #[test]

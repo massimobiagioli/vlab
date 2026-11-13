@@ -14,6 +14,7 @@ use super::{ActionId, RunId};
 pub enum EventKind {
     MigrationApplied,
     LabCreated,
+    LabUpdated,
     LabOpened,
     LabDeleted,
     AgentCreated,
@@ -39,6 +40,7 @@ impl EventKind {
         match self {
             Self::MigrationApplied => "migration_applied",
             Self::LabCreated => "lab_created",
+            Self::LabUpdated => "lab_updated",
             Self::LabOpened => "lab_opened",
             Self::LabDeleted => "lab_deleted",
             Self::AgentCreated => "agent_created",

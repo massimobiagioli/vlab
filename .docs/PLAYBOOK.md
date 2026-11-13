@@ -72,9 +72,10 @@ Interactive route:
 vlab
 ```
 
-Choose **Laboratories**, then use `n` to create, `a` to set active, `c` to
-check, and `Esc` to return to the home dashboard. The non-interactive commands
-are:
+Choose **Laboratories**, then use `n` to create (Name and optional
+Description), `e` to edit, `a` to set active, `c` to check, and `p` to open the
+active laboratory's projects. `Esc` returns to the home dashboard. The
+non-interactive commands are:
 
 ```sh
 vlab --new-lab "Payments Platform"

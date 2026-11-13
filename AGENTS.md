@@ -91,6 +91,7 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0038.md`](.docs/adr/adr-0038.md) | Interactive colored terminal dashboards. |
 | [`.docs/adr/adr-0039.md`](.docs/adr/adr-0039.md) | Dashboard-only entry point. |
 | [`.docs/adr/adr-0040.md`](.docs/adr/adr-0040.md) | Track the entire `.project` directory. |
+| [`.docs/adr/adr-0041.md`](.docs/adr/adr-0041.md) | Optional laboratory description and dashboard actions. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
 | [`.project/features/`](.project/features/) | Tracked feature plans with task checklists (ADR-0037). |
 

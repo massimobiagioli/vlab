@@ -22,8 +22,9 @@ Event, Interaction: execution metadata, not domain ownership edges.
 
 ### Laboratory
 
-A named workspace. It owns projects and has agent memberships. It has at most
-one member with the `lead` role (the Tech Lead). A laboratory may initially be
+A named workspace. It owns projects and has agent memberships. It has an
+optional single-line description and at most one member with the `lead` role
+(the Tech Lead). A laboratory may initially be
 empty; structural validation runs separately and never blocks creation.
 
 ### Agent

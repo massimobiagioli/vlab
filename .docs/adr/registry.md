@@ -69,6 +69,7 @@ revises a technical decision must keep it current.
 | ADR-0038 | Interactive colored terminal dashboards | Accepted | 2026-11-13 | ADR-0005 | [adr-0038.md](adr-0038.md) |
 | ADR-0039 | Dashboard-only entry point | Accepted | 2026-11-13 | — | [adr-0039.md](adr-0039.md) |
 | ADR-0040 | Track the entire .project directory | Accepted | 2026-11-13 | — | [adr-0040.md](adr-0040.md) |
+| ADR-0041 | Optional laboratory description and dashboard actions | Accepted | 2026-11-13 | — | [adr-0041.md](adr-0041.md) |
 
 ## Supersession map
 
