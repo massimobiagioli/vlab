@@ -90,6 +90,7 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0037.md`](.docs/adr/adr-0037.md) | Tracked feature plans with task checklists. |
 | [`.docs/adr/adr-0038.md`](.docs/adr/adr-0038.md) | Interactive colored terminal dashboards. |
 | [`.docs/adr/adr-0039.md`](.docs/adr/adr-0039.md) | Dashboard-only entry point. |
+| [`.docs/adr/adr-0040.md`](.docs/adr/adr-0040.md) | Track the entire `.project` directory. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
 | [`.project/features/`](.project/features/) | Tracked feature plans with task checklists (ADR-0037). |
 
@@ -276,8 +277,7 @@ Makefile                        developer tasks; `make` lists them (ADR-0014)
 .docs/                          authoritative project documentation
 .docs/adr/                      architecture decisions and registry
 .agents/skills/                 reusable, tool-portable procedures
-.project/IMPLEMENTATION-PLAN.md ordered implementation plan
-.project/features/              tracked feature plans and task checklists (ADR-0037)
+.project/                        tracked planning, feature plans, and delivery notes (ADR-0040)
 .data/settings.example.yaml     tracked settings placeholder; other data ignored
 Cargo.toml, Cargo.lock          crate manifest and committed lockfile
 rust-toolchain.toml             pinned toolchain (ADR-0008)
@@ -298,15 +298,12 @@ the accepted ADRs and `.docs/STACK.md`.
 
 ### Version-control boundary
 
-Everything listed above is tracked. The implementation plan and feature plans
-sequence work but must not introduce rules or decisions that are not recorded
-in `.docs/` or an accepted ADR. Local scratch directories, including `.tmp/`
-and `.project/` content other than the implementation plan and
-`.project/features/*.md`, are outside version control. They are not
-authoritative sources and must not be referenced by tracked guidance, skills,
-ADRs, or plans. The development data folder `.data/`, written by `make run`, is outside
-version control except for the tracked `settings.example.yaml` placeholder
-(ADR-0014, ADR-0030).
+Everything listed above is tracked. The implementation plan, feature plans, and
+other `.project/` artifacts sequence work but must not introduce rules or
+decisions that are not recorded in `.docs/` or an accepted ADR. Local scratch
+belongs under `.tmp/` and is outside version control. The development data
+folder `.data/`, written by `make run`, is outside version control except for
+the tracked `settings.example.yaml` placeholder (ADR-0014, ADR-0030).
 
 ---
 
@@ -331,5 +328,5 @@ A change is complete only when:
 
 Update `AGENTS.md` when the documentation set, skill set, entry-point rules, or
 tracked repository layout changes. Such a change is a technical decision
-governed by ADR-0007 and ADR-0037; if it alters the governance model itself,
+governed by ADR-0007, ADR-0037, and ADR-0040; if it alters the governance model itself,
 supersede ADR-0007 with a new ADR and update the registry.

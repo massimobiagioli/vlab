@@ -12,13 +12,8 @@
 .env
 .env.*
 
-# Local scratch and planning (ADR-0007, ADR-0037): the implementation plan and
-# feature plans are tracked; other .project content stays local.
+# Local scratch. The whole .project/ directory is tracked (ADR-0040).
 /.tmp/
-/.project/*
-!/.project/IMPLEMENTATION-PLAN.md
-!/.project/features/
-!/.project/features/*.md
 
 # Tool-local state
 /.claude/
