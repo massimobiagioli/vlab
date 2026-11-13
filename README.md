@@ -99,7 +99,7 @@ Choose Laboratories, Projects, Agents, or Settings with the arrow keys and
 `Enter` (or `1`–`4`). Inside a group use `j/k` or arrows to move, the action
 keys shown in the bottom bar, `/` to filter, `?` for help, `Esc` to return home,
 and `q` to quit. The Laboratories dashboard shows the optional description and
-provides Edit and Projects actions; New/Edit use a Name + Description form. In a non-TTY stream VLab prints help instead of blocking.
+provides Edit and Projects actions; New/Edit open a bordered form with a visible cursor and Tab/arrow field navigation. In a non-TTY stream VLab prints help instead of blocking.
 
 ## Local walkthrough
 

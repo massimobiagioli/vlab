@@ -72,9 +72,9 @@ Interactive route:
 vlab
 ```
 
-Choose **Laboratories**, then use `n` to create (Name and optional
-Description), `e` to edit, `a` to set active, `c` to check, and `p` to open the
-active laboratory's projects. `Esc` returns to the home dashboard. The
+Choose **Laboratories**, then use `n` to create (a bordered Name + optional
+Description form), `e` to edit, `a` to set active, `c` to check, and `p` to open
+the active laboratory's projects. `Esc` returns to the home dashboard. The
 non-interactive commands are:
 
 ```sh

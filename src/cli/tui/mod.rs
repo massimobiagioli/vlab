@@ -3,7 +3,7 @@
 //! The dashboards are a presentation layer over the existing application use
 //! cases. They never add provider calls or bypass confirmation rules.
 
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -92,20 +92,169 @@ const HOME_ITEMS: [ScreenItem; 4] = [
 ];
 
 #[derive(Debug, Clone)]
+struct Form {
+    kind: FormKind,
+    fields: Vec<FormField>,
+    focus: usize,
+}
+
+#[derive(Debug, Clone)]
+enum FormKind {
+    LabNew,
+    LabEdit(LabId),
+    ProjectNew,
+}
+
+#[derive(Debug, Clone)]
+struct FormField {
+    label: &'static str,
+    value: String,
+    cursor: usize,
+}
+
+impl FormField {
+    fn new(label: &'static str, value: impl Into<String>) -> Self {
+        let value = value.into();
+        let cursor = value.chars().count();
+        Self {
+            label,
+            value,
+            cursor,
+        }
+    }
+
+    fn insert(&mut self, ch: char) {
+        if ch.is_control() {
+            return;
+        }
+        let byte = self
+            .value
+            .char_indices()
+            .nth(self.cursor)
+            .map(|(index, _)| index)
+            .unwrap_or(self.value.len());
+        self.value.insert(byte, ch);
+        self.cursor += 1;
+    }
+
+    fn backspace(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        let byte = self
+            .value
+            .char_indices()
+            .nth(self.cursor - 1)
+            .map(|(index, _)| index)
+            .unwrap_or(self.value.len());
+        self.value.remove(byte);
+        self.cursor -= 1;
+    }
+
+    fn delete(&mut self) {
+        if self.cursor >= self.value.chars().count() {
+            return;
+        }
+        let byte = self
+            .value
+            .char_indices()
+            .nth(self.cursor)
+            .map(|(index, _)| index)
+            .unwrap_or(self.value.len());
+        self.value.remove(byte);
+    }
+
+    fn left(&mut self) {
+        self.cursor = self.cursor.saturating_sub(1);
+    }
+
+    fn right(&mut self) {
+        self.cursor = (self.cursor + 1).min(self.value.chars().count());
+    }
+
+    fn home(&mut self) {
+        self.cursor = 0;
+    }
+
+    fn end(&mut self) {
+        self.cursor = self.value.chars().count();
+    }
+}
+
+impl Form {
+    fn lab_new() -> Self {
+        Self {
+            kind: FormKind::LabNew,
+            fields: vec![
+                FormField::new("Name", ""),
+                FormField::new("Description (optional)", ""),
+            ],
+            focus: 0,
+        }
+    }
+
+    fn lab_edit(id: LabId, name: String, description: String) -> Self {
+        Self {
+            kind: FormKind::LabEdit(id),
+            fields: vec![
+                FormField::new("Name", name),
+                FormField::new("Description (optional)", description),
+            ],
+            focus: 0,
+        }
+    }
+
+    fn project_new() -> Self {
+        Self {
+            kind: FormKind::ProjectNew,
+            fields: vec![
+                FormField::new("Name", ""),
+                FormField::new("GitHub source (optional)", ""),
+            ],
+            focus: 0,
+        }
+    }
+
+    fn next(&mut self) {
+        self.focus = (self.focus + 1) % self.fields.len();
+    }
+
+    fn previous_wrapped(&mut self) {
+        self.focus = if self.focus == 0 {
+            self.fields.len() - 1
+        } else {
+            self.focus - 1
+        };
+    }
+
+    fn current(&mut self) -> &mut FormField {
+        &mut self.fields[self.focus]
+    }
+
+    fn title(&self) -> String {
+        match &self.kind {
+            FormKind::LabNew => "New laboratory".to_owned(),
+            FormKind::LabEdit(id) => format!("Edit laboratory {id}"),
+            FormKind::ProjectNew => "New project".to_owned(),
+        }
+    }
+
+    fn values(&self) -> (String, String) {
+        (
+            self.fields[0].value.clone(),
+            self.fields
+                .get(1)
+                .map(|field| field.value.clone())
+                .unwrap_or_default(),
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
 enum Mode {
     Browse,
     Filter(String),
-    LabForm {
-        id: Option<LabId>,
-        name: String,
-        description: String,
-        description_focus: bool,
-    },
-    ProjectForm {
-        name: String,
-        source: String,
-        source_focus: bool,
-    },
+    Form(Form),
     Confirm(ConfirmAction),
     Message {
         title: String,
@@ -415,119 +564,50 @@ impl App {
                 self.clamp_selection();
                 None
             }
-            Mode::LabForm {
-                id,
-                mut name,
-                mut description,
-                description_focus,
-            } => {
+            Mode::Form(mut form) => {
                 match key.code {
                     KeyCode::Esc => {}
-                    KeyCode::Tab => {
-                        self.mode = Mode::LabForm {
-                            id,
-                            name,
-                            description,
-                            description_focus: !description_focus,
-                        };
+                    KeyCode::Tab | KeyCode::Down => {
+                        form.next();
+                        self.mode = Mode::Form(form);
+                    }
+                    KeyCode::BackTab | KeyCode::Up => {
+                        form.previous_wrapped();
+                        self.mode = Mode::Form(form);
                     }
                     KeyCode::Enter => {
-                        if !name.trim().is_empty() {
-                            let result = match &id {
-                                Some(id) => self.update_lab(id, &name, &description),
-                                None => self.create_lab(&name, &description),
-                            };
-                            self.apply_result(result);
-                        }
+                        let result = self.submit_form(&form);
+                        self.apply_result(result);
                     }
                     KeyCode::Backspace => {
-                        if description_focus {
-                            description.pop();
-                        } else {
-                            name.pop();
-                        }
-                        self.mode = Mode::LabForm {
-                            id,
-                            name,
-                            description,
-                            description_focus,
-                        };
+                        form.current().backspace();
+                        self.mode = Mode::Form(form);
                     }
-                    KeyCode::Char(ch) => {
-                        if description_focus {
-                            description.push(ch);
-                        } else {
-                            name.push(ch);
-                        }
-                        self.mode = Mode::LabForm {
-                            id,
-                            name,
-                            description,
-                            description_focus,
-                        };
+                    KeyCode::Delete => {
+                        form.current().delete();
+                        self.mode = Mode::Form(form);
                     }
-                    _ => {
-                        self.mode = Mode::LabForm {
-                            id,
-                            name,
-                            description,
-                            description_focus,
-                        };
+                    KeyCode::Left => {
+                        form.current().left();
+                        self.mode = Mode::Form(form);
                     }
-                }
-                None
-            }
-            Mode::ProjectForm {
-                mut name,
-                mut source,
-                source_focus,
-            } => {
-                match key.code {
-                    KeyCode::Esc => {}
-                    KeyCode::Tab => {
-                        self.mode = Mode::ProjectForm {
-                            name,
-                            source,
-                            source_focus: !source_focus,
-                        };
+                    KeyCode::Right => {
+                        form.current().right();
+                        self.mode = Mode::Form(form);
                     }
-                    KeyCode::Enter => {
-                        if !name.trim().is_empty() {
-                            let result = self.create_project(&name, &source);
-                            self.apply_result(result);
-                        }
+                    KeyCode::Home => {
+                        form.current().home();
+                        self.mode = Mode::Form(form);
                     }
-                    KeyCode::Backspace => {
-                        if source_focus {
-                            source.pop();
-                        } else {
-                            name.pop();
-                        }
-                        self.mode = Mode::ProjectForm {
-                            name,
-                            source,
-                            source_focus,
-                        };
+                    KeyCode::End => {
+                        form.current().end();
+                        self.mode = Mode::Form(form);
                     }
-                    KeyCode::Char(ch) => {
-                        if source_focus {
-                            source.push(ch);
-                        } else {
-                            name.push(ch);
-                        }
-                        self.mode = Mode::ProjectForm {
-                            name,
-                            source,
-                            source_focus,
-                        };
+                    KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        form.current().insert(ch);
+                        self.mode = Mode::Form(form);
                     }
-                    _ => {
-                        self.mode = Mode::ProjectForm {
-                            name,
-                            source,
-                            source_focus,
-                        };
-                    }
+                    _ => self.mode = Mode::Form(form),
                 }
                 None
             }
@@ -643,21 +723,8 @@ impl App {
                         self.apply_result(result);
                     }
                     KeyCode::Char('n') => match group {
-                        DashboardGroup::Labs => {
-                            self.mode = Mode::LabForm {
-                                id: None,
-                                name: String::new(),
-                                description: String::new(),
-                                description_focus: false,
-                            }
-                        }
-                        DashboardGroup::Projects => {
-                            self.mode = Mode::ProjectForm {
-                                name: String::new(),
-                                source: String::new(),
-                                source_focus: false,
-                            }
-                        }
+                        DashboardGroup::Labs => self.mode = Mode::Form(Form::lab_new()),
+                        DashboardGroup::Projects => self.mode = Mode::Form(Form::project_new()),
                         DashboardGroup::Agents => return Some(Deferred::NewAgent),
                         DashboardGroup::Settings => return Some(Deferred::EditSettings),
                     },
@@ -667,12 +734,11 @@ impl App {
                     }
                     KeyCode::Char('e') if group == DashboardGroup::Labs => {
                         if let Some(lab) = self.selected_lab() {
-                            self.mode = Mode::LabForm {
-                                id: Some(lab.lab.id.clone()),
-                                name: lab.lab.name.clone(),
-                                description: lab.lab.description.clone(),
-                                description_focus: false,
-                            };
+                            self.mode = Mode::Form(Form::lab_edit(
+                                lab.lab.id.clone(),
+                                lab.lab.name.clone(),
+                                lab.lab.description.clone(),
+                            ));
                         } else {
                             self.status = Some("Select a laboratory to edit.".to_owned());
                         }
@@ -1163,6 +1229,15 @@ impl App {
         }
     }
 
+    fn submit_form(&mut self, form: &Form) -> Result<(), AppError> {
+        let (name, value) = form.values();
+        match &form.kind {
+            FormKind::LabNew => self.create_lab(&name, &value),
+            FormKind::LabEdit(id) => self.update_lab(id, &name, &value),
+            FormKind::ProjectNew => self.create_project(&name, &value),
+        }
+    }
+
     fn apply_result(&mut self, result: Result<(), AppError>) {
         match result {
             Ok(()) => {
@@ -1265,8 +1340,10 @@ impl App {
             Screen::Home => self.render_home(frame, area),
             Screen::Group(group) => self.render_group(frame, area, group),
         }
-        if !matches!(self.mode, Mode::Browse) {
-            self.render_modal(frame, area);
+        match &self.mode {
+            Mode::Browse => {}
+            Mode::Form(form) => self.render_form(frame, area, form),
+            _ => self.render_modal(frame, area),
         }
     }
 
@@ -1495,6 +1572,71 @@ impl App {
         );
     }
 
+    fn render_form(&self, frame: &mut Frame<'_>, area: Rect, form: &Form) {
+        let width = u16::try_from(76)
+            .unwrap_or(76)
+            .min(area.width.saturating_sub(4))
+            .max(40);
+        let height = u16::try_from(form.fields.len() * 3 + 4)
+            .unwrap_or(10)
+            .min(area.height.saturating_sub(2));
+        let rect = fixed_rect(width, height, area);
+        frame.render_widget(Clear, rect);
+        let block = self.block(&form.title());
+        let inner = Rect {
+            x: rect.x.saturating_add(1),
+            y: rect.y.saturating_add(1),
+            width: rect.width.saturating_sub(2),
+            height: rect.height.saturating_sub(2),
+        };
+        frame.render_widget(block, rect);
+
+        let mut constraints = vec![Constraint::Length(3); form.fields.len()];
+        constraints.push(Constraint::Min(0));
+        constraints.push(Constraint::Length(1));
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(constraints)
+            .split(inner);
+        for (index, field) in form.fields.iter().enumerate() {
+            let focused = index == form.focus;
+            let border = if focused {
+                self.theme.key()
+            } else {
+                self.theme.border_style()
+            };
+            let title_style = if focused {
+                self.theme.key()
+            } else {
+                self.theme.muted_style()
+            };
+            let block = Block::bordered()
+                .border_type(if self.theme.unicode {
+                    BorderType::Rounded
+                } else {
+                    BorderType::Plain
+                })
+                .title(Line::from(Span::styled(
+                    format!(" {} ", field.label),
+                    title_style,
+                )))
+                .border_style(border);
+            frame.render_widget(
+                Paragraph::new(form_field_line(field, focused, self.theme)).block(block),
+                chunks[index],
+            );
+        }
+        if let Some(hint) = chunks.get(form.fields.len() + 1) {
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    "Tab/↑↓ switch · Enter save · Esc cancel",
+                    self.theme.muted_style(),
+                ))),
+                *hint,
+            );
+        }
+    }
+
     fn render_modal(&self, frame: &mut Frame<'_>, area: Rect) {
         let (title, lines) = match &self.mode {
             Mode::Filter(text) => (
@@ -1502,45 +1644,6 @@ impl App {
                 vec![format!(
                     "Type to filter; Enter apply; Esc clear.\n{}",
                     clean(text)
-                )],
-            ),
-            Mode::LabForm {
-                id,
-                name,
-                description,
-                description_focus,
-            } => (
-                if id.is_some() {
-                    "Edit laboratory".to_owned()
-                } else {
-                    "New laboratory".to_owned()
-                },
-                vec![format!(
-                    "Name: {}\nDescription (optional): {}\n\nTab switch · Enter save · Esc cancel{}",
-                    clean(name),
-                    clean(description),
-                    if *description_focus {
-                        "  [description]"
-                    } else {
-                        "  [name]"
-                    }
-                )],
-            ),
-            Mode::ProjectForm {
-                name,
-                source,
-                source_focus,
-            } => (
-                "New project".to_owned(),
-                vec![format!(
-                    "Name: {}\nGitHub source (optional): {}\n\nTab switch · Enter create · Esc cancel{}",
-                    clean(name),
-                    clean(source),
-                    if *source_focus {
-                        "  [source]"
-                    } else {
-                        "  [name]"
-                    }
                 )],
             ),
             Mode::Confirm(action) => (
@@ -1568,7 +1671,7 @@ impl App {
                 lines.push("\nEnter assign · Esc cancel".to_owned());
                 ("Assign agent".to_owned(), lines)
             }
-            Mode::Browse => return,
+            Mode::Form(_) | Mode::Browse => return,
         };
         let rect = centered_rect(78, 60, area);
         frame.render_widget(Clear, rect);
@@ -1992,6 +2095,39 @@ fn help_lines() -> Vec<String> {
     ]
 }
 
+fn fixed_rect(width: u16, height: u16, area: Rect) -> Rect {
+    let width = width.min(area.width);
+    let height = height.min(area.height);
+    Rect {
+        x: area.x + (area.width - width) / 2,
+        y: area.y + (area.height - height) / 2,
+        width,
+        height,
+    }
+}
+
+fn form_field_line(field: &FormField, focused: bool, theme: Theme) -> Line<'static> {
+    if !focused {
+        return Line::from(Span::raw(clean(&field.value)));
+    }
+    let chars: Vec<char> = field.value.chars().collect();
+    let before: String = chars.iter().take(field.cursor).collect();
+    let at = chars.get(field.cursor).copied();
+    let after: String = chars
+        .iter()
+        .skip(field.cursor + usize::from(at.is_some()))
+        .collect();
+    let cursor = if theme.unicode { "▏" } else { "|" };
+    let mut spans = vec![Span::raw(before)];
+    spans.push(Span::styled(
+        at.map(|ch| ch.to_string())
+            .unwrap_or_else(|| cursor.to_owned()),
+        theme.selected(),
+    ));
+    spans.push(Span::raw(after));
+    Line::from(spans)
+}
+
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     let vertical = Layout::default()
         .direction(Direction::Vertical)
@@ -2119,6 +2255,43 @@ mod tests {
     }
 
     #[test]
+    fn form_fields_support_cursor_editing_and_focus() {
+        let mut form = Form::lab_new();
+        for ch in "Demo".chars() {
+            form.current().insert(ch);
+        }
+        assert_eq!(form.fields[0].value, "Demo");
+        form.current().left();
+        form.current().insert('X');
+        assert_eq!(form.fields[0].value, "DemXo");
+        form.current().backspace();
+        assert_eq!(form.fields[0].value, "Demo");
+        form.current().home();
+        form.current().delete();
+        assert_eq!(form.fields[0].value, "emo");
+        form.next();
+        assert_eq!(form.focus, 1);
+        form.previous_wrapped();
+        assert_eq!(form.focus, 0);
+    }
+
+    #[test]
+    fn the_form_modal_renders_field_boxes_and_hints() {
+        let (mut app, _dir) = fixture(Screen::Group(DashboardGroup::Labs));
+        app.mode = Mode::Form(Form::lab_edit(
+            LabId::parse("a3f91c07").unwrap(),
+            "Demo Lab".to_owned(),
+            "Platform team".to_owned(),
+        ));
+        let screen = rendered(&mut app);
+        assert!(screen.contains("Edit laboratory"), "{screen}");
+        assert!(screen.contains("Name"), "{screen}");
+        assert!(screen.contains("Description (optional)"), "{screen}");
+        assert!(screen.contains("Enter save"), "{screen}");
+        assert!(screen.contains("Demo Lab"), "{screen}");
+    }
+
+    #[test]
     fn home_rows_align_labels_and_descriptions_in_columns() {
         let line = home_line(
             ScreenItem::Group(DashboardGroup::Labs),
@@ -2167,7 +2340,7 @@ mod tests {
     fn keyboard_state_machine_opens_forms_and_quits() {
         let (mut app, _dir) = fixture(Screen::Group(DashboardGroup::Labs));
         app.handle_key(key(KeyCode::Char('n')));
-        assert!(matches!(app.mode, Mode::LabForm { .. }));
+        assert!(matches!(app.mode, Mode::Form(_)));
         app.mode = Mode::Browse;
         app.handle_key(key(KeyCode::Char('?')));
         assert!(matches!(app.mode, Mode::Help));

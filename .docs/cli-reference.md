@@ -14,7 +14,9 @@ Run `vlab` or `vlab --help` for the grouped help.
 
 The Laboratories dashboard shows ID, name, description, agents, projects, and
 the active marker. Its actions are New, Check, Edit, Set active, Projects,
-Delete, Filter, Help, Back, and Quit. **Projects** activates the selected
+Delete, Filter, Help, Back, and Quit. New/Edit use a bordered form: `Tab` or
+arrows move fields, the focused field shows a cursor, `Enter` saves, and `Esc`
+cancels. **Projects** activates the selected
 laboratory and opens its Projects dashboard.
 
 The home dashboard lists Laboratories, Projects, Agents, and Settings. Use

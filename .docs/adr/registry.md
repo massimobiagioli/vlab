@@ -70,6 +70,7 @@ revises a technical decision must keep it current.
 | ADR-0039 | Dashboard-only entry point | Accepted | 2026-11-13 | — | [adr-0039.md](adr-0039.md) |
 | ADR-0040 | Track the entire .project directory | Accepted | 2026-11-13 | — | [adr-0040.md](adr-0040.md) |
 | ADR-0041 | Optional laboratory description and dashboard actions | Accepted | 2026-11-13 | — | [adr-0041.md](adr-0041.md) |
+| ADR-0042 | Reusable form modal for dashboard editing | Accepted | 2026-11-13 | — | [adr-0042.md](adr-0042.md) |
 
 ## Supersession map
 
