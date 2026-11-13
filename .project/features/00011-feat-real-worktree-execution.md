@@ -67,8 +67,8 @@ stored in SQLite and shown on the `DONE` card. No simulated outcomes.
 
 - Local gate (2026-11-13): `make check` passed (fmt, clippy, tests, audit,
   deny).
-- Hosted CI runs `43455969285` and `43456825125` passed on Ubuntu, macOS, and
-  audit/deny.
+- Hosted CI runs `43455969285`, `43456825125`, and `43461785871` passed on
+  Ubuntu, macOS, and audit/deny.
 - Unit tests for the action schema, path validation, observation bounds, and
   command output.
 - Git worktree test against a temporary repository: create, write, commit,
