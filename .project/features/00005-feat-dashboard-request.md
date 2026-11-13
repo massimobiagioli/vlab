@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00005` |
 | Branch | `feat/dashboard-request` |
-| Status | `In review` |
+| Status | `Done` |
 | Date | 2026-11-13 |
 | Related ADRs | ADR-0044 (dashboard request intake), ADR-0043 (Kanban), ADR-0026 (provider port), ADR-0039 (dashboard entry point) |
 | Scope | Projects and Kanban request submission |
@@ -44,7 +44,7 @@ replacing the Kanban hint that points to the hidden `--new-request` flag.
 ## Validation
 
 Local gate (2026-11-13): `make check` passed (fmt, clippy, tests, audit, deny).
-Hosted CI: pending; the branch has not been pushed.
+Hosted CI run `43415445504` passed on Ubuntu, macOS, and audit/deny.
 
 ## Task checklist
 
@@ -60,4 +60,4 @@ Hosted CI: pending; the branch has not been pushed.
 - [x] **F03-01** PTY test against a loopback mock provider.
 - [x] **F04-01** Update planning, specification, CLI reference, playbook,
   README; run `make check`.
-- [ ] **F04-02** Push, confirm hosted CI is green, and set the status to `Done`.
+- [x] **F04-02** Push, confirm hosted CI is green, and set the status to `Done`.
