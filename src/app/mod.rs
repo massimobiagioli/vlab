@@ -19,6 +19,7 @@ pub mod kanban;
 pub mod lab_validation;
 pub mod labs;
 pub mod memories;
+pub mod metrics;
 pub mod planning;
 pub mod projects;
 pub mod provider_retry;

@@ -192,8 +192,9 @@ vlab --help
 ```
 
 A bare `vlab` opens the home dashboard in a terminal. The home dashboard lists
-Laboratories, Projects, Agents, and Settings; group navigation happens inside the
-interface. Only `-h`/`--help` and `-V`/`--version` are public options.
+Laboratories, Projects, Agents, Settings, Lab floor, and Metrics; group
+navigation happens inside the interface. Only `-h`/`--help` and
+`-V`/`--version` are public options.
 
 The compatibility flag surface remains available during the feature migration:
 
@@ -1063,8 +1064,9 @@ The smallest useful first deliverable is a tested CLI that can create a laborato
 
 ## 19. Laboratory Floor and Memories
 
-The home dashboard lists **Lab floor** as a fifth entry. `Enter` or `5` opens
-the active laboratory's floor; `Esc` returns home and `q` quits.
+The home dashboard lists **Lab floor** as a fifth entry and **Metrics** as a
+sixth. `Enter` or `5` opens the active laboratory's floor; `6` opens the
+metrics screen. `Esc` returns home and `q` quits.
 
 The floor is a read-only, deterministic, MSX-inspired terminal scene:
 
@@ -1104,7 +1106,24 @@ The floor is a read-only, deterministic, MSX-inspired terminal scene:
 - Manual creates, edits, and deletes record content-free `memory_created`,
   `memory_updated`, and `memory_deleted` events.
 
-### 19.1 Real worktree workflow and outcomes
+### 19.1 Metrics
+
+The **Metrics** home entry is a read-only view of the active laboratory:
+
+- It shows the laboratory name, project count, and the counts of `TODO`,
+  `IN_PROGRESS`, `IN_REVIEW`, `BLOCKED`, and `DONE` cards.
+- Open cards are `TODO + IN_PROGRESS + IN_REVIEW + BLOCKED`; closed cards are
+  `DONE`. Total is their sum. Completion is `closed / total`, or `—` when the
+  total is zero.
+- Pending intake counts requests in `TODO`, `PLANNING`,
+  `NEEDS_CLARIFICATION`, or `FAILED`.
+- A project table shows `TODO`, open, closed, and total per project, including
+  projects with no stories.
+- `r` reloads the snapshot. The screen writes nothing, starts no provider call,
+  and changes no story. Without an active laboratory it shows an explicit empty
+  state.
+
+### 19.2 Real worktree workflow and outcomes
 
 After planning, the application runs real, bounded execution (ADR-0050):
 

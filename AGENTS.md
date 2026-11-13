@@ -101,6 +101,7 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0048.md`](.docs/adr/adr-0048.md) | Bounded no-tool story workflow simulation. |
 | [`.docs/adr/adr-0049.md`](.docs/adr/adr-0049.md) | Automatic workflow resume on startup and application logs. |
 | [`.docs/adr/adr-0050.md`](.docs/adr/adr-0050.md) | Real bounded agent execution in project git worktrees. |
+| [`.docs/adr/adr-0051.md`](.docs/adr/adr-0051.md) | Laboratory metrics dashboard. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
 | [`.project/features/`](.project/features/) | Tracked feature plans with task checklists (ADR-0037). |
 

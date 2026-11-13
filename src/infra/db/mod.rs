@@ -20,6 +20,7 @@ pub mod interactions;
 pub mod kanban;
 pub mod labs;
 pub mod memories;
+pub mod metrics;
 pub mod migrate;
 pub mod planning;
 pub mod policy;

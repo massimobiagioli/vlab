@@ -238,7 +238,16 @@ opens the agent detail, and `r` reloads. Press `m` to open **Memories**:
 views, `e` edits, and `d` deletes after confirmation. Content is bounded and
 credentials are rejected. Agent memories have no manual surface.
 
-## 13. Common errors
+## 13. Read laboratory metrics
+
+From the home dashboard choose **Metrics** (or press `6`). The screen shows the
+active laboratory name, project count, card counts for `TODO`, `IN PROGRESS`,
+`IN REVIEW`, `BLOCKED`, and `DONE`, plus open, closed, total, completion
+percentage, pending intake, and a per-project table. A card is open until it is
+`DONE`. Press `r` to reload, `Esc` to return home, and `q` to quit. The screen
+is read-only and does not call the provider.
+
+## 14. Common errors
 
 | Code | Meaning | Action |
 |---|---|---|

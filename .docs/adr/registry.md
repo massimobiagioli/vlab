@@ -79,6 +79,7 @@ revises a technical decision must keep it current.
 | ADR-0048 | Bounded no-tool story workflow simulation | Superseded | 2026-11-13 | — | [adr-0048.md](adr-0048.md) |
 | ADR-0049 | Automatic workflow resume on startup and application logs | Accepted | 2026-11-13 | — | [adr-0049.md](adr-0049.md) |
 | ADR-0050 | Real bounded agent execution in project git worktrees | Accepted | 2026-11-13 | — | [adr-0050.md](adr-0050.md) |
+| ADR-0051 | Laboratory metrics dashboard | Accepted | 2026-11-13 | — | [adr-0051.md](adr-0051.md) |
 
 ## Supersession map
 

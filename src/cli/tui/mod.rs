@@ -18,6 +18,7 @@ use crate::app::directory::Directory;
 use crate::app::kanban;
 use crate::app::labs::{self, LabListItem};
 use crate::app::memories;
+use crate::app::metrics;
 use crate::app::projects::{self, CreatedProject, ProjectOverview};
 use crate::app::requests::{self, PlanningOutcome};
 use crate::app::settings::{self, SettingsReport, SettingsStore};
@@ -91,12 +92,16 @@ enum Screen {
     /// Laboratory and project memories (ADR-0046); state lives in
     /// `App::memory`.
     Memories,
+    /// Read-only laboratory metrics (ADR-0051); state lives in
+    /// `App::metrics`.
+    Metrics,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScreenItem {
     Group(DashboardGroup),
     Floor,
+    Metrics,
 }
 
 impl ScreenItem {
@@ -107,6 +112,7 @@ impl ScreenItem {
             Self::Group(DashboardGroup::Agents) => "Agents",
             Self::Group(DashboardGroup::Settings) => "Settings",
             Self::Floor => "Lab floor",
+            Self::Metrics => "Metrics",
         }
     }
 
@@ -117,16 +123,18 @@ impl ScreenItem {
             Self::Group(DashboardGroup::Agents) => "inspect, create, assign, archive",
             Self::Group(DashboardGroup::Settings) => "inspect and edit settings",
             Self::Floor => "watch agents cooperate, see memories",
+            Self::Metrics => "open, closed, and per-project story counts",
         }
     }
 }
 
-const HOME_ITEMS: [ScreenItem; 5] = [
+const HOME_ITEMS: [ScreenItem; 6] = [
     ScreenItem::Group(DashboardGroup::Labs),
     ScreenItem::Group(DashboardGroup::Projects),
     ScreenItem::Group(DashboardGroup::Agents),
     ScreenItem::Group(DashboardGroup::Settings),
     ScreenItem::Floor,
+    ScreenItem::Metrics,
 ];
 
 #[derive(Debug, Clone)]
@@ -537,6 +545,8 @@ struct App {
     floor: Option<floor::FloorView>,
     floor_error: Option<String>,
     memory: Option<memory::MemoryView>,
+    metrics: Option<metrics::LabMetrics>,
+    metrics_error: Option<String>,
     pending_request: Option<(ProjectId, String)>,
 }
 
@@ -576,6 +586,8 @@ impl App {
             floor: None,
             floor_error: None,
             memory: None,
+            metrics: None,
+            metrics_error: None,
             pending_request: None,
         };
         app.reload();
@@ -670,6 +682,7 @@ impl App {
                     view.reload(db);
                 }
             }
+            Screen::Metrics => self.reload_metrics(),
             Screen::Group(DashboardGroup::Labs) => {
                 self.labs = labs::list(&self.db).unwrap_or_default();
             }
@@ -748,7 +761,7 @@ impl App {
                 })
                 .count(),
             Screen::Group(DashboardGroup::Settings) => 1,
-            Screen::Kanban | Screen::Floor | Screen::Memories => 0,
+            Screen::Kanban | Screen::Floor | Screen::Memories | Screen::Metrics => 0,
         }
     }
 
@@ -1051,6 +1064,10 @@ impl App {
                 self.handle_memories(key);
                 None
             }
+            Screen::Metrics => {
+                self.handle_metrics(key);
+                None
+            }
             Screen::Home => {
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
@@ -1063,12 +1080,14 @@ impl App {
                     KeyCode::Enter => match HOME_ITEMS[self.home_selected] {
                         ScreenItem::Group(group) => self.open_group(group),
                         ScreenItem::Floor => self.open_floor(),
+                        ScreenItem::Metrics => self.open_metrics(),
                     },
                     KeyCode::Char('1') => self.open_group(DashboardGroup::Labs),
                     KeyCode::Char('2') => self.open_group(DashboardGroup::Projects),
                     KeyCode::Char('3') => self.open_group(DashboardGroup::Agents),
                     KeyCode::Char('4') => self.open_group(DashboardGroup::Settings),
                     KeyCode::Char('5') => self.open_floor(),
+                    KeyCode::Char('6') => self.open_metrics(),
                     _ => {}
                 }
                 None
@@ -1505,6 +1524,44 @@ impl App {
         self.reload();
     }
 
+    fn open_metrics(&mut self) {
+        self.screen = Screen::Metrics;
+        self.status = None;
+        self.reload();
+    }
+
+    fn reload_metrics(&mut self) {
+        let Some(lab) = self.active_lab.as_ref() else {
+            self.metrics = None;
+            self.metrics_error = None;
+            return;
+        };
+        match metrics::show(&self.db, lab) {
+            Ok(metrics) => {
+                self.metrics = Some(metrics);
+                self.metrics_error = None;
+            }
+            Err(error) => {
+                self.metrics = None;
+                self.metrics_error = Some(format!("{} {}", error, error.hint()));
+            }
+        }
+    }
+
+    fn handle_metrics(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('q') => self.quit = true,
+            KeyCode::Esc => {
+                self.home_selected = 5;
+                self.screen = Screen::Home;
+                self.status = None;
+            }
+            KeyCode::Char('?') => self.mode = Mode::Help,
+            KeyCode::Char('r') => self.reload(),
+            _ => {}
+        }
+    }
+
     fn handle_floor(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Char('q') => self.quit = true,
@@ -1916,7 +1973,8 @@ impl App {
             | Screen::Home
             | Screen::Kanban
             | Screen::Floor
-            | Screen::Memories => {
+            | Screen::Memories
+            | Screen::Metrics => {
                 self.status = Some("This group has no delete action.".to_owned());
             }
         }
@@ -2303,6 +2361,7 @@ impl App {
             Screen::Kanban => self.render_kanban(frame, area),
             Screen::Floor => self.render_floor(frame, area),
             Screen::Memories => self.render_memories(frame, area),
+            Screen::Metrics => self.render_metrics(frame, area),
         }
         match &self.mode {
             Mode::Browse => {}
@@ -2367,7 +2426,7 @@ impl App {
             &[
                 ("[↑/↓]", "Select"),
                 ("[Enter]", "Open"),
-                ("[1-5]", "Direct"),
+                ("[1-6]", "Direct"),
                 ("[q]", "Quit"),
             ],
             self.theme,
@@ -2573,6 +2632,122 @@ impl App {
         if let Some(view) = self.memory.as_mut() {
             memory::render(frame, area, self.theme, view, status);
         }
+    }
+
+    fn render_metrics(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Min(1),
+                Constraint::Length(5),
+            ])
+            .split(area);
+        let title = match &self.metrics {
+            Some(metrics) => format!("Metrics · {}", clean(&metrics.lab_name)),
+            None => "Metrics".to_owned(),
+        };
+        frame.render_widget(
+            Paragraph::new(title).block(self.block("Metrics")),
+            chunks[0],
+        );
+
+        let mut lines = Vec::new();
+        if let Some(error) = &self.metrics_error {
+            lines.push(Line::from(Span::styled(
+                error.clone(),
+                self.theme.warning_style(),
+            )));
+            lines.push(Line::from(""));
+            lines.push(Line::from("Press r to reload or Esc to go home."));
+        } else if let Some(metrics) = &self.metrics {
+            let field = |label: &str, value: String| {
+                Line::from(vec![
+                    Span::styled(format!("{label:<14}"), self.theme.title()),
+                    Span::raw(value),
+                ])
+            };
+            let counts = metrics.counts();
+            let completion = metrics
+                .completion()
+                .map(|value| format!("{value}%"))
+                .unwrap_or_else(|| "—".to_owned());
+            lines.push(field("Laboratory", clean(&metrics.lab_name)));
+            lines.push(field("Projects", metrics.projects.len().to_string()));
+            lines.push(Line::from(""));
+            lines.push(Line::from(format!(
+                "TODO {}   IN PROGRESS {}   IN REVIEW {}   BLOCKED {}   DONE {}",
+                counts.todo, counts.in_progress, counts.in_review, counts.blocked, counts.done
+            )));
+            lines.push(Line::from(format!(
+                "Open {}   Closed {}   Total {}   Completion {completion}",
+                metrics.open(),
+                metrics.closed(),
+                metrics.total()
+            )));
+            lines.push(Line::from(format!(
+                "Pending intake {}",
+                metrics.pending_intake
+            )));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled("Projects", self.theme.title())));
+            if metrics.projects.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    "No projects in this laboratory.",
+                    self.theme.muted_style(),
+                )));
+            } else {
+                lines.push(Line::from(format!(
+                    "{:<8}  {:<20}  {:>5} {:>5} {:>5} {:>5}",
+                    "ID", "NAME", "TODO", "OPEN", "DONE", "TOTAL"
+                )));
+                for project in &metrics.projects {
+                    let mut name: String = clean(&project.name).chars().take(20).collect();
+                    if clean(&project.name).chars().count() > 20 {
+                        name.pop();
+                        name.push('…');
+                    }
+                    let marker = if self.active_project.as_ref() == Some(&project.id) {
+                        "*"
+                    } else {
+                        " "
+                    };
+                    lines.push(Line::from(format!(
+                        "{:<8}  {:<20}  {:>5} {:>5} {:>5} {:>5} {marker}",
+                        project.id,
+                        name,
+                        project.counts.todo,
+                        project.open(),
+                        project.closed(),
+                        project.total()
+                    )));
+                }
+            }
+        } else {
+            lines.push(Line::from(Span::styled(
+                "No active laboratory. Esc goes back.",
+                self.theme.muted_style(),
+            )));
+        }
+        frame.render_widget(
+            Paragraph::new(lines).block(self.block("Laboratory metrics")),
+            chunks[1],
+        );
+
+        let actions = action_grid(
+            &[
+                ("[r]", "Reload"),
+                ("[?]", "Help"),
+                ("[Esc]", "Back"),
+                ("[q]", "Quit"),
+            ],
+            self.theme,
+            usize::from(area.width.saturating_sub(2)),
+        );
+        frame.render_widget(
+            Paragraph::new(actions).block(self.block("Actions")),
+            chunks[2],
+        );
     }
 
     fn render_kanban(&mut self, frame: &mut Frame<'_>, area: Rect) {
@@ -4059,6 +4234,8 @@ mod tests {
             floor: None,
             floor_error: None,
             memory: None,
+            metrics: None,
+            metrics_error: None,
             pending_request: None,
         };
         (app, dir)
@@ -4082,6 +4259,63 @@ mod tests {
     }
 
     #[test]
+    fn the_home_menu_opens_laboratory_metrics() {
+        let (mut app, _dir) = fixture(Screen::Home);
+        let lab = LabId::parse("a3f91c07").unwrap();
+        app.db
+            .execute(
+                "INSERT INTO labs (id, name, created_at, updated_at) \
+                 VALUES ('a3f91c07', 'Payments', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            )
+            .unwrap();
+        context::save_active_lab(&app.db, &lab).unwrap();
+        app.db
+            .execute(
+                "INSERT INTO projects (id, lab_id, name, created_at, updated_at) \
+                 VALUES ('0b1c2d3e', 'a3f91c07', 'Portal', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            )
+            .unwrap();
+        app.db
+            .execute(
+                "INSERT INTO requests (id, project_id, content, status, created_at, updated_at) \
+                 VALUES ('1c2d3e4f', '0b1c2d3e', 'R', 'TODO', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            )
+            .unwrap();
+        for sql in [
+            "INSERT INTO stories (id, project_id, request_id, title, description, \
+             acceptance_criteria_json, priority, complexity, required_skills_json, \
+             state, due_date, created_at, updated_at) \
+             VALUES ('2d3e4f50', '0b1c2d3e', '1c2d3e4f', 'Story', 'D', '[]', 'high', \
+             'small', '[]', 'TODO', '2026-01-03', '2026-01-01T00:00:00Z', \
+             '2026-01-01T00:00:00Z')",
+            "INSERT INTO stories (id, project_id, request_id, title, description, \
+             acceptance_criteria_json, priority, complexity, required_skills_json, \
+             state, due_date, created_at, updated_at) \
+             VALUES ('3e4f5061', '0b1c2d3e', '1c2d3e4f', 'Story', 'D', '[]', 'high', \
+             'small', '[]', 'DONE', '2026-01-03', '2026-01-01T00:00:00Z', \
+             '2026-01-01T00:00:00Z')",
+        ] {
+            app.db.execute(sql).unwrap();
+        }
+        app.home_selected = 5;
+        app.handle_key(key(KeyCode::Enter));
+        let screen = rendered(&mut app);
+        for expected in [
+            "Metrics",
+            "Payments",
+            "TODO 1",
+            "DONE 1",
+            "Open 1",
+            "Closed 1",
+            "Total 2",
+            "Completion 50%",
+            "Portal",
+        ] {
+            assert!(screen.contains(expected), "{expected}: {screen}");
+        }
+    }
+
+    #[test]
     fn the_labs_dashboard_renders_actions_and_empty_state() {
         let (mut app, _dir) = fixture(Screen::Group(DashboardGroup::Labs));
         let screen = rendered(&mut app);
@@ -4095,7 +4329,14 @@ mod tests {
     fn the_home_dashboard_lists_every_group() {
         let (mut app, _dir) = fixture(Screen::Home);
         let screen = rendered(&mut app);
-        for label in ["Laboratories", "Projects", "Agents", "Settings"] {
+        for label in [
+            "Laboratories",
+            "Projects",
+            "Agents",
+            "Settings",
+            "Lab floor",
+            "Metrics",
+        ] {
             assert!(screen.contains(label), "{label}: {screen}");
         }
     }

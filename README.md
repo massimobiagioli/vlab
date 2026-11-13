@@ -97,9 +97,9 @@ vlab
 
 On startup the active project's pending stories are executed automatically
 before the dashboard appears. Choose Laboratories, Projects,
-Agents, Settings, or Lab floor with the arrow keys and `Enter` (or `1`–`5`).
-Run `vlab --logs` to print the newest content-free audit events. Inside a group
-use `j/k` or arrows to move, the action
+Agents, Settings, Lab floor, or Metrics with the arrow keys and `Enter` (or
+`1`–`6`). Run `vlab --logs` to print the newest content-free audit events.
+Inside a group use `j/k` or arrows to move, the action
 keys shown in the bottom bar, `/` to filter, `?` for help, `Esc` to return home,
 and `q` to quit. The Laboratories dashboard shows the optional description and
 provides Edit and Projects actions; New/Edit open a bordered form with a visible cursor and Tab/arrow field navigation. The Projects dashboard renames projects with `e` and opens a full-screen,
@@ -116,6 +116,11 @@ with `(///)` when an agent has several open stories. Press `m` to manage
 laboratory and project memories: `n` creates, `Enter` views, `e` edits, and `d`
 deletes after confirmation. Agent memories remain automatic. In a non-TTY
 stream VLab prints help instead of blocking.
+
+The **Metrics** entry (or `6`) shows the active laboratory at a glance:
+project count, `TODO`/in progress/in review/blocked/done counts, open, closed,
+total, completion percentage, pending intake, and a per-project table. `r`
+reloads it; it never writes or calls the provider.
 
 ## Local walkthrough
 

@@ -48,10 +48,14 @@ active QA or the Tech Lead). A `DONE` card detail shows the work summary,
 review, reviewer, branch, worktree, commit, and completion time. VLab never
 merges the branch automatically.
 
-The home dashboard lists Laboratories, Projects, Agents, Settings, and Lab
-floor. Use `Enter` to open the selected group, `1`–`5` to jump directly, `Esc`
-to return home, and `q` to quit. Inside a group use `j/k` or arrows, `h/l` for
-pages, the action keys in the bottom bar, `/` to filter, and `?` for help. The
+The home dashboard lists Laboratories, Projects, Agents, Settings, Lab
+floor, and Metrics. Use `Enter` to open the selected group, `1`–`6` to jump
+directly, `Esc` to return home, and `q` to quit. Inside a group use `j/k` or
+arrows, `h/l` for pages, the action keys in the bottom bar, `/` to filter, and
+`?` for help. **Metrics** is a read-only laboratory summary: project count,
+per-state card counts, open, closed, total, completion percentage, pending
+intake, and a per-project table. `r` reloads it. A card is open when its state
+is `TODO`, `IN PROGRESS`, `IN REVIEW`, or `BLOCKED`; it is closed when `DONE`. The
 **Lab floor** is a read-only 2D scene of the active laboratory: project pods,
 the Tech Lead desk, `(zzz)` for idle agents, `( ? )`/`( ! )` exchange bubbles
 for two working agents of different roles, and `(///)` at an isolated focus
