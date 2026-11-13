@@ -64,6 +64,77 @@ fn projects_round_trip_and_report_counts() {
 }
 
 #[test]
+fn renaming_a_project_updates_the_name_and_timestamp() {
+    let (_dir, db) = migrated();
+    let lab = lab("a3f91c07", "Payments");
+    db.insert_lab(&lab).unwrap();
+    let project = project("0b1c2d3e", &lab.id, "Portal");
+    db.insert_project(&project).unwrap();
+    db.execute("UPDATE projects SET updated_at = '2000-01-01T00:00:00Z'")
+        .unwrap();
+
+    db.update_project_name(&project.id, &Name::parse("Customer Portal").unwrap())
+        .unwrap();
+
+    assert_eq!(
+        db.project_in_lab(&project.id, &lab.id)
+            .unwrap()
+            .unwrap()
+            .name,
+        "Customer Portal"
+    );
+    assert_eq!(
+        count(
+            &db,
+            "SELECT count(*) FROM projects WHERE updated_at > '2000-01-01T00:00:00Z'"
+        ),
+        1
+    );
+}
+
+#[test]
+fn story_detail_is_scoped_to_the_project_and_laboratory() {
+    use vlab::app::kanban::{BoardStore, StoryState};
+    use vlab::domain::ids::StoryId;
+
+    let (_dir, db) = migrated();
+    let lab = lab("a3f91c07", "Payments");
+    db.insert_lab(&lab).unwrap();
+    db.insert_lab(&self::lab("b4a02d18", "Other")).unwrap();
+    db.insert_project(&project("0b1c2d3e", &lab.id, "Portal"))
+        .unwrap();
+    db.execute(
+        "INSERT INTO requests (id, project_id, content, status, created_at, updated_at) \
+         VALUES ('1c2d3e4f', '0b1c2d3e', 'Add reset', 'PLANNED', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO stories (id, project_id, request_id, title, description, acceptance_criteria_json, priority, complexity, required_skills_json, assignment_rationale, state, due_date, created_at, updated_at) \
+         VALUES ('2d3e4f50', '0b1c2d3e', '1c2d3e4f', 'Reset', 'Send a link', '[\"Link expires\",\"Email sent\"]', 'high', 'small', '[\"rust\"]', 'Only developer', 'TODO', '2026-01-03', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+    )
+    .unwrap();
+    let project_id = ProjectId::parse("0b1c2d3e").unwrap();
+    let story_id = StoryId::parse("2d3e4f50").unwrap();
+
+    let story = db.story(&project_id, &lab.id, &story_id).unwrap().unwrap();
+    assert_eq!(story.title, "Reset");
+    assert_eq!(story.state, StoryState::Todo);
+    assert_eq!(story.description, "Send a link");
+    assert_eq!(
+        story.acceptance_criteria,
+        vec!["Link expires", "Email sent"]
+    );
+    assert_eq!(story.required_skills, vec!["rust"]);
+    assert_eq!(story.assignee, None);
+    assert_eq!(story.complexity, "small");
+    assert_eq!(story.rationale.as_deref(), Some("Only developer"));
+    assert_eq!(story.request_id.as_str(), "1c2d3e4f");
+
+    let other = LabId::parse("b4a02d18").unwrap();
+    assert!(db.story(&project_id, &other, &story_id).unwrap().is_none());
+}
+
+#[test]
 fn deleting_a_laboratory_cascades_projects_requests_stories_and_memories() {
     let (_dir, db) = migrated();
     db.insert_lab(&lab("a3f91c07", "Payments")).unwrap();

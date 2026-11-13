@@ -112,8 +112,10 @@ Interactive route:
 vlab
 ```
 
-Choose **Projects**, then use `n` to create, `Enter` to open, `a` to assign an
-agent, `v` for Kanban, and `d` to delete. The non-interactive command is:
+Choose **Projects**, then use `n` to create, `e` to rename, `Enter` to open,
+`a` to assign an agent, `v` for the full-screen Kanban board (`←/→` lists,
+`↑/↓` cards with per-list scrolling, `PgUp/PgDn` pages, `Enter` opens the
+story detail dialog, `Esc` back), and `d` to delete. The non-interactive command is:
 
 ```sh
 vlab --new-project "Customer Portal"

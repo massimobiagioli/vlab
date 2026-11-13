@@ -19,6 +19,19 @@ arrows move fields, the focused field shows a cursor, `Enter` saves, and `Esc`
 cancels. **Projects** activates the selected
 laboratory and opens its Projects dashboard.
 
+The Projects dashboard actions are New, Edit, Open, Assign, Kanban, Delete,
+Filter, Help, Back, and Quit. **Edit** renames the selected project; its GitHub
+source cannot be changed. **Kanban** (`v`) opens the selected project's board
+as a full-screen view: the header shows project, laboratory, Tech Lead,
+optional GitHub source, story counts, and pending intake; the five states are
+side-by-side lists of cards, each showing only the story's short description.
+Every list scrolls on its own and shows `↑N`, `↓N more`, and `position/total`
+in its border. Use `←/→` or `h/l` for lists, `↑/↓` or `j/k` for cards,
+`PgUp/PgDn` to scroll a page, `Home/End` or `g/G` for the first/last card,
+`Enter` for the detail dialog (every story field; `↑/↓` scroll, `Esc` close),
+`r` to reload, `?` for help, `Esc` to return to Projects, and `q` to quit. The
+board is read-only.
+
 The home dashboard lists Laboratories, Projects, Agents, and Settings. Use
 `Enter` to open the selected group, `1`–`4` to jump directly, `Esc` to return
 home, and `q` to quit. Inside a group use `j/k` or arrows, `h/l` for pages, the

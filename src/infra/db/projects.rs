@@ -4,6 +4,7 @@ use sqlx::SqliteConnection;
 
 use crate::app::projects::ProjectOverview;
 use crate::domain::ids::{LabId, ProjectId};
+use crate::domain::name::Name;
 use crate::domain::project::Project;
 
 const INSERT: &str = "\
@@ -35,6 +36,22 @@ pub async fn insert(
         .execute(connection)
         .await
         .map(|_| ())
+}
+
+pub async fn update_name(
+    connection: &mut SqliteConnection,
+    id: &ProjectId,
+    name: &Name,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE projects SET name = ?2, \
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?1",
+    )
+    .bind(id.as_str())
+    .bind(name.as_str())
+    .execute(connection)
+    .await
+    .map(|_| ())
 }
 
 pub async fn find(

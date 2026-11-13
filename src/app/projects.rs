@@ -55,6 +55,15 @@ pub trait ProjectStore {
         Err(crate::app::storage::StorageError::Operation)
     }
 
+    /// Renames a project and refreshes its update timestamp.
+    fn update_project_name(
+        &self,
+        _: &ProjectId,
+        _: &Name,
+    ) -> Result<(), crate::app::storage::StorageError> {
+        Err(crate::app::storage::StorageError::Operation)
+    }
+
     /// Project roster; an empty list means "use the laboratory roster".
     fn project_agent_ids(
         &self,
@@ -127,6 +136,29 @@ pub fn open(
             id: id.to_string(),
         })?;
     crate::app::context::save_active_project(state, &id)?;
+    Ok(project)
+}
+
+/// Dashboard Edit: renames a project of the active laboratory (ADR-0043).
+///
+/// The GitHub source is immutable because it names an existing checkout.
+pub fn rename(
+    store: &impl ProjectStore,
+    state: &impl AppStateStore,
+    raw_id: &str,
+    raw_name: &str,
+) -> Result<ProjectOverview, AppError> {
+    let id = parse_project_id(raw_id)?;
+    let lab = crate::app::context::active_lab(state)?.require()?;
+    let mut project = store
+        .project_in_lab(&id, &lab)?
+        .ok_or_else(|| AppError::NotFound {
+            entity: crate::app::EntityKind::Project,
+            id: id.to_string(),
+        })?;
+    let name = validated_name(raw_name)?;
+    store.update_project_name(&id, &name)?;
+    project.name = name.to_string();
     Ok(project)
 }
 
@@ -225,6 +257,12 @@ mod tests {
                 project.id.clone(),
                 (project.lab_id.clone(), project.name.to_string()),
             );
+            Ok(())
+        }
+        fn update_project_name(&self, id: &ProjectId, name: &Name) -> Result<(), StorageError> {
+            if let Some(entry) = self.projects.borrow_mut().get_mut(id) {
+                entry.1 = name.to_string();
+            }
             Ok(())
         }
         fn project(
@@ -420,6 +458,34 @@ mod tests {
             create(&store, &state, "Customer Portal", Some(source), &workspace).unwrap_err();
         assert!(matches!(error, AppError::Workspace { .. }), "{error:?}");
         assert_eq!(*store.inserts.borrow(), 0);
+    }
+
+    #[test]
+    fn renaming_a_project_validates_scope_and_name() {
+        let store = Store::default();
+        let state = active();
+        let workspace = Workspace::default();
+        let created = create(&store, &state, "Portal", None, &workspace).unwrap();
+        let id = created.project.id.to_string();
+
+        let renamed = rename(&store, &state, &id, "  Customer Portal ").unwrap();
+        assert_eq!(renamed.name, "Customer Portal");
+        assert_eq!(list(&store, &state).unwrap()[0].name, "Customer Portal");
+
+        let error = rename(&store, &state, &id, "   ").unwrap_err();
+        assert!(matches!(error, AppError::Usage { .. }), "{error:?}");
+        assert_eq!(list(&store, &state).unwrap()[0].name, "Customer Portal");
+
+        let error = rename(&store, &State::default(), &id, "Other").unwrap_err();
+        assert!(matches!(error, AppError::NoActiveLab), "{error:?}");
+
+        let other = State::default();
+        *other.0.borrow_mut() = Some("ffffffff".to_owned());
+        let error = rename(&store, &other, &id, "Other").unwrap_err();
+        assert!(matches!(error, AppError::NotFound { .. }), "{error:?}");
+
+        let error = rename(&store, &state, "BAD", "Other").unwrap_err();
+        assert!(matches!(error, AppError::Usage { .. }), "{error:?}");
     }
 
     #[test]

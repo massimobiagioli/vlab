@@ -53,6 +53,43 @@ the feature plan `00001-feat-interactive-dashboards.md`.
 9. **Error handling.** Convert application errors to a sanitized modal or toast.
    A dashboard action must not leave the terminal broken.
 
+## Boards, lists, and scrolling
+
+- **Screens, not dialogs.** A view the user navigates (a board, a list of
+  lists) is a `Screen` with the standard header, body, and Actions bar. Modals
+  are only for confirmations, forms, and detail of one item.
+- **Summary on the item, detail on Enter.** List items and cards show only
+  their short description. `Enter` opens a detail dialog that shows every
+  field with labels; nothing is lost by the summary.
+- **Every scrollable region owns its offset.** Store a selection and an
+  offset per list; scroll by the minimum needed to keep the selection visible;
+  never reset another list's position when focus moves.
+- **Scrolling keys.** `↑/↓` (`j/k`) move by one item and scroll at the edges;
+  `PgUp/PgDn` move by one visible page; `Home/End` (`g/G`) jump to the ends.
+  Long detail dialogs scroll with the same keys and close with `Esc`/`Enter`.
+- **Show hidden content.** Put `↑N`/`↓N more` and a `position/total`
+  indicator in the region border, so items keep every row and the user knows
+  something is off screen. Never rely on color for these.
+- **Measure at render, clamp everywhere.** Visible rows depend on the terminal
+  size: record them during rendering, clamp offsets after resize, reload, and
+  paging. Clamp oversized scroll values (e.g. `End` = `u16::MAX`) at render.
+- **Width-limited layouts.** When several columns cannot fit at a readable
+  width, show a window of adjacent columns around the focus with `‹`/`›`
+  indicators instead of shrinking them below legibility.
+
+## Visual review
+
+Assertions on substrings do not show alignment, clipping, or overlap. Before
+reporting a screen as done:
+
+1. Add a temporary `#[test]` that renders the screen to a `TestBackend` at
+   100×30, 80×24, and 60×20 and prints each buffer row with `eprintln!`.
+2. Run it with `cargo test --lib <name> -- --nocapture`, redirecting stderr to
+   a scratch file outside the repository, and read the output.
+3. Check borders, truncation (`…`), indicators, the Actions bar, and that no
+   text is cut mid-word without an ellipsis.
+4. Delete the temporary test; keep only deterministic assertions.
+
 ## Testing
 
 - Unit-test theme tokens, sanitization, table layout, and key transitions.

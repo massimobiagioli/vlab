@@ -350,3 +350,62 @@ fn the_agents_dashboard_shows_detail_and_archives() {
     });
     assert!(archived.is_some());
 }
+
+#[test]
+fn the_projects_dashboard_renames_and_opens_the_full_screen_kanban() {
+    let sandbox = Sandbox::new();
+    let (_, project, _) = seed(&sandbox);
+    let db = sandbox.seed_database();
+    db.execute(
+        "INSERT INTO requests (id, project_id, content, status, created_at, updated_at) \
+         VALUES ('5e6f7a8b', '0b1c2d3e', 'Add reset', 'PLANNED', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO stories (id, project_id, request_id, title, description, acceptance_criteria_json, priority, complexity, required_skills_json, state, due_date, created_at, updated_at) \
+         VALUES ('6f7a8b9c', '0b1c2d3e', '5e6f7a8b', 'Reset password', 'Send a link', '[\"Link expires\"]', 'high', 'small', '[\"rust\"]', 'TODO', '2026-01-03', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+    )
+    .unwrap();
+    drop(db);
+    let (output, success) = run_tui(
+        &sandbox,
+        &[],
+        &[
+            ("2", 300),
+            ("e", 200),
+            (" Web", 200),
+            ("\r", 400),
+            ("v", 400),
+            ("\r", 300),
+            ("\u{1b}", 300),
+            ("l", 200),
+            ("\r", 300),
+            ("\u{1b}", 400),
+            ("q", 200),
+        ],
+    );
+    assert!(success, "dashboard did not exit cleanly: {output:?}");
+    assert_restored(&output);
+    assert!(output.contains("Edit project"), "{output:?}");
+    assert!(output.contains("TODO 1"), "{output:?}");
+    assert!(output.contains("Story 6f7a8b9c"), "{output:?}");
+    assert!(output.contains("Acceptance criteria"), "{output:?}");
+    assert!(output.contains("Read-only board"), "{output:?}");
+    assert!(output.contains("No stories in IN PROGRESS"), "{output:?}");
+    let db = sandbox.seed_database();
+    let name: String = db.block_on(async {
+        sqlx::query_scalar("SELECT name FROM projects WHERE id = ?1")
+            .bind(project.as_str())
+            .fetch_one(db.pool())
+            .await
+            .unwrap()
+    });
+    assert_eq!(name, "Portal Web");
+    let events: i64 = db.block_on(async {
+        sqlx::query_scalar("SELECT count(*) FROM events WHERE kind = 'project_updated'")
+            .fetch_one(db.pool())
+            .await
+            .unwrap()
+    });
+    assert_eq!(events, 1);
+}

@@ -57,6 +57,9 @@ fn run_screen(screen: Screen, no_color: bool, run_id: RunId) -> Result<(), AppEr
 enum Screen {
     Home,
     Group(DashboardGroup),
+    /// Full-screen board of one project (ADR-0043); state lives in
+    /// `App::kanban`.
+    Kanban,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,7 +80,7 @@ impl ScreenItem {
     fn home_description(self) -> &'static str {
         match self {
             Self::Group(DashboardGroup::Labs) => "create, check, activate, delete",
-            Self::Group(DashboardGroup::Projects) => "create, open, assign, delete",
+            Self::Group(DashboardGroup::Projects) => "create, edit, open, assign, board",
             Self::Group(DashboardGroup::Agents) => "inspect, create, assign, archive",
             Self::Group(DashboardGroup::Settings) => "inspect and edit settings",
         }
@@ -103,6 +106,7 @@ enum FormKind {
     LabNew,
     LabEdit(LabId),
     ProjectNew,
+    ProjectEdit(ProjectId),
 }
 
 #[derive(Debug, Clone)]
@@ -215,6 +219,14 @@ impl Form {
         }
     }
 
+    fn project_edit(id: ProjectId, name: String) -> Self {
+        Self {
+            kind: FormKind::ProjectEdit(id),
+            fields: vec![FormField::new("Name", name)],
+            focus: 0,
+        }
+    }
+
     fn next(&mut self) {
         self.focus = (self.focus + 1) % self.fields.len();
     }
@@ -236,6 +248,7 @@ impl Form {
             FormKind::LabNew => "New laboratory".to_owned(),
             FormKind::LabEdit(id) => format!("Edit laboratory {id}"),
             FormKind::ProjectNew => "New project".to_owned(),
+            FormKind::ProjectEdit(id) => format!("Edit project {id}"),
         }
     }
 
@@ -261,6 +274,12 @@ enum Mode {
         lines: Vec<String>,
     },
     Help,
+    /// Card detail dialog over the Kanban screen; `scroll` is clamped when
+    /// rendered.
+    Story {
+        detail: Box<kanban::StoryDetail>,
+        scroll: u16,
+    },
     Picker {
         agents: Vec<(String, String)>,
         selected: usize,
@@ -272,6 +291,124 @@ enum ConfirmAction {
     Lab(LabId, String),
     Project(ProjectId, String),
     Agent(AgentId, String),
+}
+
+/// Navigation state of the Kanban screen. Moving never writes.
+///
+/// Each list remembers its selected card and its own scroll offset, so
+/// switching lists returns to the same place.
+#[derive(Debug, Clone)]
+struct KanbanView {
+    board: kanban::Board,
+    column: usize,
+    cards: [usize; 5],
+    offsets: [usize; 5],
+    /// Cards fully visible per list in the last render; paging uses it.
+    visible: [usize; 5],
+}
+
+impl KanbanView {
+    fn new(board: kanban::Board) -> Self {
+        let mut view = Self {
+            board,
+            column: 0,
+            cards: [0; 5],
+            offsets: [0; 5],
+            visible: [1; 5],
+        };
+        view.clamp();
+        view
+    }
+
+    fn state(&self) -> kanban::StoryState {
+        kanban::StoryState::ALL[self.column]
+    }
+
+    fn column_len(&self, column: usize) -> usize {
+        self.board.cards_in(kanban::StoryState::ALL[column]).count()
+    }
+
+    fn move_column(&mut self, delta: isize) {
+        self.column = if delta < 0 {
+            self.column.saturating_sub(1)
+        } else {
+            (self.column + 1).min(kanban::StoryState::ALL.len() - 1)
+        };
+    }
+
+    /// Moves the selection by `delta` cards in the focused list. The next
+    /// render scrolls the list to keep it visible ([`KanbanView::fit`]).
+    fn move_card(&mut self, delta: isize) {
+        let last = self.column_len(self.column).saturating_sub(1);
+        let card = &mut self.cards[self.column];
+        *card = card.saturating_add_signed(delta).min(last);
+    }
+
+    fn page(&mut self, direction: isize) {
+        let rows = isize::try_from(self.visible[self.column].max(1)).unwrap_or(1);
+        self.move_card(direction * rows);
+    }
+
+    fn first_card(&mut self) {
+        self.cards[self.column] = 0;
+    }
+
+    fn last_card(&mut self) {
+        self.cards[self.column] = self.column_len(self.column).saturating_sub(1);
+    }
+
+    /// Scrolls `column` by the minimum needed so the selected card fits in
+    /// `available` rows, given each card's height; pulls back after a resize
+    /// when earlier cards fit again. Returns how many cards are visible.
+    fn fit(&mut self, column: usize, heights: &[u16], available: u16) -> usize {
+        let selected = self.cards[column].min(heights.len().saturating_sub(1));
+        let span = |from: usize, to: usize| -> u32 {
+            heights[from..to]
+                .iter()
+                .map(|height| u32::from(*height))
+                .sum()
+        };
+        let available = u32::from(available);
+        let mut offset = self.offsets[column].min(selected);
+        while offset < selected && span(offset, selected + 1) > available {
+            offset += 1;
+        }
+        while offset > 0 && span(offset - 1, heights.len()) <= available {
+            offset -= 1;
+        }
+        self.offsets[column] = offset;
+        let mut used = 0;
+        let mut visible = 0;
+        for height in &heights[offset.min(heights.len())..] {
+            used += u32::from(*height);
+            if used > available {
+                break;
+            }
+            visible += 1;
+        }
+        self.visible[column] = visible.max(1);
+        visible
+    }
+
+    fn selected_card(&self) -> Option<&kanban::Card> {
+        self.board
+            .cards_in(self.state())
+            .nth(self.cards[self.column])
+    }
+
+    /// Keeps every remembered position valid after a reload.
+    fn replace(&mut self, board: kanban::Board) {
+        self.board = board;
+        self.clamp();
+    }
+
+    fn clamp(&mut self) {
+        for column in 0..kanban::StoryState::ALL.len() {
+            let len = self.column_len(column);
+            self.cards[column] = self.cards[column].min(len.saturating_sub(1));
+            self.offsets[column] = self.offsets[column].min(self.cards[column]);
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -301,6 +438,7 @@ struct App {
     filter: String,
     status: Option<String>,
     home_selected: usize,
+    kanban: Option<KanbanView>,
 }
 
 impl App {
@@ -335,6 +473,7 @@ impl App {
             filter: String::new(),
             status: None,
             home_selected: 0,
+            kanban: None,
         };
         app.reload();
         Ok(app)
@@ -389,6 +528,14 @@ impl App {
             .and_then(|active| active.require().ok());
         match self.screen {
             Screen::Home => {}
+            Screen::Kanban => {
+                // The Projects selection is kept for Esc; only the board is
+                // refreshed here.
+                if let Err(error) = self.reload_kanban() {
+                    self.show_error(error);
+                }
+                return;
+            }
             Screen::Group(DashboardGroup::Labs) => {
                 self.labs = labs::list(&self.db).unwrap_or_default();
             }
@@ -467,6 +614,7 @@ impl App {
                 })
                 .count(),
             Screen::Group(DashboardGroup::Settings) => 1,
+            Screen::Kanban => 0,
         }
     }
 
@@ -623,6 +771,20 @@ impl App {
                 None
             }
             Mode::Message { .. } | Mode::Help => None,
+            Mode::Story { detail, mut scroll } => {
+                match key.code {
+                    KeyCode::Esc | KeyCode::Enter => return None,
+                    KeyCode::Up | KeyCode::Char('k') => scroll = scroll.saturating_sub(1),
+                    KeyCode::Down | KeyCode::Char('j') => scroll = scroll.saturating_add(1),
+                    KeyCode::PageUp => scroll = scroll.saturating_sub(10),
+                    KeyCode::PageDown | KeyCode::Char(' ') => scroll = scroll.saturating_add(10),
+                    KeyCode::Home | KeyCode::Char('g') => scroll = 0,
+                    KeyCode::End | KeyCode::Char('G') => scroll = u16::MAX,
+                    _ => {}
+                }
+                self.mode = Mode::Story { detail, scroll };
+                None
+            }
             Mode::Picker {
                 agents,
                 mut selected,
@@ -654,6 +816,10 @@ impl App {
 
     fn handle_browse(&mut self, key: KeyEvent) -> Option<Deferred> {
         match self.screen {
+            Screen::Kanban => {
+                self.handle_kanban(key);
+                None
+            }
             Screen::Home => {
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
@@ -789,8 +955,18 @@ impl App {
                         }
                     }
                     KeyCode::Char('v') if group == DashboardGroup::Projects => {
-                        let result = self.show_kanban();
+                        let result = self.open_kanban();
                         self.apply_result(result);
+                    }
+                    KeyCode::Char('e') if group == DashboardGroup::Projects => {
+                        if let Some(project) = self.selected_project() {
+                            self.mode = Mode::Form(Form::project_edit(
+                                project.id.clone(),
+                                project.name.clone(),
+                            ));
+                        } else {
+                            self.status = Some("Select a project to edit.".to_owned());
+                        }
                     }
                     KeyCode::Char('e') if group == DashboardGroup::Settings => {
                         return Some(Deferred::EditSettings);
@@ -810,6 +986,109 @@ impl App {
                 None
             }
         }
+    }
+
+    fn handle_kanban(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('q') => self.quit = true,
+            KeyCode::Esc => self.close_kanban(),
+            KeyCode::Char('?') => self.mode = Mode::Help,
+            KeyCode::Left | KeyCode::Char('h') => {
+                if let Some(view) = self.kanban.as_mut() {
+                    view.move_column(-1);
+                }
+            }
+            KeyCode::Right | KeyCode::Char('l') => {
+                if let Some(view) = self.kanban.as_mut() {
+                    view.move_column(1);
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(view) = self.kanban.as_mut() {
+                    view.move_card(-1);
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Some(view) = self.kanban.as_mut() {
+                    view.move_card(1);
+                }
+            }
+            KeyCode::PageUp => {
+                if let Some(view) = self.kanban.as_mut() {
+                    view.page(-1);
+                }
+            }
+            KeyCode::PageDown => {
+                if let Some(view) = self.kanban.as_mut() {
+                    view.page(1);
+                }
+            }
+            KeyCode::Home | KeyCode::Char('g') => {
+                if let Some(view) = self.kanban.as_mut() {
+                    view.first_card();
+                }
+            }
+            KeyCode::End | KeyCode::Char('G') => {
+                if let Some(view) = self.kanban.as_mut() {
+                    view.last_card();
+                }
+            }
+            KeyCode::Enter => {
+                let result = self.show_story();
+                self.apply_result(result);
+            }
+            KeyCode::Char('r') => match self.reload_kanban() {
+                Ok(()) => self.status = Some("Board reloaded.".to_owned()),
+                Err(error) => self.show_error(error),
+            },
+            _ => {}
+        }
+    }
+
+    fn open_kanban(&mut self) -> Result<(), AppError> {
+        let project = self
+            .selected_project()
+            .ok_or_else(|| AppError::Precondition {
+                problem: "no project is selected.".to_owned(),
+                hint: "Move the selection.".to_owned(),
+            })?;
+        let board = kanban::show(&self.db, &self.db, project.id.as_str())?;
+        self.kanban = Some(KanbanView::new(board));
+        self.screen = Screen::Kanban;
+        self.status = None;
+        Ok(())
+    }
+
+    fn reload_kanban(&mut self) -> Result<(), AppError> {
+        let Some(view) = self.kanban.as_mut() else {
+            return Ok(());
+        };
+        let board = kanban::show(&self.db, &self.db, view.board.project_id.as_str())?;
+        view.replace(board);
+        Ok(())
+    }
+
+    fn close_kanban(&mut self) {
+        self.kanban = None;
+        self.screen = Screen::Group(DashboardGroup::Projects);
+        self.status = None;
+        self.reload();
+    }
+
+    fn show_story(&mut self) -> Result<(), AppError> {
+        let Some(view) = self.kanban.as_ref() else {
+            return Ok(());
+        };
+        let Some(card) = view.selected_card() else {
+            self.status = Some(format!("No stories in {}.", view.state().label()));
+            return Ok(());
+        };
+        let detail = kanban::story(&self.db, &self.db, &view.board.project_id, &card.id)?;
+        self.mode = Mode::Story {
+            detail: Box::new(detail),
+            scroll: 0,
+        };
+        Ok(())
     }
 
     fn open_group(&mut self, group: DashboardGroup) {
@@ -976,7 +1255,7 @@ impl App {
                     agent.record.name.clone(),
                 ));
             }
-            Screen::Group(DashboardGroup::Settings) | Screen::Home => {
+            Screen::Group(DashboardGroup::Settings) | Screen::Home | Screen::Kanban => {
                 self.status = Some("This group has no delete action.".to_owned());
             }
         }
@@ -1161,25 +1440,24 @@ impl App {
         Ok(())
     }
 
+    fn rename_project(&mut self, id: &ProjectId, name: &str) -> Result<(), AppError> {
+        let project = projects::rename(&self.db, &self.db, id.as_str(), name)?;
+        record_event(
+            &mut self.db,
+            self.run_id,
+            EventKind::ProjectUpdated,
+            EntityType::Project,
+            project.id.as_str(),
+        );
+        self.reload();
+        self.status = Some(format!("Project {} updated.", project.id));
+        Ok(())
+    }
+
     fn assign_agent(&mut self, agent_id: &str) -> Result<(), AppError> {
         let project = projects::assign_agent(&self.db, &self.db, agent_id)?;
         self.reload();
         self.status = Some(format!("Agent assigned to project {}.", project.id));
-        Ok(())
-    }
-
-    fn show_kanban(&mut self) -> Result<(), AppError> {
-        let project = self
-            .selected_project()
-            .ok_or_else(|| AppError::Precondition {
-                problem: "no project is selected.".to_owned(),
-                hint: "Move the selection.".to_owned(),
-            })?;
-        let board = kanban::show(&self.db, &self.db, project.id.as_str())?;
-        self.mode = Mode::Message {
-            title: format!("Kanban {}", board.project_id),
-            lines: kanban_lines(&board),
-        };
         Ok(())
     }
 
@@ -1235,6 +1513,7 @@ impl App {
             FormKind::LabNew => self.create_lab(&name, &value),
             FormKind::LabEdit(id) => self.update_lab(id, &name, &value),
             FormKind::ProjectNew => self.create_project(&name, &value),
+            FormKind::ProjectEdit(id) => self.rename_project(id, &name),
         }
     }
 
@@ -1245,7 +1524,11 @@ impl App {
                 // themselves; only a completed form/confirm returns to browse.
                 if !matches!(
                     self.mode,
-                    Mode::Message { .. } | Mode::Confirm(_) | Mode::Picker { .. } | Mode::Help
+                    Mode::Message { .. }
+                        | Mode::Confirm(_)
+                        | Mode::Picker { .. }
+                        | Mode::Help
+                        | Mode::Story { .. }
                 ) {
                     self.mode = Mode::Browse;
                 }
@@ -1339,10 +1622,17 @@ impl App {
         match self.screen {
             Screen::Home => self.render_home(frame, area),
             Screen::Group(group) => self.render_group(frame, area, group),
+            Screen::Kanban => self.render_kanban(frame, area),
         }
         match &self.mode {
             Mode::Browse => {}
             Mode::Form(form) => self.render_form(frame, area, form),
+            Mode::Story { .. } => {
+                let theme = self.theme;
+                if let Mode::Story { detail, scroll } = &mut self.mode {
+                    render_story(frame, area, theme, detail, scroll);
+                }
+            }
             _ => self.render_modal(frame, area),
         }
     }
@@ -1572,6 +1862,266 @@ impl App {
         );
     }
 
+    fn render_kanban(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        let Some(mut view) = self.kanban.take() else {
+            return;
+        };
+        self.draw_kanban(frame, area, &mut view);
+        self.kanban = Some(view);
+    }
+
+    fn draw_kanban(&self, frame: &mut Frame<'_>, area: Rect, view: &mut KanbanView) {
+        let board = &view.board;
+        let mut footer = action_grid(
+            &KANBAN_ACTIONS,
+            self.theme,
+            usize::from(area.width.saturating_sub(2)),
+        );
+        footer.push(Line::from(Span::styled(
+            "Read-only board; Enter shows the full story.",
+            self.theme.muted_style(),
+        )));
+        if let Some(status) = &self.status {
+            footer.push(Line::from(vec![
+                Span::styled("Status: ", self.theme.key()),
+                Span::styled(clean(status), self.theme.success_style()),
+            ]));
+        }
+        let footer_height = u16::try_from(footer.len() + 2).unwrap_or(6);
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(4),
+                Constraint::Min(6),
+                Constraint::Length(footer_height),
+            ])
+            .split(area);
+
+        let separator = if self.theme.unicode { " · " } else { " - " };
+        let mut context = vec![
+            board.project_id.to_string(),
+            format!("lab {}", clean(&board.lab_name)),
+            format!(
+                "lead {}",
+                board
+                    .lead_name
+                    .as_deref()
+                    .map(clean)
+                    .unwrap_or_else(|| "missing".to_owned())
+            ),
+        ];
+        if let Some(source) = &board.github_source {
+            context.push(clean(source));
+        }
+        let summary = format!(
+            "Stories {}{separator}Done {}{separator}Pending intake {}",
+            board.counts.total(),
+            board.counts.done,
+            board.pending_intake
+        );
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(vec![
+                    Span::styled(clean(&board.project_name), self.theme.title()),
+                    Span::raw("  "),
+                    Span::styled(context.join(separator), self.theme.muted_style()),
+                ]),
+                Line::from(Span::styled(summary, self.theme.muted_style())),
+            ])
+            .block(self.block("Kanban")),
+            chunks[0],
+        );
+
+        let body = chunks[1];
+        let inner = Rect {
+            x: body.x.saturating_add(1),
+            y: body.y.saturating_add(1),
+            width: body.width.saturating_sub(2),
+            height: body.height.saturating_sub(2),
+        };
+        let total = kanban::StoryState::ALL.len();
+        let shown = kanban_window(usize::from(inner.width));
+        let first = if view.column < shown {
+            0
+        } else {
+            view.column + 1 - shown
+        };
+        let last = (first + shown).min(total);
+        let mut title = "Board".to_owned();
+        if first > 0 {
+            title.push_str(&format!(
+                "  {} {first} more",
+                if self.theme.unicode { "‹" } else { "<" }
+            ));
+        }
+        if last < total {
+            title.push_str(&format!(
+                "  {} more {}",
+                total - last,
+                if self.theme.unicode { "›" } else { ">" }
+            ));
+        }
+        frame.render_widget(self.block(&title), body);
+
+        let constraints = vec![Constraint::Ratio(1, u32::try_from(shown).unwrap_or(1)); shown];
+        let columns = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(constraints)
+            .split(inner);
+        for (slot, column) in (first..last).enumerate() {
+            self.render_kanban_list(frame, columns[slot], view, column);
+        }
+        frame.render_widget(
+            Paragraph::new(footer).block(self.block("Actions")),
+            chunks[2],
+        );
+    }
+
+    fn render_kanban_list(
+        &self,
+        frame: &mut Frame<'_>,
+        area: Rect,
+        view: &mut KanbanView,
+        column: usize,
+    ) {
+        let state = kanban::StoryState::ALL[column];
+        let focused = column == view.column;
+        // List border plus card border on each side.
+        let text_width = usize::from(area.width.saturating_sub(4));
+        let titles: Vec<Vec<String>> = view
+            .board
+            .cards_in(state)
+            .map(|card| wrap_clipped(&clean(&card.title), text_width, KANBAN_TITLE_LINES))
+            .collect();
+        let heights: Vec<u16> = titles
+            .iter()
+            .map(|lines| u16::try_from(lines.len().max(1)).unwrap_or(1) + 2)
+            .collect();
+        let total = titles.len();
+        let visible = if total == 0 {
+            0
+        } else {
+            view.fit(column, &heights, area.height.saturating_sub(2))
+        };
+        let selected = view.cards[column];
+        let offset = view.offsets[column];
+
+        let border = if focused {
+            self.theme.key()
+        } else {
+            self.theme.border_style()
+        };
+        let title_style = if focused {
+            self.theme.key()
+        } else {
+            self.theme.title()
+        };
+        let (up, down) = if self.theme.unicode {
+            ("↑", "↓")
+        } else {
+            ("^", "v")
+        };
+        let mut block = Block::bordered()
+            .border_type(self.border_type())
+            .title(Line::from(Span::styled(
+                format!(" {} {total} ", state.label()),
+                title_style,
+            )))
+            .border_style(border);
+        // Scroll indicators live in the list borders so cards keep every row.
+        if offset > 0 {
+            block = block.title(
+                Line::from(Span::styled(
+                    format!(" {up}{offset} "),
+                    self.theme.muted_style(),
+                ))
+                .right_aligned(),
+            );
+        }
+        let below = total.saturating_sub(offset + visible);
+        if below > 0 {
+            block = block.title_bottom(Line::from(Span::styled(
+                format!(" {down}{below} more "),
+                self.theme.muted_style(),
+            )));
+        }
+        if visible < total {
+            block = block.title_bottom(
+                Line::from(Span::styled(
+                    format!(" {}/{total} ", selected + 1),
+                    self.theme.muted_style(),
+                ))
+                .right_aligned(),
+            );
+        }
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+
+        if total == 0 {
+            let mut lines = vec![Line::from(Span::styled(
+                "No stories",
+                self.theme.muted_style(),
+            ))];
+            if state == kanban::StoryState::Todo && view.board.cards.is_empty() {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    "Submit a request with `vlab --new-request` to plan stories.",
+                    self.theme.muted_style(),
+                )));
+            }
+            frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), inner);
+            return;
+        }
+
+        let mut y = inner.y;
+        for index in offset..offset + visible {
+            let rect = Rect {
+                x: inner.x,
+                y,
+                width: inner.width,
+                height: heights[index],
+            };
+            self.render_kanban_card(frame, rect, &titles[index], focused && index == selected);
+            y += heights[index];
+        }
+    }
+
+    fn render_kanban_card(
+        &self,
+        frame: &mut Frame<'_>,
+        area: Rect,
+        title: &[String],
+        selected: bool,
+    ) {
+        // A card shows only the short description; Enter opens the rest.
+        let width = usize::from(area.width.saturating_sub(2));
+        let style = if selected {
+            self.theme.selected()
+        } else {
+            Style::default()
+        };
+        let lines: Vec<Line<'static>> = title
+            .iter()
+            .map(|line| Line::from(Span::styled(format!("{line:<width$}"), style)))
+            .collect();
+        let block = Block::bordered()
+            .border_type(self.border_type())
+            .border_style(if selected {
+                self.theme.key()
+            } else {
+                self.theme.border_style()
+            });
+        frame.render_widget(Paragraph::new(lines).block(block), area);
+    }
+
+    fn border_type(&self) -> BorderType {
+        if self.theme.unicode {
+            BorderType::Rounded
+        } else {
+            BorderType::Plain
+        }
+    }
+
     fn render_form(&self, frame: &mut Frame<'_>, area: Rect, form: &Form) {
         let width = u16::try_from(76)
             .unwrap_or(76)
@@ -1656,7 +2206,14 @@ impl App {
             Mode::Message { title, lines } => {
                 (clean(title), lines.iter().map(|line| clean(line)).collect())
             }
-            Mode::Help => ("Help".to_owned(), help_lines()),
+            Mode::Help => (
+                "Help".to_owned(),
+                if self.screen == Screen::Kanban {
+                    kanban_help_lines()
+                } else {
+                    help_lines()
+                },
+            ),
             Mode::Picker { agents, selected } => {
                 let mut lines: Vec<String> = agents
                     .iter()
@@ -1671,7 +2228,7 @@ impl App {
                 lines.push("\nEnter assign · Esc cancel".to_owned());
                 ("Assign agent".to_owned(), lines)
             }
-            Mode::Form(_) | Mode::Browse => return,
+            Mode::Form(_) | Mode::Browse | Mode::Story { .. } => return,
         };
         let rect = centered_rect(78, 60, area);
         frame.render_widget(Clear, rect);
@@ -1748,6 +2305,16 @@ impl Theme {
             Style::default()
                 .fg(Color::Black)
                 .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().add_modifier(Modifier::BOLD)
+        }
+    }
+
+    fn warning_style(self) -> Style {
+        if self.color {
+            Style::default()
+                .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().add_modifier(Modifier::BOLD)
@@ -1863,6 +2430,7 @@ fn action_items(group: DashboardGroup) -> Vec<(&'static str, &'static str)> {
         ],
         DashboardGroup::Projects => vec![
             ("[n]", "New"),
+            ("[e]", "Edit"),
             ("[Enter]", "Open"),
             ("[a]", "Assign"),
             ("[v]", "Kanban"),
@@ -1895,6 +2463,256 @@ fn action_items(group: DashboardGroup) -> Vec<(&'static str, &'static str)> {
     }
 }
 
+const KANBAN_ACTIONS: [(&str, &str); 8] = [
+    ("[←/→]", "List"),
+    ("[↑/↓]", "Card"),
+    ("[PgUp/Dn]", "Scroll"),
+    ("[Enter]", "Detail"),
+    ("[r]", "Reload"),
+    ("[?]", "Help"),
+    ("[Esc]", "Back"),
+    ("[q]", "Quit"),
+];
+
+/// Most short-description lines on a card; shorter titles make shorter cards.
+const KANBAN_TITLE_LINES: usize = 3;
+
+/// Narrowest readable list; fewer lists are shown below it.
+const KANBAN_MIN_LIST_WIDTH: usize = 18;
+
+/// How many lists fit side by side in `width` columns.
+fn kanban_window(width: usize) -> usize {
+    (width / KANBAN_MIN_LIST_WIDTH).clamp(1, kanban::StoryState::ALL.len())
+}
+
+/// Word-wraps `value` to `width` characters; longer words are split.
+fn wrap_text(value: &str, width: usize) -> Vec<String> {
+    if width == 0 {
+        return Vec::new();
+    }
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in value.split_whitespace() {
+        let mut word: Vec<char> = word.chars().collect();
+        loop {
+            let used = current.chars().count();
+            let gap = usize::from(used > 0);
+            if used + gap + word.len() <= width {
+                if gap == 1 {
+                    current.push(' ');
+                }
+                current.extend(word);
+                break;
+            }
+            if used == 0 {
+                current = word.drain(..width).collect();
+            }
+            lines.push(std::mem::take(&mut current));
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines
+}
+
+/// Like [`wrap_text`] but keeps at most `max_lines`; a cut ends with `…`.
+fn wrap_clipped(value: &str, width: usize, max_lines: usize) -> Vec<String> {
+    let mut lines = wrap_text(value, width);
+    if lines.len() > max_lines {
+        lines.truncate(max_lines);
+        if let Some(last) = lines.last_mut() {
+            let kept: String = last.chars().take(width.saturating_sub(1)).collect();
+            *last = format!("{}…", kept.trim_end());
+        }
+    }
+    lines
+}
+
+/// Card detail dialog: every story field, word-wrapped and scrollable.
+fn render_story(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    theme: Theme,
+    detail: &kanban::StoryDetail,
+    scroll: &mut u16,
+) {
+    let rect = centered_rect(84, 84, area);
+    let block = Block::bordered()
+        .border_type(if theme.unicode {
+            BorderType::Rounded
+        } else {
+            BorderType::Plain
+        })
+        .border_style(theme.key())
+        .title(Line::from(Span::styled(
+            format!(" Story {} ", detail.id),
+            theme.key(),
+        )));
+    let inner = block.inner(rect);
+    let lines = story_lines(detail, theme, usize::from(inner.width));
+    let total = u16::try_from(lines.len()).unwrap_or(u16::MAX);
+    let max_scroll = total.saturating_sub(inner.height);
+    *scroll = (*scroll).min(max_scroll);
+    let hint = if max_scroll > 0 {
+        format!(
+            " ↑/↓ scroll {}/{} · Esc close ",
+            *scroll + 1,
+            max_scroll + 1
+        )
+    } else {
+        " Esc close ".to_owned()
+    };
+    let block = block.title_bottom(Line::from(Span::styled(hint, theme.muted_style())));
+    frame.render_widget(Clear, rect);
+    frame.render_widget(
+        Paragraph::new(lines).scroll((*scroll, 0)).block(block),
+        rect,
+    );
+}
+
+const STORY_LABEL_WIDTH: usize = 12;
+
+fn story_lines(story: &kanban::StoryDetail, theme: Theme, width: usize) -> Vec<Line<'static>> {
+    let label_style = theme.muted_style().add_modifier(Modifier::BOLD);
+    let value_width = width.saturating_sub(STORY_LABEL_WIDTH).max(1);
+    let mut lines: Vec<Line<'static>> = wrap_text(&clean(&story.title), width)
+        .into_iter()
+        .map(|line| Line::from(Span::styled(line, theme.title())))
+        .collect();
+    lines.push(Line::from(""));
+
+    let field = |lines: &mut Vec<Line<'static>>, label: &str, value: String, style: Style| {
+        for (index, part) in wrap_text(&value, value_width).into_iter().enumerate() {
+            let label = if index == 0 { label } else { "" };
+            lines.push(Line::from(vec![
+                Span::styled(format!("{label:<STORY_LABEL_WIDTH$}"), label_style),
+                Span::styled(part, style),
+            ]));
+        }
+    };
+    let state_style = if story.state == kanban::StoryState::Blocked {
+        theme.warning_style()
+    } else {
+        Style::default()
+    };
+    field(
+        &mut lines,
+        "State",
+        story.state.label().to_owned(),
+        state_style,
+    );
+    field(
+        &mut lines,
+        "Assignee",
+        story
+            .assignee
+            .as_deref()
+            .map(clean)
+            .unwrap_or_else(|| "Unassigned".to_owned()),
+        Style::default(),
+    );
+    field(
+        &mut lines,
+        "Priority",
+        clean(&story.priority),
+        Style::default(),
+    );
+    field(
+        &mut lines,
+        "Complexity",
+        clean(&story.complexity),
+        Style::default(),
+    );
+    let overdue = story.overdue && story.state != kanban::StoryState::Done;
+    field(
+        &mut lines,
+        "Due",
+        format!(
+            "{}{}",
+            clean(&story.due_date),
+            if overdue { "  ! OVERDUE" } else { "" }
+        ),
+        if overdue {
+            theme.warning_style()
+        } else {
+            Style::default()
+        },
+    );
+    field(
+        &mut lines,
+        "Skills",
+        if story.required_skills.is_empty() {
+            "—".to_owned()
+        } else {
+            story
+                .required_skills
+                .iter()
+                .map(|skill| clean(skill))
+                .collect::<Vec<_>>()
+                .join(", ")
+        },
+        Style::default(),
+    );
+    field(
+        &mut lines,
+        "Request",
+        story.request_id.to_string(),
+        Style::default(),
+    );
+    field(&mut lines, "Story", story.id.to_string(), Style::default());
+
+    let section =
+        |lines: &mut Vec<Line<'static>>, heading: &str, items: Vec<String>, bullet: &str| {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(heading.to_owned(), label_style)));
+            if items.is_empty() {
+                lines.push(Line::from(Span::styled("—", theme.muted_style())));
+            }
+            let indent = bullet.chars().count();
+            for item in items {
+                for (index, part) in wrap_text(&item, width.saturating_sub(indent).max(1))
+                    .into_iter()
+                    .enumerate()
+                {
+                    let prefix = if index == 0 {
+                        bullet.to_owned()
+                    } else {
+                        " ".repeat(indent)
+                    };
+                    lines.push(Line::from(format!("{prefix}{part}")));
+                }
+            }
+        };
+    section(
+        &mut lines,
+        "Description",
+        vec![clean(&story.description)],
+        "",
+    );
+    section(
+        &mut lines,
+        "Acceptance criteria",
+        story
+            .acceptance_criteria
+            .iter()
+            .map(|criterion| clean(criterion))
+            .collect(),
+        if theme.unicode { "• " } else { "- " },
+    );
+    section(
+        &mut lines,
+        "Assignment rationale",
+        story
+            .rationale
+            .iter()
+            .map(|rationale| clean(rationale))
+            .collect(),
+        "",
+    );
+    lines
+}
+
 fn action_lines(group: DashboardGroup, theme: Theme, width: usize) -> Vec<Line<'static>> {
     action_grid(&action_items(group), theme, width)
 }
@@ -1907,10 +2725,14 @@ fn action_grid(
     if items.is_empty() {
         return Vec::new();
     }
-    let key_width = items.iter().map(|(key, _)| key.len()).max().unwrap_or(0);
+    let key_width = items
+        .iter()
+        .map(|(key, _)| key.chars().count())
+        .max()
+        .unwrap_or(0);
     let label_width = items
         .iter()
-        .map(|(_, label)| label.len())
+        .map(|(_, label)| label.chars().count())
         .max()
         .unwrap_or(0);
     let cell_width = key_width + 1 + label_width + 2;
@@ -1924,7 +2746,7 @@ fn action_grid(
                     spans.push(Span::raw("  "));
                 }
                 spans.push(Span::styled(*key, theme.key()));
-                spans.push(Span::raw(" ".repeat(key_width - key.len() + 1)));
+                spans.push(Span::raw(" ".repeat(key_width - key.chars().count() + 1)));
                 spans.push(Span::styled(
                     format!("{label:<label_width$}"),
                     theme.muted_style(),
@@ -2045,38 +2867,20 @@ fn agent_detail_lines(detail: &agents::AgentDetail) -> Vec<String> {
     lines
 }
 
-fn kanban_lines(board: &kanban::Board) -> Vec<String> {
-    let mut lines = vec![
-        format!("Project: {} — {}", board.project_id, board.project_name),
-        format!("Laboratory: {}", board.lab_name),
-        format!(
-            "Coordinator: {}",
-            board.lead_name.as_deref().unwrap_or("missing")
-        ),
-        format!(
-            "Stories: {} · TODO {} · IN PROGRESS {} · IN REVIEW {} · BLOCKED {} · DONE {}",
-            board.counts.total(),
-            board.counts.todo,
-            board.counts.in_progress,
-            board.counts.in_review,
-            board.counts.blocked,
-            board.counts.done
-        ),
-        format!("Pending intake: {}", board.pending_intake),
-    ];
-    for state in kanban::StoryState::ALL {
-        lines.push(format!("{}:", state.label()));
-        for card in board.cards_in(state) {
-            lines.push(format!(
-                "  {} {} [{}] due {}",
-                card.id,
-                clean(&card.title),
-                clean(&card.priority),
-                clean(&card.due_date)
-            ));
-        }
-    }
-    lines
+fn kanban_help_lines() -> Vec<String> {
+    vec![
+        "h/l or ←/→  previous/next list".to_owned(),
+        "j/k or ↑/↓  previous/next card; the list scrolls".to_owned(),
+        "PgUp/PgDn   scroll the list by one page".to_owned(),
+        "g/G         first/last card in the list".to_owned(),
+        "Enter       card detail (↑/↓ scroll, Esc close)".to_owned(),
+        "r           reload the board".to_owned(),
+        "?           this help".to_owned(),
+        "Esc         back to projects".to_owned(),
+        "q           quit".to_owned(),
+        String::new(),
+        "The board is read-only; it never changes story state.".to_owned(),
+    ]
 }
 
 fn help_lines() -> Vec<String> {
@@ -2086,6 +2890,8 @@ fn help_lines() -> Vec<String> {
         "g/G         first/last page".to_owned(),
         "Enter       open/confirm selection".to_owned(),
         "n           new item in this group".to_owned(),
+        "e           edit the selected item".to_owned(),
+        "v           project Kanban board".to_owned(),
         "a           set active or assign".to_owned(),
         "d           delete with confirmation".to_owned(),
         "/           filter".to_owned(),
@@ -2214,6 +3020,7 @@ mod tests {
             filter: String::new(),
             status: None,
             home_selected: 0,
+            kanban: None,
         };
         (app, dir)
     }
@@ -2467,5 +3274,392 @@ mod tests {
         for key in ["j/k", "Enter", "d", "Esc", "q"] {
             assert!(help.contains(key), "{key}: {help}");
         }
+    }
+
+    fn card(id: &str, title: &str, state: kanban::StoryState) -> kanban::Card {
+        kanban::Card {
+            id: crate::domain::ids::StoryId::parse(id).unwrap(),
+            title: title.to_owned(),
+            state,
+            assignee: None,
+            priority: "high".to_owned(),
+            due_date: "2026-01-03".to_owned(),
+            overdue: true,
+        }
+    }
+
+    fn board(cards: Vec<kanban::Card>) -> kanban::Board {
+        kanban::Board {
+            project_id: ProjectId::parse("0b1c2d3e").unwrap(),
+            project_name: "Portal".to_owned(),
+            github_source: None,
+            lab_name: "Payments".to_owned(),
+            lead_name: Some("Grace".to_owned()),
+            counts: kanban::BoardCounts::default(),
+            pending_intake: 1,
+            cards,
+        }
+    }
+
+    fn kanban_fixture(cards: Vec<kanban::Card>) -> (App, tempfile::TempDir) {
+        let (mut app, dir) = fixture(Screen::Kanban);
+        app.kanban = Some(KanbanView::new(board(cards)));
+        (app, dir)
+    }
+
+    #[test]
+    fn the_kanban_is_a_full_screen_board_of_lists_and_cards() {
+        let (mut app, _dir) = kanban_fixture(vec![
+            card("2d3e4f50", "Reset password", kanban::StoryState::Todo),
+            card("3e4f5061", "Audit log", kanban::StoryState::Todo),
+            card("4f506172", "Rate limit", kanban::StoryState::Blocked),
+        ]);
+        let screen = rendered(&mut app);
+        for text in [
+            "Kanban",
+            "Portal",
+            "lead Grace",
+            "Pending intake 1",
+            "TODO 2",
+            "IN PROGRESS 0",
+            "IN REVIEW 0",
+            "BLOCKED 1",
+            "DONE 0",
+            "Reset password",
+            "Rate limit",
+            "[Enter]",
+            "Detail",
+            "Read-only board",
+        ] {
+            assert!(screen.contains(text), "{text}: {screen}");
+        }
+        // Cards show only the short description; the rest is in the detail.
+        for hidden in ["2d3e4f50", "Unassigned", "OVERDUE", "high", "2026-01-03"] {
+            assert!(!screen.contains(hidden), "{hidden}: {screen}");
+        }
+        // The project table is not underneath: this is a screen, not a modal.
+        assert!(!screen.contains("REQ"), "{screen}");
+    }
+
+    fn many(count: usize) -> Vec<kanban::Card> {
+        (0..count)
+            .map(|index| {
+                card(
+                    &format!("{:08x}", index + 1),
+                    &format!("Story {index}"),
+                    kanban::StoryState::Todo,
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn each_list_scrolls_to_keep_the_selected_card_visible() {
+        let (mut app, _dir) = kanban_fixture(many(12));
+        let screen = rendered_at(&mut app, 100, 30);
+        let rows = app.kanban.as_ref().unwrap().visible[0];
+        assert!((2..12).contains(&rows), "{rows}");
+        assert!(screen.contains("Story 0"), "{screen}");
+        assert!(!screen.contains("Story 11"), "{screen}");
+        assert!(screen.contains(&format!("↓{} more", 12 - rows)), "{screen}");
+        assert!(screen.contains("1/12"), "{screen}");
+
+        // Moving below the last visible card scrolls by one card.
+        for _ in 0..rows {
+            app.handle_key(key(KeyCode::Down));
+        }
+        let screen = rendered_at(&mut app, 100, 30);
+        let view = app.kanban.as_ref().unwrap();
+        assert_eq!((view.cards[0], view.offsets[0]), (rows, 1));
+        assert!(screen.contains("↑1"), "{screen}");
+        assert!(!screen.contains("Story 0 "), "{screen}");
+
+        // Moving back up inside the window does not scroll.
+        app.handle_key(key(KeyCode::Up));
+        rendered_at(&mut app, 100, 30);
+        assert_eq!(app.kanban.as_ref().unwrap().offsets[0], 1);
+
+        app.handle_key(key(KeyCode::End));
+        let screen = rendered_at(&mut app, 100, 30);
+        let view = app.kanban.as_ref().unwrap();
+        assert_eq!((view.cards[0], view.offsets[0]), (11, 12 - rows));
+        assert!(screen.contains("Story 11"), "{screen}");
+        assert!(!screen.contains("more"), "{screen}");
+
+        app.handle_key(key(KeyCode::PageUp));
+        assert_eq!(app.kanban.as_ref().unwrap().cards[0], 11 - rows);
+        app.handle_key(key(KeyCode::Char('g')));
+        rendered_at(&mut app, 100, 30);
+        let view = app.kanban.as_ref().unwrap();
+        assert_eq!((view.cards[0], view.offsets[0]), (0, 0));
+        app.handle_key(key(KeyCode::PageDown));
+        assert_eq!(app.kanban.as_ref().unwrap().cards[0], rows);
+    }
+
+    #[test]
+    fn card_height_follows_the_short_description() {
+        let mut cards = many(3);
+        cards[1].title = "A much longer short description that wraps over lines".to_owned();
+        let (mut app, _dir) = kanban_fixture(cards);
+        let mut view = app.kanban.take().unwrap();
+        // One-line cards take 3 rows, a three-line card 5.
+        assert_eq!(view.fit(0, &[3, 5, 3], 11), 3);
+        assert_eq!(view.fit(0, &[3, 5, 3], 8), 2);
+        view.cards[0] = 2;
+        assert_eq!(view.fit(0, &[3, 5, 3], 8), 2);
+        assert_eq!(view.offsets[0], 1);
+        // Growing the space pulls earlier cards back into view.
+        assert_eq!(view.fit(0, &[3, 5, 3], 20), 3);
+        assert_eq!(view.offsets[0], 0);
+        app.kanban = Some(view);
+        let screen = rendered(&mut app);
+        assert!(screen.contains("A much longer"), "{screen}");
+    }
+
+    #[test]
+    fn lists_keep_their_own_scroll_and_follow_a_resize() {
+        let mut cards = many(12);
+        cards.push(card("aaaaaaaa", "Review me", kanban::StoryState::InReview));
+        let (mut app, _dir) = kanban_fixture(cards);
+        rendered_at(&mut app, 100, 30);
+        app.handle_key(key(KeyCode::End));
+        rendered_at(&mut app, 100, 30);
+        let offset = app.kanban.as_ref().unwrap().offsets[0];
+        assert!(offset > 0);
+        app.handle_key(key(KeyCode::Right));
+        app.handle_key(key(KeyCode::Right));
+        app.handle_key(key(KeyCode::Down));
+        rendered_at(&mut app, 100, 30);
+        let view = app.kanban.as_ref().unwrap();
+        assert_eq!((view.offsets[0], view.offsets[2]), (offset, 0));
+
+        // A taller terminal shows more cards; the offset shrinks to fit.
+        rendered_at(&mut app, 100, 80);
+        let view = app.kanban.as_ref().unwrap();
+        assert_eq!(view.visible[0], 12);
+        assert_eq!(view.offsets[0], 0);
+        assert_eq!(view.cards[0], 11);
+    }
+
+    #[test]
+    fn narrow_terminals_show_a_window_of_lists_around_the_focus() {
+        let (mut app, _dir) =
+            kanban_fixture(vec![card("2d3e4f50", "Reset", kanban::StoryState::Done)]);
+        let screen = rendered_at(&mut app, 60, 20);
+        assert!(screen.contains("TODO"), "{screen}");
+        assert!(!screen.contains("DONE 1"), "{screen}");
+        assert!(screen.contains("more ›"), "{screen}");
+        for _ in 0..4 {
+            app.handle_key(key(KeyCode::Right));
+        }
+        let screen = rendered_at(&mut app, 60, 20);
+        assert!(screen.contains("DONE 1"), "{screen}");
+        assert!(screen.contains("‹"), "{screen}");
+        for (width, height) in [(80, 24), (100, 30), (160, 50)] {
+            let screen = rendered_at(&mut app, width, height);
+            assert!(screen.contains("Kanban"), "{width}x{height}: {screen}");
+        }
+    }
+
+    #[test]
+    fn board_navigation_clamps_and_esc_returns_to_projects() {
+        let (mut app, _dir) = kanban_fixture(vec![
+            card("2d3e4f50", "One", kanban::StoryState::Todo),
+            card("3e4f5061", "Two", kanban::StoryState::Todo),
+        ]);
+        app.handle_key(key(KeyCode::Left));
+        app.handle_key(key(KeyCode::Up));
+        let view = app.kanban.as_ref().unwrap();
+        assert_eq!((view.column, view.cards[0]), (0, 0));
+        for _ in 0..5 {
+            app.handle_key(key(KeyCode::Char('j')));
+        }
+        let view = app.kanban.as_ref().unwrap();
+        assert_eq!(view.cards[0], 1);
+        assert_eq!(view.selected_card().unwrap().title, "Two");
+        for _ in 0..9 {
+            app.handle_key(key(KeyCode::Char('l')));
+        }
+        let view = app.kanban.as_ref().unwrap();
+        assert_eq!(view.column, 4);
+        assert!(view.selected_card().is_none());
+        app.handle_key(key(KeyCode::Char('?')));
+        assert!(matches!(app.mode, Mode::Help));
+        assert!(rendered(&mut app).contains("previous/next list"));
+        app.handle_key(key(KeyCode::Esc));
+        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(app.screen, Screen::Group(DashboardGroup::Projects));
+        assert!(app.kanban.is_none());
+    }
+
+    #[test]
+    fn card_titles_are_sanitized_and_wrapped() {
+        let (mut app, _dir) = kanban_fixture(vec![card(
+            "2d3e4f50",
+            "evil\u{1b}[31mtitle that keeps going for a long while and still does not end",
+            kanban::StoryState::Todo,
+        )]);
+        let screen = rendered(&mut app);
+        assert!(!screen.contains('\u{1b}'), "{screen}");
+        assert!(screen.contains("eviltitle"), "{screen}");
+        assert!(screen.contains('…'), "{screen}");
+    }
+
+    #[test]
+    fn a_long_story_detail_scrolls_and_clamps() {
+        let detail = kanban::StoryDetail {
+            id: crate::domain::ids::StoryId::parse("2d3e4f50").unwrap(),
+            request_id: crate::domain::ids::RequestId::parse("1c2d3e4f").unwrap(),
+            title: "Reset".to_owned(),
+            description: "word ".repeat(400),
+            state: kanban::StoryState::Todo,
+            assignee: Some("Ada".to_owned()),
+            priority: "high".to_owned(),
+            complexity: "small".to_owned(),
+            due_date: "2026-01-03".to_owned(),
+            overdue: false,
+            acceptance_criteria: (0..30).map(|index| format!("Criterion {index}")).collect(),
+            required_skills: Vec::new(),
+            rationale: Some("Last line of the dialog".to_owned()),
+        };
+        let (mut app, _dir) = kanban_fixture(Vec::new());
+        app.mode = Mode::Story {
+            detail: Box::new(detail),
+            scroll: 0,
+        };
+        let screen = rendered(&mut app);
+        assert!(screen.contains("↑/↓ scroll 1/"), "{screen}");
+        assert!(!screen.contains("Last line of the dialog"), "{screen}");
+        app.handle_key(key(KeyCode::End));
+        let screen = rendered(&mut app);
+        assert!(screen.contains("Last line of the dialog"), "{screen}");
+        let Mode::Story { scroll, .. } = app.mode else {
+            panic!("dialog closed");
+        };
+        assert!(scroll > 0 && scroll < u16::MAX, "{scroll}");
+        app.handle_key(key(KeyCode::Home));
+        assert!(rendered(&mut app).contains("Reset"));
+    }
+
+    #[test]
+    fn action_columns_align_with_multibyte_keys() {
+        let lines = action_grid(
+            &[("[←/→]", "List"), ("[Enter]", "Detail")],
+            Theme {
+                color: false,
+                unicode: true,
+            },
+            80,
+        );
+        let text: String = lines[0]
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
+        assert_eq!(text, "[←/→]   List    [Enter] Detail");
+    }
+
+    #[test]
+    fn titles_wrap_on_words_and_mark_cuts() {
+        assert_eq!(
+            wrap_clipped("Reset password", 20, 2),
+            vec!["Reset password"]
+        );
+        assert_eq!(
+            wrap_clipped("Reset the password flow", 10, 2),
+            vec!["Reset the", "password…"]
+        );
+        assert_eq!(wrap_clipped("abcdefghij", 4, 2), vec!["abcd", "efg…"]);
+        assert_eq!(wrap_clipped("a b", 0, 2), Vec::<String>::new());
+        assert_eq!(
+            wrap_text("Reset the password flow", 10),
+            vec!["Reset the", "password", "flow"]
+        );
+    }
+
+    fn seeded() -> (App, tempfile::TempDir) {
+        let (mut app, dir) = fixture(Screen::Group(DashboardGroup::Projects));
+        for sql in [
+            "INSERT INTO labs (id, name, created_at, updated_at) VALUES ('a3f91c07', 'Payments', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            "INSERT INTO projects (id, lab_id, name, created_at, updated_at) VALUES ('0b1c2d3e', 'a3f91c07', 'Portal', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            "INSERT INTO requests (id, project_id, content, status, created_at, updated_at) VALUES ('1c2d3e4f', '0b1c2d3e', 'Add reset', 'PLANNED', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            "INSERT INTO stories (id, project_id, request_id, title, description, acceptance_criteria_json, priority, complexity, required_skills_json, state, due_date, created_at, updated_at) VALUES ('2d3e4f50', '0b1c2d3e', '1c2d3e4f', 'Reset', 'Send a link', '[\"Link expires\"]', 'high', 'small', '[\"rust\"]', 'TODO', '2026-01-03', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        ] {
+            app.db.execute(sql).unwrap();
+        }
+        context::save_active_lab(&app.db, &LabId::parse("a3f91c07").unwrap()).unwrap();
+        app.reload();
+        (app, dir)
+    }
+
+    #[test]
+    fn the_projects_dashboard_opens_the_board_and_card_detail() {
+        let (mut app, _dir) = seeded();
+        app.handle_key(key(KeyCode::Char('v')));
+        assert_eq!(app.screen, Screen::Kanban);
+        app.handle_key(key(KeyCode::Enter));
+        assert!(matches!(app.mode, Mode::Story { .. }), "{:?}", app.mode);
+        let screen = rendered(&mut app);
+        for expected in [
+            "Story 2d3e4f50",
+            "State",
+            "TODO",
+            "Assignee",
+            "Unassigned",
+            "Priority",
+            "high",
+            "Complexity",
+            "small",
+            "2026-01-03",
+            "! OVERDUE",
+            "rust",
+            "1c2d3e4f",
+            "Description",
+            "Send a link",
+            "Acceptance criteria",
+            "• Link expires",
+            "Esc close",
+        ] {
+            assert!(screen.contains(expected), "{expected}: {screen}");
+        }
+        // Keys other than Esc/Enter keep the dialog open.
+        app.handle_key(key(KeyCode::Char('x')));
+        assert!(matches!(app.mode, Mode::Story { .. }));
+        app.handle_key(key(KeyCode::Esc));
+        assert!(matches!(app.mode, Mode::Browse));
+        assert_eq!(app.screen, Screen::Kanban);
+        app.handle_key(key(KeyCode::Char('r')));
+        assert_eq!(app.status.as_deref(), Some("Board reloaded."));
+    }
+
+    #[test]
+    fn the_projects_dashboard_renames_the_selected_project() {
+        let (mut app, _dir) = seeded();
+        app.handle_key(key(KeyCode::Char('e')));
+        let Mode::Form(form) = &app.mode else {
+            panic!("expected the edit form");
+        };
+        assert_eq!(form.title(), "Edit project 0b1c2d3e");
+        assert_eq!(form.fields.len(), 1);
+        assert!(rendered(&mut app).contains("Edit project"));
+        app.handle_key(key(KeyCode::End));
+        for ch in " Web".chars() {
+            app.handle_key(key(KeyCode::Char(ch)));
+        }
+        app.handle_key(key(KeyCode::Enter));
+        assert!(matches!(app.mode, Mode::Browse), "{:?}", app.mode);
+        assert_eq!(app.projects[0].name, "Portal Web");
+
+        app.handle_key(key(KeyCode::Char('e')));
+        for _ in 0.."Portal Web".len() {
+            app.handle_key(key(KeyCode::Backspace));
+        }
+        app.handle_key(key(KeyCode::Enter));
+        let Mode::Message { title, lines } = &app.mode else {
+            panic!("expected a validation error");
+        };
+        assert_eq!(title, "Operation failed");
+        assert!(!lines.join(" ").contains("Portal"), "{lines:?}");
+        assert_eq!(app.projects[0].name, "Portal Web");
     }
 }

@@ -1,11 +1,12 @@
 //! SQLite implementations for projects, memories, and the Kanban port.
 
-use crate::app::kanban::{Board, BoardStore};
+use crate::app::kanban::{Board, BoardStore, StoryDetail};
 use crate::app::memories::{MemoryRecord, MemoryStore};
 use crate::app::projects::{ProjectOverview, ProjectStore};
 use crate::app::storage::StorageError;
-use crate::domain::ids::{AgentId, LabId, MemoryId, ProjectId};
+use crate::domain::ids::{AgentId, LabId, MemoryId, ProjectId, StoryId};
 use crate::domain::memory::{MEMORY_MAX_PER_SCOPE, Memory, MemoryScope};
+use crate::domain::name::Name;
 use crate::domain::project::Project;
 use crate::infra::db::{Database, kanban, map_sqlx_error, memories, projects};
 
@@ -47,6 +48,19 @@ impl ProjectStore for Database {
                 .await
                 .map_err(|error| map_sqlx_error(self.path(), &error))?;
             projects::list(&mut connection, lab)
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))
+        })
+    }
+
+    fn update_project_name(&self, id: &ProjectId, name: &Name) -> Result<(), StorageError> {
+        self.block_on(async {
+            let mut connection = self
+                .pool()
+                .acquire()
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))?;
+            projects::update_name(&mut connection, id, name)
                 .await
                 .map_err(|error| map_sqlx_error(self.path(), &error))
         })
@@ -180,6 +194,24 @@ impl BoardStore for Database {
                 .await
                 .map_err(|error| map_sqlx_error(self.path(), &error))?;
             kanban::board(&mut connection, project, lab)
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))
+        })
+    }
+
+    fn story(
+        &self,
+        project: &ProjectId,
+        lab: &LabId,
+        story: &StoryId,
+    ) -> Result<Option<StoryDetail>, StorageError> {
+        self.block_on(async {
+            let mut connection = self
+                .pool()
+                .acquire()
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))?;
+            kanban::story(&mut connection, project, lab, story)
                 .await
                 .map_err(|error| map_sqlx_error(self.path(), &error))
         })

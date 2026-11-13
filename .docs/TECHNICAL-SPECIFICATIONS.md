@@ -610,6 +610,16 @@ The command shall:
 - Refuse deletion while request processing is active.
 - Clear the current project after deletion.
 
+### 8.6 Edit a Project
+
+The Projects dashboard `Edit` action shall:
+
+- Use the selected project and verify ownership by the active laboratory.
+- Change only the project name, validated with the laboratory name rules.
+- Leave the GitHub source unchanged; it names the existing checkout
+  (ADR-0043). A different repository requires a new project.
+- Record a `project_updated` audit event with the project identifier only.
+
 ## 9. Request Intake
 
 ### 9.1 Input Syntax
@@ -772,6 +782,16 @@ UX requirements:
 - Avoid ANSI decoration and cursor control when output is redirected or not a terminal.
 - Sanitize untrusted terminal-control sequences.
 - Provide useful empty-state guidance.
+
+In the interactive dashboards the board is a dedicated full-screen view, not a
+dialog (ADR-0043). The five states are side-by-side lists of bordered cards; a
+card shows only the story's short description (title). Each list scrolls
+independently and shows how many cards are above and below. `Enter` on a card
+opens a detail dialog with every field listed above plus complexity,
+description, acceptance criteria, required skills, assignment rationale, and
+the originating request; long details scroll. Terminals too narrow for five
+readable lists show a window of adjacent lists around the focused one. The
+plain `--show-project-kanban` output keeps the full card fields.
 
 The initial release creates `TODO` stories only. Later execution workflows may introduce state-transition commands; the Kanban display shall not imply that such execution already exists.
 

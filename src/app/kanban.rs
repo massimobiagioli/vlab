@@ -98,6 +98,24 @@ impl Board {
     }
 }
 
+/// Full story content for the dashboard card detail (ADR-0043).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoryDetail {
+    pub id: crate::domain::ids::StoryId,
+    pub request_id: crate::domain::ids::RequestId,
+    pub title: String,
+    pub description: String,
+    pub state: StoryState,
+    pub assignee: Option<String>,
+    pub priority: String,
+    pub complexity: String,
+    pub due_date: String,
+    pub overdue: bool,
+    pub acceptance_criteria: Vec<String>,
+    pub required_skills: Vec<String>,
+    pub rationale: Option<String>,
+}
+
 pub trait BoardStore {
     /// Returns `None` when the project does not exist in `lab`.
     fn board(
@@ -105,6 +123,15 @@ pub trait BoardStore {
         project: &ProjectId,
         lab: &crate::domain::ids::LabId,
     ) -> Result<Option<Board>, crate::app::storage::StorageError>;
+
+    /// Returns `None` when the story is not in `project` or the project is
+    /// not in `lab`.
+    fn story(
+        &self,
+        project: &ProjectId,
+        lab: &crate::domain::ids::LabId,
+        story: &crate::domain::ids::StoryId,
+    ) -> Result<Option<StoryDetail>, crate::app::storage::StorageError>;
 }
 
 /// `--show-project-kanban`: requires an active laboratory and rejects a
@@ -122,6 +149,22 @@ pub fn show(
     })
 }
 
+/// Dashboard card detail: a story of `project` in the active laboratory.
+pub fn story(
+    store: &impl BoardStore,
+    state: &impl AppStateStore,
+    project: &ProjectId,
+    story: &crate::domain::ids::StoryId,
+) -> Result<StoryDetail, AppError> {
+    let lab = crate::app::context::active_lab(state)?.require()?;
+    store
+        .story(project, &lab, story)?
+        .ok_or_else(|| AppError::NotFound {
+            entity: crate::app::EntityKind::Story,
+            id: story.to_string(),
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,6 +177,41 @@ mod tests {
         fn board(&self, _: &ProjectId, _: &LabId) -> Result<Option<Board>, StorageError> {
             Ok(self.0.clone())
         }
+
+        fn story(
+            &self,
+            _: &ProjectId,
+            _: &LabId,
+            _: &crate::domain::ids::StoryId,
+        ) -> Result<Option<StoryDetail>, StorageError> {
+            Ok(None)
+        }
+    }
+
+    struct ActiveLab;
+
+    impl AppStateStore for ActiveLab {
+        fn get(&self, _: crate::app::storage::AppStateKey) -> Result<Option<String>, StorageError> {
+            Ok(Some("a3f91c07".to_owned()))
+        }
+        fn set(&self, _: crate::app::storage::AppStateKey, _: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+        fn clear(&self, _: crate::app::storage::AppStateKey) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_missing_story_is_not_found() {
+        let error = story(
+            &Store(None),
+            &ActiveLab,
+            &ProjectId::generate(),
+            &crate::domain::ids::StoryId::generate(),
+        )
+        .unwrap_err();
+        assert!(matches!(error, AppError::NotFound { .. }), "{error:?}");
     }
 
     #[test]
