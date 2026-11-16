@@ -750,6 +750,7 @@ mod tests {
                     id: id.clone(),
                     name: "Portal".to_owned(),
                     github_source: None,
+                    folder_source: None,
                     request_count: 0,
                     story_count: 0,
                     todo: 0,

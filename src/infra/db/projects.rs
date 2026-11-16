@@ -8,12 +8,13 @@ use crate::domain::name::Name;
 use crate::domain::project::Project;
 
 const INSERT: &str = "\
-INSERT INTO projects (id, lab_id, name, github_source, created_at, updated_at) \
-VALUES (?1, ?2, ?3, ?4, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))";
+INSERT INTO projects (id, lab_id, name, github_source, folder_source, created_at, updated_at) \
+VALUES (?1, ?2, ?3, ?4, ?5, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))";
 
 pub type OverviewRow = (
     String,
     String,
+    Option<String>,
     Option<String>,
     i64,
     i64,
@@ -33,6 +34,7 @@ pub async fn insert(
         .bind(project.lab_id.as_str())
         .bind(project.name.as_str())
         .bind(project.github_source.as_ref().map(|source| source.as_str()))
+        .bind(project.folder_source.as_ref().map(|source| source.as_str()))
         .execute(connection)
         .await
         .map(|_| ())
@@ -74,9 +76,9 @@ pub async fn find(
     .transpose()
 }
 
-const SELECT_BY_LAB: &str = "SELECT p.id, p.name, p.github_source,  (SELECT count(*) FROM requests r WHERE r.project_id = p.id),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id AND s.state = 'TODO'),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id AND s.state = 'IN_PROGRESS'),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id AND s.state = 'IN_REVIEW'),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id AND s.state = 'BLOCKED'),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id AND s.state = 'DONE') FROM projects p WHERE p.lab_id = ?1 ORDER BY p.created_at, p.id";
+const SELECT_BY_LAB: &str = "SELECT p.id, p.name, p.github_source, p.folder_source,  (SELECT count(*) FROM requests r WHERE r.project_id = p.id),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id AND s.state = 'TODO'),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id AND s.state = 'IN_PROGRESS'),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id AND s.state = 'IN_REVIEW'),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id AND s.state = 'BLOCKED'),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id AND s.state = 'DONE') FROM projects p WHERE p.lab_id = ?1 ORDER BY p.created_at, p.id";
 
-const SELECT_IN_LAB: &str = "SELECT p.id, p.name, p.github_source,  (SELECT count(*) FROM requests r WHERE r.project_id = p.id),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id AND s.state = 'TODO'),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id AND s.state = 'IN_PROGRESS'),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id AND s.state = 'IN_REVIEW'),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id AND s.state = 'BLOCKED'),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id AND s.state = 'DONE') FROM projects p WHERE p.id = ?1 AND p.lab_id = ?2";
+const SELECT_IN_LAB: &str = "SELECT p.id, p.name, p.github_source, p.folder_source,  (SELECT count(*) FROM requests r WHERE r.project_id = p.id),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id AND s.state = 'TODO'),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id AND s.state = 'IN_PROGRESS'),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id AND s.state = 'IN_REVIEW'),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id AND s.state = 'BLOCKED'),  (SELECT count(*) FROM stories s WHERE s.project_id = p.id AND s.state = 'DONE') FROM projects p WHERE p.id = ?1 AND p.lab_id = ?2";
 
 pub async fn list(
     connection: &mut SqliteConnection,
@@ -103,12 +105,25 @@ pub async fn in_lab(
 }
 
 fn map_overview(
-    (id, name, github_source, requests, stories, todo, in_progress, in_review, blocked, done): OverviewRow,
+    (
+        id,
+        name,
+        github_source,
+        folder_source,
+        requests,
+        stories,
+        todo,
+        in_progress,
+        in_review,
+        blocked,
+        done,
+    ): OverviewRow,
 ) -> Result<ProjectOverview, sqlx::Error> {
     Ok(ProjectOverview {
         id: ProjectId::parse(&id).ok_or(sqlx::Error::RowNotFound)?,
         name,
         github_source,
+        folder_source,
         request_count: u64::try_from(requests).unwrap_or(0),
         story_count: u64::try_from(stories).unwrap_or(0),
         todo: u64::try_from(todo).unwrap_or(0),

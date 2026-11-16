@@ -20,10 +20,11 @@ const POD_GAP: usize = 2;
 const CONNECTOR_HEIGHT: usize = 3;
 const LEAD_HEIGHT: usize = 3;
 
-const FLOOR_ACTIONS: [(&str, &str); 8] = [
+const FLOOR_ACTIONS: [(&str, &str); 9] = [
     ("[↑/↓]", "Agent"),
     ("[←/→]", "Pods"),
     ("[Enter]", "Detail"),
+    ("[o]", "Populate"),
     ("[m]", "Memories"),
     ("[r]", "Reload"),
     ("[?]", "Help"),

@@ -17,7 +17,7 @@ type OutcomeRow = (
 );
 
 const SELECT_PROJECT: &str = "\
-SELECT p.id, p.name, p.github_source, l.name FROM projects p JOIN labs l ON l.id = p.lab_id \
+SELECT p.id, p.name, p.github_source, p.folder_source, l.name FROM projects p JOIN labs l ON l.id = p.lab_id \
 WHERE p.id = ?1 AND p.lab_id = ?2";
 
 const SELECT_LEAD: &str = "\
@@ -65,17 +65,19 @@ type StoryRow = (
 
 type CardRow = (String, String, String, Option<String>, String, String, i64);
 
+type ProjectRow = (String, String, Option<String>, Option<String>, String);
+
 pub async fn board(
     connection: &mut SqliteConnection,
     project: &ProjectId,
     lab: &LabId,
 ) -> Result<Option<Board>, sqlx::Error> {
-    let row: Option<(String, String, Option<String>, String)> = sqlx::query_as(SELECT_PROJECT)
+    let row: Option<ProjectRow> = sqlx::query_as(SELECT_PROJECT)
         .bind(project.as_str())
         .bind(lab.as_str())
         .fetch_optional(&mut *connection)
         .await?;
-    let Some((project_id, project_name, github_source, lab_name)) = row else {
+    let Some((project_id, project_name, github_source, folder_source, lab_name)) = row else {
         return Ok(None);
     };
     let project_id = ProjectId::parse(&project_id).ok_or(sqlx::Error::RowNotFound)?;
@@ -132,6 +134,7 @@ pub async fn board(
         project_id,
         project_name,
         github_source,
+        folder_source,
         lab_name,
         lead_name,
         counts,

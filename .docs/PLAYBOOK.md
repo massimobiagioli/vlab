@@ -96,6 +96,19 @@ Create the **Tech Lead** first (role `lead`), then at least one `dev`,
 `analyst`, or `qa` agent with one or more skills. The active laboratory is
 pre-filled; press Enter to accept it.
 
+Faster route: load the tracked fictional catalog, then populate a laboratory
+from the Laboratories dashboard.
+
+```sh
+make load-preset          # create the thirty preset profiles in .data/
+vlab                      # open the dashboard, choose Laboratories
+```
+
+Select the laboratory and press `o` (or open it and press `o` on the Lab
+floor). Use `v` to read the selected agent's full profile, move the Tech Lead
+and at least one other agent to **In this laboratory** with `Enter`, then press
+`s` to save.
+
 Check the laboratory:
 
 ```sh
@@ -115,7 +128,9 @@ vlab
 Choose **Projects**, then use `n` to create, `e` to rename, `Enter` to open,
 `a` to assign an agent, `v` for the full-screen Kanban board (`←/→` lists,
 `↑/↓` cards with per-list scrolling, `PgUp/PgDn` pages, `Enter` opens the
-story detail dialog, `Esc` back), and `d` to delete. The non-interactive command is:
+story detail dialog, `Esc` back), and `d` to delete. The New project form offers
+a source choice (`None`, `GitHub`, or `Folder`) and one source field. The
+non-interactive command is:
 
 ```sh
 vlab --new-project "Customer Portal"
@@ -130,6 +145,16 @@ vlab --new-project "Customer Portal" --github-source https://github.com/acme/por
 
 If the clone fails, no project is created. The token is passed through a
 private askpass helper, never in the URL or arguments.
+
+With a local folder, VLab copies it into `.workspace/<project-id>` and
+initializes a local git repository only inside the copy:
+
+```sh
+vlab --new-project "Local Portal" --folder-source "$PWD/local-portal"
+```
+
+The original folder is never modified and needs no version control. Symbolic
+links and special files are rejected, and a failed import creates no project.
 
 `--new-project` selects the new project. Assign the agents that should work on
 it (repeat for each agent):

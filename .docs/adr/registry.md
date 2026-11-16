@@ -80,6 +80,10 @@ revises a technical decision must keep it current.
 | ADR-0049 | Automatic workflow resume on startup and application logs | Accepted | 2026-11-13 | — | [adr-0049.md](adr-0049.md) |
 | ADR-0050 | Real bounded agent execution in project git worktrees | Accepted | 2026-11-13 | — | [adr-0050.md](adr-0050.md) |
 | ADR-0051 | Laboratory metrics dashboard | Accepted | 2026-11-13 | — | [adr-0051.md](adr-0051.md) |
+| ADR-0052 | Preset agent catalog loaded from a tracked YAML file | Accepted | 2026-11-16 | — | [adr-0052.md](adr-0052.md) |
+| ADR-0053 | Laboratory populate screen with a two-pane agent transfer | Accepted | 2026-11-16 | — | [adr-0053.md](adr-0053.md) |
+| ADR-0054 | Project source types and isolated folder import | Accepted | 2026-11-16 | — | [adr-0054.md](adr-0054.md) |
+| ADR-0055 | Larger preset catalog and populate profile preview | Accepted | 2026-11-16 | — | [adr-0055.md](adr-0055.md) |
 
 ## Supersession map
 

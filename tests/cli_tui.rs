@@ -54,6 +54,34 @@ fn seed(sandbox: &Sandbox) -> (LabId, ProjectId, AgentId) {
     (lab, project, agent)
 }
 
+fn seed_populate(sandbox: &Sandbox) -> LabId {
+    let db = sandbox.seed_database();
+    let lab = LabId::parse("a3f91c07").unwrap();
+    db.insert_lab(&Lab::new(lab.clone(), Name::parse("Payments").unwrap()))
+        .unwrap();
+    for (id, name, role) in [
+        ("10000001", "Klaus", Role::Lead),
+        ("10000002", "Bram", Role::Dev),
+    ] {
+        db.insert_agent(
+            &AgentProfile::new(
+                AgentId::parse(id).unwrap(),
+                Name::parse(name).unwrap(),
+                role,
+                Description::parse("Works").unwrap(),
+                skills::parse_list("rust").unwrap(),
+                ProviderId::DeepSeek,
+                ModelId::parse("deepseek-chat").unwrap(),
+                None,
+            )
+            .unwrap(),
+            &[],
+        )
+        .unwrap();
+    }
+    lab
+}
+
 /// Runs `vlab <args>` in a 100x30 pseudo-terminal and sends timed key input.
 fn run_tui(sandbox: &Sandbox, args: &[&str], keys: &[(&str, u64)]) -> (String, bool) {
     run_tui_with_env(sandbox, args, keys, &[])
@@ -188,6 +216,38 @@ fn the_labs_dashboard_creates_checks_activates_and_deletes() {
     let plain = sandbox.run(&["--list-labs"]);
     plain.assert_success();
     assert!(plain.stdout.contains("No laboratories"), "{}", plain.stdout);
+}
+
+#[test]
+fn the_labs_dashboard_populates_a_laboratory_with_available_agents() {
+    let sandbox = Sandbox::new();
+    let lab = seed_populate(&sandbox);
+    let (output, success) = run_tui(
+        &sandbox,
+        &[],
+        &[
+            ("1", 200),
+            ("o", 300),
+            ("\r", 200),
+            ("\r", 200),
+            ("s", 400),
+            ("q", 300),
+        ],
+    );
+    assert!(success, "dashboard did not exit cleanly: {output:?}");
+    assert_restored(&output);
+    let plain = strip_ansi(&output);
+    for text in [
+        "Available agents",
+        "In this laboratory",
+        "Bram",
+        "Klaus",
+        "2 agents (2 added, 0 removed).",
+    ] {
+        assert!(plain.contains(text), "missing {text:?}: {output:?}");
+    }
+    let members = sandbox.seed_database().lab_agents(&lab).unwrap();
+    assert_eq!(members.len(), 2, "{members:?}");
 }
 
 #[test]

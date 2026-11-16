@@ -33,11 +33,21 @@ const INSERT_MEMBERSHIP: &str = "\
 INSERT INTO lab_memberships (lab_id, agent_id, joined_at) \
 VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))";
 
+const INSERT_MEMBERSHIP_IF_MISSING: &str = "\
+INSERT OR IGNORE INTO lab_memberships (lab_id, agent_id, joined_at) \
+VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))";
+
+const DELETE_MEMBERSHIP: &str = "DELETE FROM lab_memberships WHERE lab_id = ?1 AND agent_id = ?2";
+
 const AGENT_EXISTS: &str = "SELECT 1 FROM agents WHERE id = ?1";
 
 const SELECT_AGENT: &str = "\
 SELECT id, name, role, description, skills_json, provider, model, cv, archived_at \
 FROM agents WHERE id = ?1";
+
+const SELECT_ALL_AGENTS: &str = "\
+SELECT id, name, role, description, skills_json, provider, model, cv, archived_at \
+FROM agents ORDER BY name COLLATE NOCASE, id";
 
 const SELECT_AGENT_MEMBERSHIPS: &str = "\
 SELECT l.id, l.name, (\
@@ -69,6 +79,14 @@ pub async fn get(
     row.map(map_agent).transpose()
 }
 
+/// Every profile, including archived ones, ordered by name (ADR-0053).
+pub async fn list_all(connection: &mut SqliteConnection) -> Result<Vec<AgentRecord>, sqlx::Error> {
+    let rows: Vec<AgentRow> = sqlx::query_as(SELECT_ALL_AGENTS)
+        .fetch_all(connection)
+        .await?;
+    rows.into_iter().map(map_agent).collect()
+}
+
 pub async fn insert_profile(
     connection: &mut SqliteConnection,
     profile: &AgentProfile,
@@ -94,6 +112,38 @@ pub async fn insert_memberships(
 ) -> Result<(), sqlx::Error> {
     for lab in labs {
         sqlx::query(INSERT_MEMBERSHIP)
+            .bind(lab.as_str())
+            .bind(agent.as_str())
+            .execute(&mut *connection)
+            .await?;
+    }
+    Ok(())
+}
+
+/// Adds memberships that are not present yet; existing rows keep their
+/// `joined_at` timestamp (ADR-0053).
+pub async fn add_memberships_if_missing(
+    connection: &mut SqliteConnection,
+    lab: &LabId,
+    agents: &[AgentId],
+) -> Result<(), sqlx::Error> {
+    for agent in agents {
+        sqlx::query(INSERT_MEMBERSHIP_IF_MISSING)
+            .bind(lab.as_str())
+            .bind(agent.as_str())
+            .execute(&mut *connection)
+            .await?;
+    }
+    Ok(())
+}
+
+pub async fn remove_memberships(
+    connection: &mut SqliteConnection,
+    lab: &LabId,
+    agents: &[AgentId],
+) -> Result<(), sqlx::Error> {
+    for agent in agents {
+        sqlx::query(DELETE_MEMBERSHIP)
             .bind(lab.as_str())
             .bind(agent.as_str())
             .execute(&mut *connection)

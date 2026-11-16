@@ -12,7 +12,7 @@ use vlab::domain::ids::AgentId;
 use vlab::domain::ids::{LabId, ProjectId};
 use vlab::domain::lab::Lab;
 use vlab::domain::name::Name;
-use vlab::domain::project::Project;
+use vlab::domain::project::{FolderSource, Project, ProjectSource};
 use vlab::domain::settings::{ModelId, ProviderId};
 use vlab::domain::skills;
 use vlab::infra::db::{Database, SUPPORTED_SCHEMA_VERSION};
@@ -60,6 +60,36 @@ fn projects_round_trip_and_report_counts() {
             .unwrap()
             .name,
         "Portal"
+    );
+}
+
+#[test]
+fn a_folder_source_round_trips_without_a_github_source() {
+    let (_dir, db) = migrated();
+    let lab = lab("a3f91c07", "Payments");
+    db.insert_lab(&lab).unwrap();
+    let source = FolderSource::parse("/tmp/portal").unwrap();
+    let project = Project::with_source(
+        ProjectId::parse("0b1c2d3e").unwrap(),
+        lab.id.clone(),
+        Name::parse("Portal").unwrap(),
+        ProjectSource::Folder(source.clone()),
+    );
+    db.insert_project(&project).unwrap();
+
+    let listed = db.projects(&lab.id).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].github_source, None);
+    assert_eq!(listed[0].folder_source.as_deref(), Some("/tmp/portal"));
+    assert_eq!(listed[0].source_kind(), "folder");
+    assert_eq!(listed[0].source_detail(), Some("/tmp/portal"));
+    assert_eq!(
+        db.project_in_lab(&project.id, &lab.id)
+            .unwrap()
+            .unwrap()
+            .folder_source
+            .as_deref(),
+        Some("/tmp/portal")
     );
 }
 
@@ -298,6 +328,7 @@ fn migration_from_v3_adds_the_github_source_column() {
     let stored = db.projects(&lab.id).unwrap();
     assert_eq!(stored.len(), 1);
     assert_eq!(stored[0].github_source, None);
+    assert_eq!(stored[0].folder_source, None);
 }
 
 #[test]

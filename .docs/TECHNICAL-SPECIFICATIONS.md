@@ -65,13 +65,21 @@ For the initial release, a laboratory shall have at most one member with the `le
 
 ### 3.2 Projects
 
-A project belongs to exactly one laboratory and may reference one GitHub
-repository through an optional **GitHub source**. The source is a canonical
-`https://github.com/<owner>/<repository>` URL. The GitHub credential is global
-(`credentials.github_api_key` in `settings.yaml`) and is never stored in the
-project or the database. When a project is created with a source, VLab clones
-the repository into `.workspace/<project-id>` and keeps no local path in the
-database. The workspace is outside version control.
+A project belongs to exactly one laboratory and has at most one **source**:
+
+- **GitHub source**: a canonical `https://github.com/<owner>/<repository>` URL.
+  The GitHub credential is global (`credentials.github_api_key` in
+  `settings.yaml`) and is never stored in the project or the database. VLab
+  clones the repository into `.workspace/<project-id>`.
+- **Folder source**: an absolute local folder path without version control.
+  VLab copies the folder into `.workspace/<project-id>` and initializes a local
+  git repository only inside that copy, so worktree execution stays isolated
+  and the original folder is never modified.
+- **No source**: a legacy project created before explicit source types. It has
+  no checkout and cannot run worktree execution.
+
+The workspace is outside version control. The folder source path is stored as
+project metadata; the copied files are not stored in the database.
 
 Project commands operate within the active laboratory. An identifier belonging to another laboratory shall produce an error rather than silently switching context.
 
@@ -212,7 +220,7 @@ Laboratories
 
 Projects
   --list-projects
-  --new-project <name> [--github-source <url>]
+  --new-project <name> [--github-source <url> | --folder-source <path>]
   --open-project <project-id>
   --show-project-kanban
   --delete-project
@@ -222,6 +230,7 @@ Projects
 Agents
   --list-agents
   --new-agent
+  --load-preset <file>
   --delete-agent <agent-id>
   --show-agent-detail <agent-id>
   --ask <question> [--to-agent <agent-id>]
@@ -423,6 +432,30 @@ Remote availability and credential validity are checked when a provider-backed o
 
 Validation failures shall produce a non-zero exit code and an actionable report.
 
+### 6.6 Populate a Laboratory
+
+From the Laboratories dashboard, `o` opens a two-pane membership editor for the
+selected laboratory, whether or not it is active. From the Lab floor, `o` opens
+the same editor for the active laboratory; the floor scene itself remains
+read-only.
+
+The left pane shows every active agent profile that is not a member; the right
+pane shows the laboratory's active members. Changes are staged until `s` saves.
+The screen shall:
+
+- Show agent names, roles, short profile descriptions, pane counts, and the
+  selected item.
+- Move the selected agent to the other pane with `Enter` or `Space`.
+- Open the selected agent's full description, skills, status, memory count, and
+  project associations with `v`, without changing membership.
+- Require at least one member and exactly one Tech Lead before saving.
+- Reject missing or archived profiles, keeping the screen open on failure.
+- Apply additions and removals in one transaction without changing unchanged
+  membership timestamps.
+- Preserve archived memberships and never contact the provider.
+
+Discarding unsaved moves shall require confirmation.
+
 ## 7. Agent Management
 
 ### 7.1 List Agents
@@ -544,6 +577,33 @@ Missing or ambiguous Tech Lead configuration shall produce an error.
 
 Asking a question shall not create stories, modify assignments, or change project state. Memories are context only; the answer cannot add, change, or delete one.
 
+### 7.7 Load Preset Agents
+
+```bash
+vlab --load-preset assets/agents.yaml
+```
+
+The command loads a versioned YAML catalog of fictional agent profiles. The
+tracked catalog lives in `assets/agents.yaml`; the Makefile target
+`make load-preset` loads it into the development database.
+
+The command shall:
+
+- Validate the complete file before opening storage, with a bounded size and
+  agent count, strict fields, and the same name, role, description, skill, and
+  CV rules as `--new-agent`.
+- Require exactly one `lead` in the catalog and at least one skill for every
+  other role.
+- Create missing agent profiles only, without a laboratory or membership.
+- Copy provider and model from the current settings.
+- Skip a profile whose name matches an existing profile case-insensitively,
+  including an archived one.
+- Insert all new profiles in one transaction.
+- Never call the provider and never modify an existing profile.
+
+A malformed catalog shall produce a validation error and create no database.
+The dashboard's Populate action assigns the resulting profiles to laboratories.
+
 ## 8. Project Management
 
 ### 8.1 List Projects
@@ -555,7 +615,7 @@ vlab --list-projects
 Display projects in the active laboratory, including:
 
 - Identifier and name.
-- Optional GitHub source.
+- Source kind and detail (GitHub URL, folder path, or none).
 - Request count.
 - Story count.
 - Work-item counts by Kanban state.
@@ -564,19 +624,38 @@ Display projects in the active laboratory, including:
 
 ```bash
 vlab --new-project "Customer Portal" [--github-source https://github.com/owner/repo]
+vlab --new-project "Local Portal" --folder-source /absolute/path
 ```
 
 The command shall:
 
 - Require an active laboratory.
 - Reject an empty name.
-- Accept an optional GitHub source in canonical `https://github.com/<owner>/<repository>` form and reject any other host or shape.
-- When a GitHub source is supplied, require a valid `source_control.provider: github` configuration and a present `credentials.github_api_key`; the key is read only from `settings.yaml` and is never stored in the project database or displayed.
-- Clone the repository into `.workspace/<project-id>` before persisting the project; a failed clone shall create no project row and leave no checkout.
-- Use the GitHub credential only through a short-lived askpass helper; never place it in a URL, argument, log, error, or output.
-- Bound the clone with a timeout and discard raw git output.
-- Persist the project and source atomically, and remove the checkout if persistence fails.
-- Return its identifier and the checkout path.
+- Accept at most one source modifier: `--github-source` or `--folder-source`.
+  The modifiers are mutually exclusive; using either without `--new-project`
+  is a usage error. Omitting both keeps the legacy no-source project.
+- For a GitHub source, accept only canonical
+  `https://github.com/<owner>/<repository>` form and reject any other host or
+  shape. Require a valid `source_control.provider: github` configuration and a
+  present `credentials.github_api_key`; the key is read only from
+  `settings.yaml` and is never stored in the project database or displayed.
+  Clone the repository into `.workspace/<project-id>` before persisting the
+  project; a failed clone shall create no project row and leave no checkout.
+- For a folder source, require an absolute path. Resolve it, require an existing
+  directory, and reject a path that is the workspace root, inside it, or an
+  ancestor of it. Reject symbolic links, special files, and entries named
+  `.git`. Bound the copy to 100,000 entries, 1 GiB, and 64 directory levels.
+  Copy into a private temporary directory under `.workspace`, run `git init`,
+  `git add -A -f`, and an initial commit inside the copy, then rename to
+  `.workspace/<project-id>`. A failure creates no project row and leaves no
+  checkout. Never modify the source folder and never read the GitHub
+  credential.
+- Use the GitHub credential only through a short-lived askpass helper; never
+  place it in a URL, argument, log, error, or output.
+- Bound network clones with a timeout and discard raw git output.
+- Persist the project and source atomically, and remove the prepared checkout
+  if persistence fails.
+- Return its identifier, source, and checkout path.
 - Select the new project as the current project.
 
 A project may be created in an incomplete laboratory, but requests cannot be processed until laboratory validation succeeds.

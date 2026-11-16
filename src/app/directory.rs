@@ -133,6 +133,39 @@ pub trait Directory {
         memberships: &[LabId],
     ) -> Result<(), StorageError>;
 
+    /// Inserts every profile, with its memberships, in one transaction.
+    ///
+    /// The default keeps test doubles small; the SQLite adapter overrides it
+    /// with a single transaction (ADR-0052).
+    fn insert_agents(&self, agents: &[(AgentProfile, Vec<LabId>)]) -> Result<(), StorageError> {
+        for (profile, memberships) in agents {
+            self.insert_agent(profile, memberships)?;
+        }
+        Ok(())
+    }
+
+    /// Every agent profile, including archived ones, ordered by name.
+    ///
+    /// The populate screen filters archived profiles; the default empty list
+    /// keeps unrelated test doubles small (ADR-0053).
+    fn all_agents(&self) -> Result<Vec<AgentRecord>, StorageError> {
+        Ok(Vec::new())
+    }
+
+    /// Adds and removes laboratory memberships in one transaction.
+    ///
+    /// Unchanged memberships are left alone so their `joined_at` timestamp is
+    /// preserved. The default reports an unsupported operation; the SQLite
+    /// adapter implements it (ADR-0053).
+    fn update_lab_memberships(
+        &self,
+        _lab: &LabId,
+        _add: &[AgentId],
+        _remove: &[AgentId],
+    ) -> Result<(), StorageError> {
+        Err(StorageError::Operation)
+    }
+
     fn agent_exists(&self, id: &AgentId) -> Result<bool, StorageError>;
 
     fn agent(&self, id: &AgentId) -> Result<Option<AgentRecord>, StorageError>;

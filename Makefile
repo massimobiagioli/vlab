@@ -18,12 +18,13 @@ CARGO_DENY_VERSION := 0.20.2
 
 DATA_DIR := $(CURDIR)/.data
 WORKSPACE_DIR := $(CURDIR)/.workspace
+PRESET_FILE := $(CURDIR)/assets/agents.yaml
 DEV_ENV := VLAB_CONFIG_DIR="$(DATA_DIR)" VLAB_DATA_DIR="$(DATA_DIR)"
 
 # Arguments for `make run`, for example: make run ARGS="--list-labs"
 ARGS ?= --help
 
-.PHONY: help build-debug build-release run test lint fmt fmt-check clippy \
+.PHONY: help build-debug build-release run load-preset test lint fmt fmt-check clippy \
 	audit deny check tools snapshot clean clean-data clean-workspace
 
 help: ## Show this help
@@ -40,6 +41,10 @@ build-release: ## Build the optimized binary (target/release/vlab)
 run: build-debug ## Run vlab with data in .data/ (ARGS="..." for arguments)
 	@mkdir -p "$(DATA_DIR)" && chmod 700 "$(DATA_DIR)"
 	@$(DEV_ENV) ./target/debug/vlab $(ARGS)
+
+load-preset: build-debug ## Load assets/agents.yaml into the .data/ database
+	@mkdir -p "$(DATA_DIR)" && chmod 700 "$(DATA_DIR)"
+	@$(DEV_ENV) ./target/debug/vlab --load-preset "$(PRESET_FILE)"
 
 test: ## Run all tests
 	$(CARGO) test --locked

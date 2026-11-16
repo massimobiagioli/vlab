@@ -11,6 +11,7 @@ pub mod ids;
 pub mod lab;
 pub mod memory;
 pub mod name;
+pub mod preset;
 pub mod project;
 pub mod provider;
 pub mod settings;

@@ -6,7 +6,7 @@ use crate::app::storage::AppStateStore;
 use crate::app::workspace::{ProjectWorkspace, WorkspaceError};
 use crate::domain::ids::{AgentId, LabId, ProjectId, UniqueIdError, unique_short_id};
 use crate::domain::name::Name;
-use crate::domain::project::Project;
+use crate::domain::project::{Project, ProjectSource};
 
 use std::path::PathBuf;
 
@@ -16,6 +16,7 @@ pub struct ProjectOverview {
     pub id: ProjectId,
     pub name: String,
     pub github_source: Option<String>,
+    pub folder_source: Option<String>,
     pub request_count: u64,
     pub story_count: u64,
     pub todo: u64,
@@ -23,6 +24,32 @@ pub struct ProjectOverview {
     pub in_review: u64,
     pub blocked: u64,
     pub done: u64,
+}
+
+impl ProjectOverview {
+    pub fn source_kind(&self) -> &'static str {
+        if self.github_source.is_some() {
+            "github"
+        } else if self.folder_source.is_some() {
+            "folder"
+        } else {
+            "none"
+        }
+    }
+
+    pub fn source_detail(&self) -> Option<&str> {
+        self.github_source
+            .as_deref()
+            .or(self.folder_source.as_deref())
+    }
+
+    /// Compact display such as `github https://...`, `folder /path`, or `none`.
+    pub fn source_label(&self) -> String {
+        match self.source_detail() {
+            Some(detail) => format!("{} {detail}", self.source_kind()),
+            None => "none".to_owned(),
+        }
+    }
 }
 
 /// Project persistence used by the commands.
@@ -80,7 +107,8 @@ pub struct CreatedProject {
     pub workspace: Option<PathBuf>,
 }
 
-/// `--new-project`: requires an active laboratory and a valid name.
+/// `--new-project` with an optional GitHub source. Kept for callers that
+/// predate explicit source types; it delegates to [`create_with_source`].
 ///
 /// A GitHub-backed project is cloned before the database insert; a failed
 /// clone creates no project row (ADR-0032).
@@ -91,6 +119,25 @@ pub fn create(
     github_source: Option<crate::domain::project::GithubSource>,
     workspace: &impl ProjectWorkspace,
 ) -> Result<CreatedProject, AppError> {
+    let source = match github_source {
+        Some(source) => ProjectSource::Github(source),
+        None => ProjectSource::None,
+    };
+    create_with_source(store, state, raw_name, source, workspace)
+}
+
+/// Creates a project with an explicit source.
+///
+/// The source is prepared before the database insert: GitHub is cloned and a
+/// folder is copied into the isolated workspace and initialized as a local git
+/// repository. A failure creates no project row (ADR-0032, ADR-0054).
+pub fn create_with_source(
+    store: &(impl ProjectStore + Directory),
+    state: &impl AppStateStore,
+    raw_name: &str,
+    source: ProjectSource,
+    workspace: &impl ProjectWorkspace,
+) -> Result<CreatedProject, AppError> {
     let lab_id = crate::app::context::active_lab(state)?.require()?;
     let name = crate::app::labs::validated_name(raw_name)?;
     let generated = unique_short_id(|candidate| match ProjectId::parse(candidate) {
@@ -99,15 +146,22 @@ pub fn create(
     })
     .map_err(map_unique)?;
     let id = ProjectId::parse(&generated).ok_or(AppError::Internal)?;
-    let project = Project::new(id, lab_id, name, github_source);
-    let checkout = match &project.github_source {
-        Some(source) => Some(
-            workspace
-                .clone_project(source, &project.id)
-                .map_err(WorkspaceError::into_app_error)?,
-        ),
-        None => None,
+    let (source, checkout) = match source {
+        ProjectSource::None => (ProjectSource::None, None),
+        ProjectSource::Github(source) => {
+            let path = workspace
+                .clone_project(&source, &id)
+                .map_err(WorkspaceError::into_app_error)?;
+            (ProjectSource::Github(source), Some(path))
+        }
+        ProjectSource::Folder(source) => {
+            let imported = workspace
+                .import_folder(&source, &id)
+                .map_err(WorkspaceError::into_app_error)?;
+            (ProjectSource::Folder(imported.source), Some(imported.path))
+        }
     };
+    let project = Project::with_source(id, lab_id, name, source);
     if let Err(error) = store.insert_project(&project) {
         if let Some(path) = &checkout {
             workspace.remove_project(path);
@@ -238,10 +292,11 @@ mod tests {
     use super::*;
     use crate::app::directory::{AgentRecord, Directory, LabOverview};
     use crate::app::storage::{AppStateKey, StorageError};
+    use crate::app::workspace::ImportedFolder;
     use crate::domain::agent::AgentProfile;
     use crate::domain::ids::{AgentId, LabId};
     use crate::domain::lab::Lab;
-    use crate::domain::project::GithubSource;
+    use crate::domain::project::{FolderSource, GithubSource, ProjectSource};
     use std::path::Path;
 
     #[derive(Default)]
@@ -285,6 +340,7 @@ mod tests {
                     id: id.clone(),
                     name: name.clone(),
                     github_source: None,
+                    folder_source: None,
                     request_count: 0,
                     story_count: 0,
                     todo: 0,
@@ -305,6 +361,7 @@ mod tests {
                     id: id.clone(),
                     name: name.clone(),
                     github_source: None,
+                    folder_source: None,
                     request_count: 0,
                     story_count: 0,
                     todo: 0,
@@ -372,6 +429,7 @@ mod tests {
     #[derive(Default)]
     struct Workspace {
         cloned: RefCell<Vec<(String, String)>>,
+        imported: RefCell<Vec<(String, String)>>,
         removed: RefCell<Vec<PathBuf>>,
         error: Option<WorkspaceError>,
     }
@@ -389,6 +447,23 @@ mod tests {
                 .borrow_mut()
                 .push((source.as_str().to_owned(), id.as_str().to_owned()));
             Ok(PathBuf::from(format!("/ws/{}", id.as_str())))
+        }
+
+        fn import_folder(
+            &self,
+            source: &FolderSource,
+            id: &ProjectId,
+        ) -> Result<ImportedFolder, WorkspaceError> {
+            if let Some(error) = self.error {
+                return Err(error);
+            }
+            self.imported
+                .borrow_mut()
+                .push((source.as_str().to_owned(), id.as_str().to_owned()));
+            Ok(ImportedFolder {
+                source: source.clone(),
+                path: PathBuf::from(format!("/ws/{}", id.as_str())),
+            })
         }
 
         fn remove_project(&self, path: &Path) {
@@ -443,6 +518,55 @@ mod tests {
             "https://github.com/acme/portal"
         );
         assert_eq!(*store.inserts.borrow(), 1);
+    }
+
+    #[test]
+    fn a_folder_source_is_imported_before_the_project_row() {
+        let store = Store::default();
+        let state = active();
+        let workspace = Workspace::default();
+        let source = FolderSource::parse("/tmp/portal").unwrap();
+        let created = create_with_source(
+            &store,
+            &state,
+            "Customer Portal",
+            ProjectSource::Folder(source.clone()),
+            &workspace,
+        )
+        .unwrap();
+        assert_eq!(created.project.folder_source, Some(source));
+        assert_eq!(created.project.github_source, None);
+        assert_eq!(
+            created.workspace,
+            Some(PathBuf::from(format!(
+                "/ws/{}",
+                created.project.id.as_str()
+            )))
+        );
+        assert_eq!(workspace.imported.borrow().len(), 1);
+        assert_eq!(workspace.imported.borrow()[0].0, "/tmp/portal");
+        assert_eq!(*store.inserts.borrow(), 1);
+    }
+
+    #[test]
+    fn a_folder_import_failure_creates_no_project_row() {
+        let store = Store::default();
+        let state = active();
+        let workspace = Workspace {
+            error: Some(WorkspaceError::ImportFailed),
+            ..Workspace::default()
+        };
+        let source = FolderSource::parse("/tmp/portal").unwrap();
+        let error = create_with_source(
+            &store,
+            &state,
+            "Customer Portal",
+            ProjectSource::Folder(source),
+            &workspace,
+        )
+        .unwrap_err();
+        assert!(matches!(error, AppError::Workspace { .. }), "{error:?}");
+        assert_eq!(*store.inserts.borrow(), 0);
     }
 
     #[test]

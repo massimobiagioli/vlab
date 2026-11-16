@@ -2,6 +2,8 @@
 
 mod support;
 
+use std::fs;
+
 use vlab::app::context::save_active_lab;
 use vlab::app::directory::Directory;
 use vlab::app::projects::ProjectStore;
@@ -153,6 +155,107 @@ fn a_github_backed_project_stores_the_canonical_source() {
         project[0].github_source.as_deref(),
         Some("https://github.com/acme/portal")
     );
+}
+
+#[test]
+fn a_folder_source_is_copied_without_github_settings() {
+    let sandbox = Sandbox::new();
+    let lab = seed_lab(&sandbox, "a3f91c07", "Payments");
+    activate(&sandbox, &lab);
+    let source = sandbox.root().join("local-source");
+    fs::create_dir_all(source.join("src")).unwrap();
+    fs::write(source.join("README.md"), "hello from the folder").unwrap();
+    fs::write(source.join("src/main.rs"), "fn main() {}").unwrap();
+
+    let outcome = sandbox.run_with_real_git(&[
+        "--new-project",
+        "Local Portal",
+        "--folder-source",
+        source.to_str().unwrap(),
+    ]);
+    outcome.assert_success().assert_no_escape_bytes();
+    assert!(outcome.stdout.contains("Folder:"), "{}", outcome.stdout);
+    assert!(
+        outcome.stdout.contains("Created") || outcome.stdout.contains("Project created."),
+        "{}",
+        outcome.stdout
+    );
+    let id = outcome
+        .stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("ID:   "))
+        .expect("id line")
+        .trim();
+    let workspace = sandbox.data_dir().join("workspace").join(id);
+    assert!(
+        workspace.join(".git").is_dir(),
+        "folder was not initialized"
+    );
+    assert_eq!(
+        fs::read_to_string(workspace.join("README.md")).unwrap(),
+        "hello from the folder"
+    );
+    assert!(workspace.join("src/main.rs").is_file());
+
+    let listed = sandbox.run(&["--list-projects"]);
+    listed.assert_success();
+    assert!(listed.stdout.contains("folder"), "{}", listed.stdout);
+    let db = sandbox.seed_database();
+    let project = db.projects(&lab).unwrap();
+    assert_eq!(project.len(), 1);
+    assert_eq!(project[0].github_source, None);
+    assert_eq!(
+        project[0].folder_source.as_deref(),
+        Some(fs::canonicalize(&source).unwrap().to_str().unwrap())
+    );
+    assert_eq!(project[0].source_kind(), "folder");
+}
+
+#[test]
+fn a_missing_folder_source_creates_no_project_row() {
+    let sandbox = Sandbox::new();
+    let lab = seed_lab(&sandbox, "a3f91c07", "Payments");
+    activate(&sandbox, &lab);
+    sandbox
+        .run(&[
+            "--new-project",
+            "Portal",
+            "--folder-source",
+            "/nonexistent/vlab/source",
+        ])
+        .assert_failure(4, "does not exist");
+    assert!(sandbox.seed_database().projects(&lab).unwrap().is_empty());
+}
+
+#[test]
+fn a_relative_folder_source_is_a_usage_error_before_storage() {
+    let sandbox = Sandbox::new();
+    let lab = seed_lab(&sandbox, "a3f91c07", "Payments");
+    activate(&sandbox, &lab);
+    sandbox
+        .run(&[
+            "--new-project",
+            "Portal",
+            "--folder-source",
+            "relative/source",
+        ])
+        .assert_failure(2, "absolute path");
+    assert!(sandbox.seed_database().projects(&lab).unwrap().is_empty());
+}
+
+#[test]
+fn github_and_folder_sources_are_mutually_exclusive() {
+    let sandbox = Sandbox::new();
+    sandbox
+        .run(&[
+            "--new-project",
+            "Portal",
+            "--github-source",
+            "https://github.com/acme/portal",
+            "--folder-source",
+            "/tmp/portal",
+        ])
+        .assert_failure(2, "mutually exclusive");
 }
 
 #[test]

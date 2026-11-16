@@ -27,6 +27,8 @@ execution (ADR-0050).
 | Stored/model text → terminal | Escape-sequence injection, misleading UI | All rendered text sanitized; identifiers never silently truncated; color never the only signal | `src/cli/tui/mod.rs`, `tests/cli_dashboards.rs` |
 | Dashboard → destructive action | Accidental or bypassed deletion | Bound confirmation modal; exact target; `Esc` cancels; same app use cases as flags | `src/cli/tui/mod.rs` |
 | Settings file → application | Credential disclosure or malformed config | Strict bounded parser, token validation, content-free errors, `0600`/`0700`, Unix refusal of group/other-readable files | `tests/cli_settings_show.rs`, `src/infra/config.rs` |
+| Preset catalog file → application | Oversized/malformed YAML, injected display text, storage created before validation | 512 KiB cap, strict schema and unknown-field rejection, reuse of domain validation, content-free errors, parse before opening storage, no provider call | `src/infra/presets.rs`, `tests/cli_presets.rs` |
+| Local folder → isolated workspace | Path escape, recursive copy, symlink/special-file traversal, unbounded size, secret exfiltration | Absolute canonical path, workspace-overlap rejection, symlink/special-file rejection, `.git` exclusion, 100k-entry/1 GiB/depth bounds, private temporary directory, local-only git init, no credential or network access | `src/infra/workspace.rs`, `tests/cli_projects.rs` |
 | Application → logs | Payload leakage | Typed events, `Redacted`, content-free diagnostics; marker tests with `RUST_LOG=trace` | `tests/redaction.rs`, `tests/security_secrets.rs` |
 | Application → confirmation | Bypass in scripts | Bound `y/N`, explicit `--yes`, non-TTY exit 4, snapshot re-check | `src/cli/confirm.rs`, `tests/cli_confirmation.rs` |
 

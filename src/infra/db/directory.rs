@@ -108,6 +108,58 @@ impl Directory for Database {
         })
     }
 
+    fn insert_agents(&self, agents: &[(AgentProfile, Vec<LabId>)]) -> Result<(), StorageError> {
+        let agents = agents.to_vec();
+        self.transaction(move |connection| {
+            Box::pin(async move {
+                for (profile, memberships) in &agents {
+                    agents::insert_profile(connection, profile)
+                        .await
+                        .map_err(|_| StorageError::Operation)?;
+                    agents::insert_memberships(connection, &profile.id, memberships)
+                        .await
+                        .map_err(|_| StorageError::Operation)?;
+                }
+                Ok(())
+            })
+        })
+    }
+
+    fn all_agents(&self) -> Result<Vec<AgentRecord>, StorageError> {
+        self.block_on(async {
+            let mut connection = self
+                .pool()
+                .acquire()
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))?;
+            agents::list_all(&mut connection)
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))
+        })
+    }
+
+    fn update_lab_memberships(
+        &self,
+        lab: &LabId,
+        add: &[AgentId],
+        remove: &[AgentId],
+    ) -> Result<(), StorageError> {
+        let lab = lab.clone();
+        let add = add.to_vec();
+        let remove = remove.to_vec();
+        self.transaction(move |connection| {
+            Box::pin(async move {
+                agents::remove_memberships(connection, &lab, &remove)
+                    .await
+                    .map_err(|_| StorageError::Operation)?;
+                agents::add_memberships_if_missing(connection, &lab, &add)
+                    .await
+                    .map_err(|_| StorageError::Operation)?;
+                Ok(())
+            })
+        })
+    }
+
     fn agent_exists(&self, id: &AgentId) -> Result<bool, StorageError> {
         self.block_on(async {
             let mut connection = self

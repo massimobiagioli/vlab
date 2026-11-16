@@ -30,6 +30,7 @@ use crate::cli::{write_stderr, write_stdout};
 use crate::domain::agent::AgentProfile;
 use crate::domain::budget::{CancelToken, ExecutionLimits};
 use crate::domain::memory::MemoryScope;
+use crate::domain::project::ProjectSource;
 use crate::infra::config::SettingsFile;
 use crate::infra::db::Database;
 use crate::infra::execution::WorkspaceEnvironment;
@@ -198,11 +199,12 @@ pub fn dispatch(
         Action::NewProject {
             name,
             github_source,
+            folder_source,
         } => {
             projects::validated_name(&name)?;
-            let github_source = match github_source {
-                None => (None, None),
-                Some(raw) => {
+            let (source, token) = match (github_source, folder_source) {
+                (None, None) => (ProjectSource::None, None),
+                (Some(raw), None) => {
                     let source =
                         crate::domain::project::GithubSource::parse(&raw).map_err(|error| {
                             AppError::Usage {
@@ -228,17 +230,28 @@ pub fn dispatch(
                         });
                     }
                     let token = settings.credentials.github_api_key.clone();
-                    (Some(source), token)
+                    (ProjectSource::Github(source), token)
+                }
+                (None, Some(raw)) => {
+                    let source =
+                        crate::domain::project::FolderSource::parse(&raw).map_err(|error| {
+                            AppError::Usage {
+                                message: error.to_string(),
+                            }
+                        })?;
+                    (ProjectSource::Folder(source), None)
+                }
+                (Some(_), Some(_)) => {
+                    return Err(AppError::Usage {
+                        message: "`--github-source` and `--folder-source` are mutually exclusive."
+                            .to_owned(),
+                    });
                 }
             };
             let paths = Paths::from_environment()?;
-            let workspace = GitWorkspace::new(
-                paths.workspace_dir(),
-                github_source.1,
-                DEFAULT_CLONE_TIMEOUT,
-            );
+            let workspace = GitWorkspace::new(paths.workspace_dir(), token, DEFAULT_CLONE_TIMEOUT);
             let mut db = open_database(run_id)?;
-            let created = projects::create(&db, &db, &name, github_source.0, &workspace)?;
+            let created = projects::create_with_source(&db, &db, &name, source, &workspace)?;
             context::save_active_project(&db, &created.project.id)?;
             if let Some(memory) = memories::remember(
                 &db,
@@ -422,6 +435,39 @@ pub fn dispatch(
             let _lab = active.require()?;
             let records = agents::list(&db, &db)?;
             write_stdout(stdout, &render_agents(&records))
+        }
+        Action::LoadPreset { path } => {
+            // Parse and validate before storage: a malformed catalog must not
+            // create a database (ADR-0052).
+            let roster = crate::infra::presets::load_presets(std::path::Path::new(&path))?;
+            let settings = settings::show(&settings_file()?)?.settings;
+            let mut db = open_database(run_id)?;
+            let report = crate::app::presets::load(&db, &roster, &settings)?;
+            for profile in &report.created {
+                if let Some(memory) = memories::remember(
+                    &db,
+                    &db,
+                    MemoryScope::Agent(profile.id.clone()),
+                    &memories::agent_created_content(profile, &[]),
+                    settings.credentials.deepseek_api_key.as_deref(),
+                ) {
+                    record_event(
+                        &mut db,
+                        run_id,
+                        EventKind::MemoryCreated,
+                        EntityType::Memory,
+                        memory.id.as_str(),
+                    );
+                }
+                record_event(
+                    &mut db,
+                    run_id,
+                    EventKind::AgentCreated,
+                    EntityType::Agent,
+                    profile.id.as_str(),
+                );
+            }
+            write_stdout(stdout, &render_preset_report(&path, &report))
         }
         Action::NewAgent => {
             let mut prompter = TerminalPrompter;
@@ -901,6 +947,26 @@ fn render_archived_agent(plan: &AgentDeletionPlan) -> String {
     )
 }
 
+fn render_preset_report(path: &str, report: &crate::app::presets::PresetLoadReport) -> String {
+    let mut out = format!(
+        "Preset catalog loaded from {}.\nCreated: {} · skipped: {}\n",
+        sanitize(path),
+        report.created.len(),
+        report.skipped.len(),
+    );
+    for profile in &report.created {
+        out.push_str(&format!(
+            "  {} — {}\n",
+            sanitize(profile.name.as_str()),
+            profile.role.as_str()
+        ));
+    }
+    for name in &report.skipped {
+        out.push_str(&format!("  (already present) {}\n", sanitize(name)));
+    }
+    out
+}
+
 fn render_created_agent(profile: &AgentProfile) -> String {
     format!(
         "Agent created.\n\
@@ -971,11 +1037,11 @@ fn render_opened_project(project: &ProjectOverview) -> String {
         "Project opened.\nID:   {}\nName: {}\n{}\n",
         project.id,
         sanitize(&project.name),
-        project
-            .github_source
-            .as_ref()
-            .map(|source| format!("GitHub: {}\n", sanitize(source)))
-            .unwrap_or_default()
+        match (&project.github_source, &project.folder_source) {
+            (Some(source), None) => format!("GitHub: {}\n", sanitize(source)),
+            (None, Some(source)) => format!("Folder: {}\n", sanitize(source)),
+            _ => String::new(),
+        }
     )
 }
 
@@ -989,7 +1055,7 @@ fn render_projects(projects: &[ProjectOverview]) -> String {
     let columns = [
         Column::identifier("ID"),
         Column::text("Name"),
-        Column::identifier("GitHub"),
+        Column::identifier("Source"),
         Column::text("Requests"),
         Column::text("Stories"),
         Column::text("TODO"),
@@ -1004,10 +1070,7 @@ fn render_projects(projects: &[ProjectOverview]) -> String {
             vec![
                 project.id.to_string(),
                 project.name.clone(),
-                project
-                    .github_source
-                    .clone()
-                    .unwrap_or_else(|| "-".to_owned()),
+                project.source_label(),
                 project.request_count.to_string(),
                 project.story_count.to_string(),
                 project.todo.to_string(),
@@ -1027,11 +1090,11 @@ fn render_created_project(created: &CreatedProject) -> String {
         "Project created.\nID:   {}\nName: {}\n{}{}\n",
         project.id,
         sanitize(project.name.as_str()),
-        project
-            .github_source
-            .as_ref()
-            .map(|source| format!("GitHub: {source}\n"))
-            .unwrap_or_default(),
+        match (&project.github_source, &project.folder_source) {
+            (Some(source), None) => format!("GitHub: {source}\n"),
+            (None, Some(source)) => format!("Folder: {}\n", sanitize(source.as_str())),
+            _ => String::new(),
+        },
         created
             .workspace
             .as_ref()
@@ -1054,6 +1117,8 @@ fn render_board(board: &Board, width: usize) -> String {
     );
     if let Some(source) = &board.github_source {
         out.push_str(&format!("GitHub: {}\n", sanitize(source)));
+    } else if let Some(source) = &board.folder_source {
+        out.push_str(&format!("Folder: {}\n", sanitize(source)));
     }
     out.push_str(&format!(
         "Stories: {} (TODO {}, IN PROGRESS {}, IN REVIEW {}, BLOCKED {}, DONE {})\n",
@@ -1321,6 +1386,7 @@ mod tests {
             project_id: ProjectId::parse("0b1c2d3e").unwrap(),
             project_name: "Portal".to_owned(),
             github_source: None,
+            folder_source: None,
             lab_name: "Payments".to_owned(),
             lead_name: Some("Ada".to_owned()),
             counts: BoardCounts {

@@ -20,14 +20,22 @@ Run `vlab` or `vlab --help` for the grouped help.
 
 The Laboratories dashboard shows ID, name, description, agents, projects, and
 the active marker. Its actions are New, Check, Edit, Set active, Projects,
-Delete, Filter, Help, Back, and Quit. New/Edit use a bordered form: `Tab` or
-arrows move fields, the focused field shows a cursor, `Enter` saves, and `Esc`
-cancels. **Projects** activates the selected
-laboratory and opens its Projects dashboard.
+Populate, Delete, Filter, Help, Back, and Quit. New/Edit use a bordered form:
+`Tab` or arrows move fields, the focused field shows a cursor, `Enter` saves,
+and `Esc` cancels. **Projects** activates the selected
+laboratory and opens its Projects dashboard. **Populate** (`o`) opens the
+two-pane membership editor for the selected laboratory: **Available agents** on
+the left and **In this laboratory** on the right. `Tab` or `←/→` switches pane,
+`↑/↓` moves, `Enter` or `Space` moves the selected agent to the other pane, `v`
+opens the selected agent's full profile, `s` saves, and `Esc` asks before
+discarding unsaved moves. A saved roster needs at
+least one agent and exactly one Tech Lead; archived profiles and archived
+memberships are preserved. The catalog comes from `make load-preset`.
 
 The Projects dashboard actions are New, Edit, Request, Open, Assign, Kanban,
-Delete, Filter, Help, Back, and Quit. **Edit** renames the selected project; its
-GitHub source cannot be changed. **Request** (`r`, or `n` on the Kanban board)
+Delete, Filter, Help, Back, and Quit. **New** opens a form with a source choice
+(`None`, `GitHub`, `Folder`) and one source field; the source cannot be changed
+after creation. **Edit** renames the selected project. **Request** (`r`, or `n` on the Kanban board)
 makes the project current and opens a prompt dialog: type or paste the request
 (`Alt+Enter` adds a line break), `Enter` submits, `Esc` cancels. While the Tech
 Lead plans, a `Planning…` dialog is shown and `Esc` or `Ctrl-C` cancels; the
@@ -60,8 +68,9 @@ is `TODO`, `IN PROGRESS`, `IN REVIEW`, or `BLOCKED`; it is closed when `DONE`. T
 the Tech Lead desk, `(zzz)` for idle agents, `( ? )`/`( ! )` exchange bubbles
 for two working agents of different roles, and `(///)` at an isolated focus
 desk for an agent with two or more open stories. Use `↑/↓` for agents,
-`←/→` for pods, `Enter` for agent detail, `m` for memories, `r` to reload,
-`?` for help, `Esc` home, and `q` to quit.
+`←/→` for pods, `Enter` for agent detail, `o` to populate the active
+laboratory, `m` for memories, `r` to reload, `?` for help, `Esc` home, and `q`
+to quit. The scene itself stays read-only; `o` opens the membership editor.
 
 The **Memories** screen opened with `m` has `Lab` and `Project` tabs. `Tab` or
 `←/→` switches scope, `↑/↓` moves, `Enter` shows the full memory, `n` creates
@@ -102,7 +111,7 @@ window but is hidden from `--help`. New work uses the group subcommands.
 | Command | Behavior |
 |---|---|
 | `--list-projects` | Projects in the active laboratory with request/story/state counts. |
-| `--new-project <name> [--github-source <url>]` | Create a project and select it; the optional URL must be `https://github.com/<owner>/<repository>` and requires `credentials.github_api_key`. A source is cloned into `.workspace/<project-id>` before the project row is saved; a failed clone creates no project. |
+| `--new-project <name> [--github-source <url> \| --folder-source <path>]` | Create a project and select it. `--github-source` must be `https://github.com/<owner>/<repository>` and requires `credentials.github_api_key`; the repository is cloned into `.workspace/<project-id>`. `--folder-source` copies an absolute local folder, rejects symlinks/special files, and initializes a local git repository only inside `.workspace/<project-id>`. The modifiers are mutually exclusive; no modifier creates a legacy no-source project. A failed source preparation creates no project. |
 | `--open-project <project-id>` | Select a project in the active laboratory as the current project. |
 | `--assign-agent <agent-id>` | Assign an active laboratory member to the current project; repeated assignment is idempotent. |
 | `--show-project-kanban` | Read-only five-column board for the current project, plus counts and pending intake. |
@@ -123,6 +132,7 @@ surface. Deletion follows the owning laboratory or project.
 |---|---|
 | `--list-agents` | Active members of the active laboratory with project/open-story counts. |
 | `--new-agent` | Guided interactive profile creation; non-TTY exits 4. |
+| `--load-preset <file>` | Validate a tracked YAML catalog and create any missing profiles in one transaction. Creates no laboratory or membership, never calls the provider, and skips existing names case-insensitively. |
 | `--show-agent-detail <agent-id>` | Profile, skills, CV, memberships, projects, assignments, memory count; unavailable metrics show `N/A`. |
 | `--delete-agent <agent-id>` | Confirm; block unfinished stories; archive the profile, remove memberships, preserve history/memories. |
 | `--ask <question> [--to-agent <agent-id>]` | Ask a current member or the single lead; the answer is advisory text. |
@@ -133,6 +143,8 @@ surface. Deletion follows the owning laboratory or project.
   `--delete-agent`.
 - `--to-agent`: target for `--ask`.
 - `--github-source`: optional project GitHub URL.
+- `--folder-source`: optional project local folder path; mutually exclusive
+  with `--github-source`.
 
 ## Exit codes
 

@@ -49,7 +49,7 @@ use crate::infra::paths::ensure_private_dir;
 pub const DEFAULT_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Schema version this binary creates and supports (ADR-0016).
-pub const SUPPORTED_SCHEMA_VERSION: i64 = 11;
+pub const SUPPORTED_SCHEMA_VERSION: i64 = 12;
 
 struct Inner {
     runtime: tokio::runtime::Runtime,

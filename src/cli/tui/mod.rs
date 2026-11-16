@@ -29,7 +29,7 @@ use crate::cli::prompt::{TerminalEditor, TerminalPrompter};
 use crate::domain::budget::{CancelToken, ExecutionLimits};
 use crate::domain::ids::{AgentId, LabId, MemoryId, ProjectId};
 use crate::domain::memory::MemoryScope;
-use crate::domain::project::GithubSource;
+use crate::domain::project::{GithubSource, ProjectSource};
 use crate::infra::config::SettingsFile;
 use crate::infra::db::Database;
 use crate::infra::execution::WorkspaceEnvironment;
@@ -40,6 +40,7 @@ use crate::obs::{ActionId, RunId};
 
 mod floor;
 mod memory;
+mod populate;
 
 /// Opens a group dashboard.
 pub fn run(group: DashboardGroup, no_color: bool, run_id: RunId) -> Result<(), AppError> {
@@ -95,6 +96,9 @@ enum Screen {
     /// Read-only laboratory metrics (ADR-0051); state lives in
     /// `App::metrics`.
     Metrics,
+    /// Staged laboratory membership editor (ADR-0053); state lives in
+    /// `App::populate`.
+    Populate,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -152,11 +156,18 @@ enum FormKind {
     ProjectEdit(ProjectId),
 }
 
+#[derive(Debug, Clone, Copy)]
+enum FormFieldKind {
+    Text,
+    Choice { options: &'static [&'static str] },
+}
+
 #[derive(Debug, Clone)]
 struct FormField {
     label: &'static str,
     value: String,
     cursor: usize,
+    kind: FormFieldKind,
 }
 
 impl FormField {
@@ -167,10 +178,49 @@ impl FormField {
             label,
             value,
             cursor,
+            kind: FormFieldKind::Text,
         }
     }
 
+    fn choice(label: &'static str, options: &'static [&'static str], selected: usize) -> Self {
+        Self {
+            label,
+            value: options
+                .get(selected)
+                .copied()
+                .unwrap_or_default()
+                .to_owned(),
+            cursor: 0,
+            kind: FormFieldKind::Choice { options },
+        }
+    }
+
+    fn is_choice(&self) -> bool {
+        matches!(self.kind, FormFieldKind::Choice { .. })
+    }
+
+    fn cycle(&mut self, delta: isize) {
+        let FormFieldKind::Choice { options } = self.kind else {
+            return;
+        };
+        if options.is_empty() {
+            return;
+        }
+        let current = options
+            .iter()
+            .position(|option| *option == self.value)
+            .unwrap_or(0);
+        let next = (current as isize + delta).rem_euclid(options.len() as isize) as usize;
+        self.value = options[next].to_owned();
+    }
+
     fn insert(&mut self, ch: char) {
+        if self.is_choice() {
+            if ch == ' ' {
+                self.cycle(1);
+            }
+            return;
+        }
         if ch.is_control() {
             return;
         }
@@ -208,7 +258,7 @@ impl FormField {
     }
 
     fn backspace(&mut self) {
-        if self.cursor == 0 {
+        if self.is_choice() || self.cursor == 0 {
             return;
         }
         let byte = self
@@ -222,7 +272,7 @@ impl FormField {
     }
 
     fn delete(&mut self) {
-        if self.cursor >= self.value.chars().count() {
+        if self.is_choice() || self.cursor >= self.value.chars().count() {
             return;
         }
         let byte = self
@@ -235,19 +285,31 @@ impl FormField {
     }
 
     fn left(&mut self) {
-        self.cursor = self.cursor.saturating_sub(1);
+        if self.is_choice() {
+            self.cycle(-1);
+        } else {
+            self.cursor = self.cursor.saturating_sub(1);
+        }
     }
 
     fn right(&mut self) {
-        self.cursor = (self.cursor + 1).min(self.value.chars().count());
+        if self.is_choice() {
+            self.cycle(1);
+        } else {
+            self.cursor = (self.cursor + 1).min(self.value.chars().count());
+        }
     }
 
     fn home(&mut self) {
-        self.cursor = 0;
+        if !self.is_choice() {
+            self.cursor = 0;
+        }
     }
 
     fn end(&mut self) {
-        self.cursor = self.value.chars().count();
+        if !self.is_choice() {
+            self.cursor = self.value.chars().count();
+        }
     }
 }
 
@@ -279,7 +341,8 @@ impl Form {
             kind: FormKind::ProjectNew,
             fields: vec![
                 FormField::new("Name", ""),
-                FormField::new("GitHub source (optional)", ""),
+                FormField::choice("Source", &["None", "GitHub", "Folder"], 0),
+                FormField::new("Source URL or folder path", ""),
             ],
             focus: 0,
         }
@@ -307,6 +370,53 @@ impl Form {
 
     fn current(&mut self) -> &mut FormField {
         &mut self.fields[self.focus]
+    }
+
+    fn left(&mut self) {
+        let choice = self.current().is_choice();
+        self.current().left();
+        if choice {
+            self.sync_project_source();
+        }
+    }
+
+    fn right(&mut self) {
+        let choice = self.current().is_choice();
+        self.current().right();
+        if choice {
+            self.sync_project_source();
+        }
+    }
+
+    fn insert(&mut self, ch: char) {
+        let choice = self.current().is_choice();
+        self.current().insert(ch);
+        if choice {
+            self.sync_project_source();
+        }
+    }
+
+    /// Selecting `None` clears the source text so it cannot be submitted by
+    /// accident.
+    fn sync_project_source(&mut self) {
+        if matches!(self.kind, FormKind::ProjectNew)
+            && self.fields.len() >= 3
+            && self.fields[1].value == "None"
+        {
+            self.fields[2].value.clear();
+            self.fields[2].cursor = 0;
+        }
+    }
+
+    fn project_values(&self) -> (String, String, String) {
+        (
+            self.fields[0].value.clone(),
+            self.fields[1].value.clone(),
+            self.fields
+                .get(2)
+                .map(|field| field.value.clone())
+                .unwrap_or_default(),
+        )
     }
 
     fn title(&self) -> String {
@@ -392,6 +502,7 @@ enum ConfirmAction {
         scope: String,
         preview: String,
     },
+    DiscardPopulate,
 }
 
 /// Navigation state of the Kanban screen. Moving never writes.
@@ -547,6 +658,9 @@ struct App {
     memory: Option<memory::MemoryView>,
     metrics: Option<metrics::LabMetrics>,
     metrics_error: Option<String>,
+    populate: Option<populate::PopulateView>,
+    /// Screen to return to when Populate closes (Labs or Floor).
+    populate_return: Screen,
     pending_request: Option<(ProjectId, String)>,
 }
 
@@ -588,6 +702,8 @@ impl App {
             memory: None,
             metrics: None,
             metrics_error: None,
+            populate: None,
+            populate_return: Screen::Group(DashboardGroup::Labs),
             pending_request: None,
         };
         app.reload();
@@ -683,6 +799,8 @@ impl App {
                 }
             }
             Screen::Metrics => self.reload_metrics(),
+            // Populate edits staged data; reloading here would discard it.
+            Screen::Populate => {}
             Screen::Group(DashboardGroup::Labs) => {
                 self.labs = labs::list(&self.db).unwrap_or_default();
             }
@@ -761,7 +879,11 @@ impl App {
                 })
                 .count(),
             Screen::Group(DashboardGroup::Settings) => 1,
-            Screen::Kanban | Screen::Floor | Screen::Memories | Screen::Metrics => 0,
+            Screen::Kanban
+            | Screen::Floor
+            | Screen::Memories
+            | Screen::Metrics
+            | Screen::Populate => 0,
         }
     }
 
@@ -883,11 +1005,11 @@ impl App {
                         self.mode = Mode::Form(form);
                     }
                     KeyCode::Left => {
-                        form.current().left();
+                        form.left();
                         self.mode = Mode::Form(form);
                     }
                     KeyCode::Right => {
-                        form.current().right();
+                        form.right();
                         self.mode = Mode::Form(form);
                     }
                     KeyCode::Home => {
@@ -899,7 +1021,7 @@ impl App {
                         self.mode = Mode::Form(form);
                     }
                     KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        form.current().insert(ch);
+                        form.insert(ch);
                         self.mode = Mode::Form(form);
                     }
                     _ => self.mode = Mode::Form(form),
@@ -1068,6 +1190,10 @@ impl App {
                 self.handle_metrics(key);
                 None
             }
+            Screen::Populate => {
+                self.handle_populate(key);
+                None
+            }
             Screen::Home => {
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
@@ -1157,6 +1283,10 @@ impl App {
                     }
                     KeyCode::Char('p') if group == DashboardGroup::Labs => {
                         let result = self.open_projects_for_selected_lab();
+                        self.apply_result(result);
+                    }
+                    KeyCode::Char('o') if group == DashboardGroup::Labs => {
+                        let result = self.open_populate();
                         self.apply_result(result);
                     }
                     KeyCode::Char('a') => match group {
@@ -1530,6 +1660,174 @@ impl App {
         self.reload();
     }
 
+    fn open_populate(&mut self) -> Result<(), AppError> {
+        let lab = self.selected_lab().ok_or_else(|| AppError::Precondition {
+            problem: "no laboratory is selected.".to_owned(),
+            hint: "Move the selection or create a laboratory.".to_owned(),
+        })?;
+        let view = populate::PopulateView::load(&self.db, &lab.lab.id)?;
+        self.populate = Some(view);
+        self.populate_return = Screen::Group(DashboardGroup::Labs);
+        self.screen = Screen::Populate;
+        self.status = None;
+        Ok(())
+    }
+
+    fn open_populate_active(&mut self) {
+        let Some(lab) = self.active_lab.clone() else {
+            self.show_error(AppError::NoActiveLab);
+            return;
+        };
+        match populate::PopulateView::load(&self.db, &lab) {
+            Ok(view) => {
+                self.populate = Some(view);
+                self.populate_return = Screen::Floor;
+                self.screen = Screen::Populate;
+                self.status = None;
+            }
+            Err(error) => self.show_error(error),
+        }
+    }
+
+    fn close_populate(&mut self) {
+        self.populate = None;
+        self.screen = self.populate_return;
+        self.status = None;
+        self.reload();
+    }
+
+    fn handle_populate(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('q') => self.quit = true,
+            KeyCode::Esc => {
+                if self
+                    .populate
+                    .as_ref()
+                    .is_some_and(populate::PopulateView::has_changes)
+                {
+                    self.mode = Mode::Confirm(ConfirmAction::DiscardPopulate);
+                } else {
+                    self.close_populate();
+                }
+            }
+            KeyCode::Char('?') => self.mode = Mode::Help,
+            KeyCode::Char('v') => self.open_populate_detail(),
+            KeyCode::Tab | KeyCode::Right | KeyCode::Char('l') => {
+                if let Some(view) = self.populate.as_mut() {
+                    view.switch_side(1);
+                }
+            }
+            KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h') => {
+                if let Some(view) = self.populate.as_mut() {
+                    view.switch_side(-1);
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(view) = self.populate.as_mut() {
+                    view.move_selection(-1);
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Some(view) = self.populate.as_mut() {
+                    view.move_selection(1);
+                }
+            }
+            KeyCode::PageUp => {
+                if let Some(view) = self.populate.as_mut() {
+                    view.page(-1);
+                }
+            }
+            KeyCode::PageDown => {
+                if let Some(view) = self.populate.as_mut() {
+                    view.page(1);
+                }
+            }
+            KeyCode::Home | KeyCode::Char('g') => {
+                if let Some(view) = self.populate.as_mut() {
+                    view.first();
+                }
+            }
+            KeyCode::End | KeyCode::Char('G') => {
+                if let Some(view) = self.populate.as_mut() {
+                    view.last();
+                }
+            }
+            KeyCode::Enter | KeyCode::Char(' ') => {
+                if let Some(view) = self.populate.as_mut() {
+                    view.move_selected();
+                }
+            }
+            KeyCode::Char('s') => self.save_populate(),
+            _ => {}
+        }
+    }
+
+    fn open_populate_detail(&mut self) {
+        let Some(id) = self
+            .populate
+            .as_ref()
+            .and_then(populate::PopulateView::selected_agent)
+            .map(|agent| agent.id.clone())
+        else {
+            self.status = Some("No agent is selected.".to_owned());
+            return;
+        };
+        match agents::detail(&self.db, id.as_str()) {
+            Ok(detail) => {
+                self.mode = Mode::Message {
+                    title: format!("Agent {}", detail.profile.id),
+                    lines: agent_detail_lines(&detail),
+                };
+            }
+            Err(error) => self.show_error(error),
+        }
+    }
+
+    fn save_populate(&mut self) {
+        let Some(view) = self.populate.as_ref() else {
+            return;
+        };
+        if !view.has_changes() {
+            self.status = Some("No changes to save.".to_owned());
+            return;
+        }
+        let lab = view.lab.id.clone();
+        let desired = view.desired_ids();
+        match crate::app::populate::save(&self.db, &lab, &desired) {
+            Ok(report) => {
+                record_event(
+                    &mut self.db,
+                    self.run_id,
+                    EventKind::LabPopulated,
+                    EntityType::Laboratory,
+                    lab.as_str(),
+                );
+                if let Some(view) = self.populate.as_mut() {
+                    view.mark_saved();
+                }
+                self.status = Some(format!(
+                    "Laboratory updated: {} agents ({} added, {} removed).",
+                    report.members, report.added, report.removed
+                ));
+                self.reload();
+            }
+            Err(error) => self.show_error(error),
+        }
+    }
+
+    fn render_populate(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        let status = self.status.as_deref();
+        if let Some(view) = self.populate.as_mut() {
+            populate::render(frame, area, self.theme, view, status);
+        } else {
+            frame.render_widget(
+                Paragraph::new("No populate screen loaded. Esc goes back.")
+                    .block(self.block("Populate")),
+                area,
+            );
+        }
+    }
+
     fn reload_metrics(&mut self) {
         let Some(lab) = self.active_lab.as_ref() else {
             self.metrics = None;
@@ -1571,6 +1869,7 @@ impl App {
                 self.status = None;
             }
             KeyCode::Char('?') => self.mode = Mode::Help,
+            KeyCode::Char('o') => self.open_populate_active(),
             KeyCode::Char('m') => self.open_memories(),
             KeyCode::Up | KeyCode::Char('k') => {
                 if let Some(view) = self.floor.as_mut() {
@@ -1974,7 +2273,8 @@ impl App {
             | Screen::Kanban
             | Screen::Floor
             | Screen::Memories
-            | Screen::Metrics => {
+            | Screen::Metrics
+            | Screen::Populate => {
                 self.status = Some("This group has no delete action.".to_owned());
             }
         }
@@ -2035,6 +2335,9 @@ impl App {
                     plan.id.as_str(),
                 );
                 self.status = Some(format!("Agent {name} archived."));
+            }
+            ConfirmAction::DiscardPopulate => {
+                self.close_populate();
             }
         }
         self.reload();
@@ -2113,39 +2416,64 @@ impl App {
         Ok(())
     }
 
-    fn create_project(&mut self, name: &str, source: &str) -> Result<(), AppError> {
-        let github_source = if source.trim().is_empty() {
-            None
-        } else {
-            Some(
-                GithubSource::parse(source).map_err(|error| AppError::Usage {
+    fn create_project(&mut self, name: &str, kind: &str, source: &str) -> Result<(), AppError> {
+        let (source, token) = match kind {
+            "GitHub" => {
+                if source.trim().is_empty() {
+                    return Err(AppError::Usage {
+                        message: "a GitHub URL is required for a GitHub project.".to_owned(),
+                    });
+                }
+                let source = GithubSource::parse(source).map_err(|error| AppError::Usage {
                     message: error.to_string(),
-                })?,
-            )
+                })?;
+                let settings = settings::show(&self.settings_file())?.settings;
+                if settings.source_control.provider
+                    != crate::domain::settings::SourceControlProvider::Github
+                {
+                    return Err(AppError::Configuration {
+                        problem: "the configured source-control provider is not supported."
+                            .to_owned(),
+                        hint: "Set `source_control.provider` to `github` with `vlab settings`."
+                            .to_owned(),
+                    });
+                }
+                if !settings.credentials.github_present() {
+                    return Err(AppError::Configuration {
+                        problem: "`credentials.github_api_key` is not set.".to_owned(),
+                        hint: "Edit settings.yaml and add credentials.github_api_key.".to_owned(),
+                    });
+                }
+                let token = settings.credentials.github_api_key.clone();
+                (ProjectSource::Github(source), token)
+            }
+            "Folder" => {
+                if source.trim().is_empty() {
+                    return Err(AppError::Usage {
+                        message: "a folder path is required for a folder project.".to_owned(),
+                    });
+                }
+                let source =
+                    crate::domain::project::FolderSource::parse(source).map_err(|error| {
+                        AppError::Usage {
+                            message: error.to_string(),
+                        }
+                    })?;
+                (ProjectSource::Folder(source), None)
+            }
+            "None" => {
+                if !source.trim().is_empty() {
+                    return Err(AppError::Usage {
+                        message: "clear the source field or choose GitHub or Folder.".to_owned(),
+                    });
+                }
+                (ProjectSource::None, None)
+            }
+            _ => return Err(AppError::Internal),
         };
-        let mut token = None;
-        if github_source.is_some() {
-            let settings = settings::show(&self.settings_file())?.settings;
-            if settings.source_control.provider
-                != crate::domain::settings::SourceControlProvider::Github
-            {
-                return Err(AppError::Configuration {
-                    problem: "the configured source-control provider is not supported.".to_owned(),
-                    hint: "Set `source_control.provider` to `github` with `vlab settings`."
-                        .to_owned(),
-                });
-            }
-            if !settings.credentials.github_present() {
-                return Err(AppError::Configuration {
-                    problem: "`credentials.github_api_key` is not set.".to_owned(),
-                    hint: "Edit settings.yaml and add credentials.github_api_key.".to_owned(),
-                });
-            }
-            token = settings.credentials.github_api_key.clone();
-        }
         let workspace = GitWorkspace::new(self.paths.workspace_dir(), token, DEFAULT_CLONE_TIMEOUT);
         let created: CreatedProject =
-            projects::create(&self.db, &self.db, name, github_source, &workspace)?;
+            projects::create_with_source(&self.db, &self.db, name, source, &workspace)?;
         context::save_active_project(&self.db, &created.project.id)?;
         if let Some(memory) = memories::remember(
             &self.db,
@@ -2248,7 +2576,10 @@ impl App {
         match &form.kind {
             FormKind::LabNew => self.create_lab(&name, &value),
             FormKind::LabEdit(id) => self.update_lab(id, &name, &value),
-            FormKind::ProjectNew => self.create_project(&name, &value),
+            FormKind::ProjectNew => {
+                let (name, kind, source) = form.project_values();
+                self.create_project(&name, &kind, &source)
+            }
             FormKind::ProjectEdit(id) => self.rename_project(id, &name),
         }
     }
@@ -2362,6 +2693,7 @@ impl App {
             Screen::Floor => self.render_floor(frame, area),
             Screen::Memories => self.render_memories(frame, area),
             Screen::Metrics => self.render_metrics(frame, area),
+            Screen::Populate => self.render_populate(frame, area),
         }
         match &self.mode {
             Mode::Browse => {}
@@ -2529,7 +2861,7 @@ impl App {
             }
             DashboardGroup::Projects => {
                 lines.push(table_header(
-                    &["ID", "NAME", "REQ", "STORY", "OPEN", "CURRENT"],
+                    &["ID", "NAME", "SOURCE", "REQ", "STORY", "OPEN", "CURRENT"],
                     &widths,
                     self.theme,
                 ));
@@ -2544,6 +2876,7 @@ impl App {
                             &[
                                 item.id.to_string(),
                                 item.name.clone(),
+                                item.source_kind().to_owned(),
                                 item.request_count.to_string(),
                                 item.story_count.to_string(),
                                 (item.todo + item.in_progress + item.in_review + item.blocked)
@@ -2799,7 +3132,9 @@ impl App {
             ),
         ];
         if let Some(source) = &board.github_source {
-            context.push(clean(source));
+            context.push(format!("github {source}"));
+        } else if let Some(source) = &board.folder_source {
+            context.push(format!("folder {source}"));
         }
         let summary = format!(
             "Stories {}{separator}Done {}{separator}Pending intake {}",
@@ -3169,6 +3504,8 @@ impl App {
                     floor_help_lines()
                 } else if self.screen == Screen::Memories {
                     memory::help_lines()
+                } else if self.screen == Screen::Populate {
+                    populate_help_lines()
                 } else {
                     help_lines()
                 },
@@ -3400,6 +3737,7 @@ fn action_items(group: DashboardGroup) -> Vec<(&'static str, &'static str)> {
             ("[e]", "Edit"),
             ("[a]", "Set active"),
             ("[p]", "Projects"),
+            ("[o]", "Populate"),
             ("[d]", "Delete"),
             ("[/]", "Filter"),
             ("[?]", "Help"),
@@ -3816,8 +4154,16 @@ fn table_widths(group: DashboardGroup, available: usize) -> Vec<usize> {
             vec![8, name, description, 5, 6, 6]
         }
         DashboardGroup::Projects => {
-            let fixed = 8 + 5 + 5 + 5 + 8 + GAP * 5;
-            vec![8, available.saturating_sub(fixed).clamp(12, 45), 5, 5, 5, 8]
+            let fixed = 8 + 7 + 5 + 5 + 5 + 8 + GAP * 6;
+            vec![
+                8,
+                available.saturating_sub(fixed).clamp(12, 45),
+                7,
+                5,
+                5,
+                5,
+                8,
+            ]
         }
         DashboardGroup::Agents => {
             let fixed = 8 + 10 + 8 + 5 + GAP * 4;
@@ -3831,7 +4177,9 @@ fn empty_state(group: DashboardGroup) -> &'static str {
     match group {
         DashboardGroup::Labs => "No laboratories. Press n to create one.",
         DashboardGroup::Projects => "No projects in the active laboratory. Press n to create one.",
-        DashboardGroup::Agents => "No agents in the active laboratory.",
+        DashboardGroup::Agents => {
+            "No agents in the active laboratory. Press o in Laboratories or the Lab floor to populate it; load the catalog with `make load-preset`."
+        }
         DashboardGroup::Settings => "Settings are not loaded.",
     }
 }
@@ -3850,6 +4198,9 @@ fn confirm_label(action: &ConfirmAction) -> String {
             "Delete memory {id} ({scope}) — {}? This cannot be undone.",
             clean(preview)
         ),
+        ConfirmAction::DiscardPopulate => {
+            "Discard the unsaved laboratory membership changes?".to_owned()
+        }
     }
 }
 
@@ -3936,12 +4287,31 @@ fn kanban_help_lines() -> Vec<String> {
     ]
 }
 
+fn populate_help_lines() -> Vec<String> {
+    vec![
+        "Tab or ←/→  switch pane".to_owned(),
+        "j/k or ↑/↓  previous/next agent".to_owned(),
+        "PgUp/PgDn   move by one page".to_owned(),
+        "g/G         first/last agent".to_owned(),
+        "Enter/Space move the agent to the other pane".to_owned(),
+        "v           view the selected agent's full profile".to_owned(),
+        "s           save the membership changes".to_owned(),
+        "?           this help".to_owned(),
+        "Esc         cancel; asks before discarding changes".to_owned(),
+        "q           quit".to_owned(),
+        String::new(),
+        "The laboratory needs at least one agent and exactly one Tech Lead.".to_owned(),
+        "Changes are staged until you press s.".to_owned(),
+    ]
+}
+
 fn floor_help_lines() -> Vec<String> {
     vec![
         "j/k or ↑/↓  previous/next agent".to_owned(),
         "h/l or ←/→  previous/next pod page".to_owned(),
         "g/G         first/last agent".to_owned(),
         "Enter       agent detail".to_owned(),
+        "o           populate the active laboratory".to_owned(),
         "m           laboratory and project memories".to_owned(),
         "r           reload the floor".to_owned(),
         "?           this help".to_owned(),
@@ -3965,6 +4335,7 @@ fn help_lines() -> Vec<String> {
         "r           new request for the selected project".to_owned(),
         "v           project Kanban board".to_owned(),
         "a           set active or assign".to_owned(),
+        "o           populate the selected laboratory".to_owned(),
         "d           delete with confirmation".to_owned(),
         "/           filter".to_owned(),
         "?           this help".to_owned(),
@@ -3985,6 +4356,26 @@ fn fixed_rect(width: u16, height: u16, area: Rect) -> Rect {
 }
 
 fn form_field_line(field: &FormField, focused: bool, theme: Theme) -> Line<'static> {
+    if let FormFieldKind::Choice { options } = field.kind {
+        let mut spans = Vec::new();
+        for (index, option) in options.iter().enumerate() {
+            if index > 0 {
+                spans.push(Span::raw("   "));
+            }
+            let selected = field.value == *option;
+            let style = if selected {
+                if focused {
+                    theme.selected()
+                } else {
+                    theme.title()
+                }
+            } else {
+                theme.muted_style()
+            };
+            spans.push(Span::styled(format!("[{option}]"), style));
+        }
+        return Line::from(spans);
+    }
     if !focused {
         return Line::from(Span::raw(clean(&field.value)));
     }
@@ -4182,7 +4573,11 @@ mod tests {
     use crate::app::directory::LabOverview;
     use crate::app::lab_validation::LabCheck;
     use crate::app::memories::MemoryStore;
-    use crate::domain::settings::Settings;
+    use crate::app::projects::ProjectStore;
+    use crate::domain::agent::{AgentProfile, Description, Role};
+    use crate::domain::name::Name;
+    use crate::domain::settings::{ModelId, ProviderId, Settings};
+    use crate::domain::skills;
     use crate::infra::paths::PlatformDirs;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -4236,6 +4631,8 @@ mod tests {
             memory: None,
             metrics: None,
             metrics_error: None,
+            populate: None,
+            populate_return: Screen::Group(DashboardGroup::Labs),
             pending_request: None,
         };
         (app, dir)
@@ -4573,6 +4970,7 @@ mod tests {
             project_id: ProjectId::parse("0b1c2d3e").unwrap(),
             project_name: "Portal".to_owned(),
             github_source: None,
+            folder_source: None,
             lab_name: "Payments".to_owned(),
             lead_name: Some("Grace".to_owned()),
             counts: kanban::BoardCounts::default(),
@@ -4874,6 +5272,99 @@ mod tests {
     }
 
     #[test]
+    fn the_project_form_offers_three_source_choices_and_clears_none() {
+        let mut form = Form::project_new();
+        assert_eq!(form.fields.len(), 3);
+        assert_eq!(form.fields[1].value, "None");
+        form.focus = 1;
+        form.right();
+        assert_eq!(form.fields[1].value, "GitHub");
+        form.right();
+        assert_eq!(form.fields[1].value, "Folder");
+        form.fields[2].value = "/tmp/portal".to_owned();
+        form.left();
+        assert_eq!(form.fields[1].value, "GitHub");
+        assert_eq!(form.fields[2].value, "/tmp/portal");
+        form.left();
+        assert_eq!(form.fields[1].value, "None");
+        assert!(form.fields[2].value.is_empty());
+
+        let (mut app, _dir) = fixture(Screen::Group(DashboardGroup::Projects));
+        app.mode = Mode::Form(Form::project_new());
+        let screen = rendered(&mut app);
+        for text in [
+            "Source",
+            "None",
+            "GitHub",
+            "Folder",
+            "Source URL or folder path",
+        ] {
+            assert!(screen.contains(text), "{text}: {screen}");
+        }
+    }
+
+    #[test]
+    fn the_projects_dashboard_creates_a_folder_project() {
+        let (mut app, dir) = seeded();
+        let source = dir.path().join("source");
+        std::fs::create_dir_all(source.join("src")).unwrap();
+        std::fs::write(source.join("README.md"), "hello").unwrap();
+        app.create_project("Folder Project", "Folder", source.to_str().unwrap())
+            .unwrap();
+        let lab = LabId::parse("a3f91c07").unwrap();
+        let projects = app.db.projects(&lab).unwrap();
+        let project = projects
+            .iter()
+            .find(|project| project.name == "Folder Project")
+            .expect("folder project");
+        assert_eq!(project.source_kind(), "folder");
+        assert!(project.folder_source.is_some());
+        let workspace = app.paths.workspace_dir().join(project.id.as_str());
+        assert!(workspace.join(".git").is_dir());
+        assert!(workspace.join("README.md").is_file());
+    }
+
+    #[test]
+    fn the_populate_screen_opens_the_selected_agent_profile() {
+        let (mut app, _dir) = seeded();
+        let lab = LabId::parse("a3f91c07").unwrap();
+        let id = AgentId::parse("10000001").unwrap();
+        app.db
+            .insert_agent(
+                &AgentProfile::new(
+                    id.clone(),
+                    Name::parse("Bram").unwrap(),
+                    Role::Dev,
+                    Description::parse("Backend developer with a full profile").unwrap(),
+                    skills::parse_list("rust, api").unwrap(),
+                    ProviderId::DeepSeek,
+                    ModelId::parse("deepseek-chat").unwrap(),
+                    None,
+                )
+                .unwrap(),
+                &[],
+            )
+            .unwrap();
+        app.populate = Some(populate::PopulateView::load(&app.db, &lab).unwrap());
+        app.screen = Screen::Populate;
+        app.handle_key(key(KeyCode::Char('v')));
+        let Mode::Message { title, lines } = &app.mode else {
+            panic!("expected the agent detail modal: {:?}", app.mode);
+        };
+        assert!(title.contains("10000001"), "{title}");
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("Backend developer with a full profile")),
+            "{lines:?}"
+        );
+        assert!(
+            lines.iter().any(|line| line.contains("rust, api")),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
     fn the_projects_dashboard_opens_the_board_and_card_detail() {
         let (mut app, _dir) = seeded();
         app.handle_key(key(KeyCode::Char('v')));
@@ -5111,6 +5602,19 @@ mod tests {
         for text in ["Memories", "Lab (0)", "Project (0)", "[n]", "New", "Tab"] {
             assert!(screen.contains(text), "{text}: {screen}");
         }
+    }
+
+    #[test]
+    fn the_floor_opens_the_populate_screen_and_returns() {
+        let (mut app, _dir) = seeded();
+        app.screen = Screen::Floor;
+        app.reload();
+        app.handle_key(key(KeyCode::Char('o')));
+        assert_eq!(app.screen, Screen::Populate);
+        let screen = rendered_at(&mut app, 100, 30);
+        assert!(screen.contains("Populate laboratory"), "{screen}");
+        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(app.screen, Screen::Floor);
     }
 
     #[test]

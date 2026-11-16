@@ -32,6 +32,7 @@ own prints the list.
 | `make build-debug` | Build the debug binary in `target/debug/vlab`. |
 | `make build-release` | Build the optimized binary in `target/release/vlab`. |
 | `make run ARGS="..."` | Build, then run `vlab` with its settings and database in `.data/` (see below). Without `ARGS`, shows `--help`. |
+| `make load-preset` | Build, then load the fictional agent catalog in `assets/agents.yaml` into the `.data/` database. |
 | `make test` | Run all tests. |
 | `make lint` | Check formatting and run clippy with warnings as errors. |
 | `make fmt` | Format the code. |
@@ -102,7 +103,15 @@ Agents, Settings, Lab floor, or Metrics with the arrow keys and `Enter` (or
 Inside a group use `j/k` or arrows to move, the action
 keys shown in the bottom bar, `/` to filter, `?` for help, `Esc` to return home,
 and `q` to quit. The Laboratories dashboard shows the optional description and
-provides Edit and Projects actions; New/Edit open a bordered form with a visible cursor and Tab/arrow field navigation. The Projects dashboard renames projects with `e` and opens a full-screen,
+provides Edit, Projects, and Populate actions; New/Edit open a bordered form
+with a visible cursor and Tab/arrow field navigation. **Populate** (`o`) opens a
+two-pane editor with available agents on the left and the laboratory's agents
+on the right: `Tab` switches pane, `Enter` moves an agent, `v` opens the
+selected agent's full profile, `s` saves, and `Esc` discards with confirmation.
+A saved roster needs exactly one Tech Lead. Load the preset catalog first with
+`make load-preset`. The Projects dashboard creates
+projects with a source choice (`None`, `GitHub`, or `Folder`), renames projects
+with `e`, and opens a full-screen,
 Trello-style Kanban board with `v`: lists side by side, cards with the short
 description only, independent scrolling per list, and `Enter` for a dialog
 with the full story. Press `r` on a project (or `n` on its board) to submit a
@@ -112,10 +121,11 @@ The **Lab floor** is a deterministic MSX-style 2D laboratory scene: a tiled
 floor, accent-colored project pods, two-line block sprites at wide sizes,
 the Tech Lead at a central desk, `(zzz)` for idle agents, `( ? )`/`( ! )` exchange
 bubbles for two working agents of different roles, and an isolated `focus desk`
-with `(///)` when an agent has several open stories. Press `m` to manage
-laboratory and project memories: `n` creates, `Enter` views, `e` edits, and `d`
-deletes after confirmation. Agent memories remain automatic. In a non-TTY
-stream VLab prints help instead of blocking.
+with `(///)` when an agent has several open stories. Press `o` to populate the
+active laboratory, or `m` to manage laboratory and project memories: `n`
+creates, `Enter` views, `e` edits, and `d` deletes after confirmation. Agent
+memories remain automatic. The floor scene stays read-only. In a non-TTY stream
+VLab prints help instead of blocking.
 
 The **Metrics** entry (or `6`) shows the active laboratory at a glance:
 project count, `TODO`/in progress/in review/blocked/done counts, open, closed,
@@ -163,6 +173,10 @@ laboratory.
 ```sh
 # Optional GitHub source; requires credentials.github_api_key in settings.yaml.
 vlab --new-project "Customer Portal" --github-source https://github.com/acme/portal
+
+# Or import a local folder without version control; the original is untouched.
+vlab --new-project "Local Portal" --folder-source "$PWD/local-portal"
+
 vlab --assign-agent <agent-id>
 vlab --open-project <project-id>
 vlab --list-projects
@@ -180,6 +194,13 @@ Creating a GitHub-backed project clones the repository into
 passed to `git` through a private short-lived askpass helper, never in the URL
 or arguments. If the clone fails, no project is created. `.workspace/` is
 ignored by git and can be reset with `make clean-workspace`.
+
+`--folder-source` accepts an absolute local folder. VLab copies it into
+`.workspace/<project-id>`, skips any `.git` entries, rejects symbolic links and
+special files, and initializes a local git repository only inside the copy so
+story worktrees remain isolated. The source folder is never modified and needs
+no settings or GitHub credential. The copy is bounded to 100,000 entries,
+1 GiB, and 64 levels; a failed import creates no project.
 
 The board is read-only: it shows the five states, cards, assignee or
 `Unassigned`, priority, due date, story counts, completed count, and pending

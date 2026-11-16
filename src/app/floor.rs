@@ -400,6 +400,7 @@ mod tests {
             id: project_id(id),
             name: name.to_owned(),
             github_source: None,
+            folder_source: None,
             request_count: 0,
             story_count: 0,
             todo: 0,

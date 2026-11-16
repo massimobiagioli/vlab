@@ -168,6 +168,18 @@ impl Sandbox {
         Outcome::from(self.command().args(args).output().expect("run vlab"))
     }
 
+    /// A command that uses the host `git` instead of the sandbox fake. Folder
+    /// import needs a real repository because the fake only stands in for a
+    /// network clone.
+    pub fn run_with_real_git(&self, args: &[&str]) -> Outcome {
+        let mut command = self.command();
+        command.env(
+            "PATH",
+            std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin".to_owned()),
+        );
+        Outcome::from(command.args(args).output().expect("run vlab"))
+    }
+
     /// True when the binary created nothing: only the empty `home` exists.
     pub fn is_untouched(&self) -> bool {
         let mut entries: Vec<_> = fs::read_dir(self.root())

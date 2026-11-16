@@ -8,6 +8,7 @@ pub mod config;
 pub mod db;
 pub mod execution;
 pub mod paths;
+pub mod presets;
 pub mod provider;
 
 pub mod workspace;

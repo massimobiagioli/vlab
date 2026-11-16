@@ -115,19 +115,7 @@ impl AgentProfile {
         model: ModelId,
         cv: Option<String>,
     ) -> Result<Self, AgentError> {
-        let cv = match cv {
-            Some(text) if text.trim().is_empty() => None,
-            Some(text) => {
-                if text.len() > CV_MAX_BYTES {
-                    return Err(AgentError::CvTooLarge);
-                }
-                if text.contains('\0') {
-                    return Err(AgentError::CvNull);
-                }
-                Some(text)
-            }
-            None => None,
-        };
+        let cv = normalize_cv(cv)?;
         Ok(Self {
             id,
             name,
@@ -142,6 +130,24 @@ impl AgentProfile {
 
     pub fn has_skills(&self) -> bool {
         !self.skills.is_empty()
+    }
+}
+
+/// Trims an optional CV: whitespace-only text becomes absent, and oversized or
+/// NUL-bearing text is rejected. Shared by the profile and preset validation.
+pub(crate) fn normalize_cv(cv: Option<String>) -> Result<Option<String>, AgentError> {
+    match cv {
+        Some(text) if text.trim().is_empty() => Ok(None),
+        Some(text) => {
+            if text.len() > CV_MAX_BYTES {
+                return Err(AgentError::CvTooLarge);
+            }
+            if text.contains('\0') {
+                return Err(AgentError::CvNull);
+            }
+            Ok(Some(text))
+        }
+        None => Ok(None),
     }
 }
 

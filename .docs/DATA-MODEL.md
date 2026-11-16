@@ -32,8 +32,10 @@ empty; structural validation runs separately and never blocks creation.
 A reusable profile: name, role (`lead`, `dev`, `analyst`, `qa`), description,
 skills, a provider/model pair copied from settings at creation time, an
 optional CV, and an archive timestamp. An agent can belong to several
-laboratories through memberships. Archiving removes memberships and preserves
-the profile and historical story references.
+laboratories through memberships. A profile may exist without memberships; the
+preset catalog uses this to keep profiles available for later laboratory
+population. Archiving removes memberships and preserves the profile and
+historical story references.
 
 ### Membership
 
@@ -42,11 +44,20 @@ timestamp. Membership cascades when either owner is removed.
 
 ### Project
 
-A unit of work inside exactly one laboratory. It has a name and an **optional
-GitHub source**: a canonical URL `https://github.com/<owner>/<repository>`.
-The source is descriptive metadata and the target of the one allowed GitHub
-operation: creating the project clones it into `.workspace/<project-id>`
-(ADR-0032). No other GitHub network call is performed.
+A unit of work inside exactly one laboratory. It has a name and at most one
+**source**:
+
+- `github`: a canonical URL `https://github.com/<owner>/<repository>`.
+  Creating the project clones it into `.workspace/<project-id>` (ADR-0032).
+  No other GitHub network call is performed.
+- `folder`: an absolute local folder path without version control. Creating the
+  project copies the folder into `.workspace/<project-id>` and initializes a
+  local git repository only inside that copy (ADR-0054). The source folder is
+  never modified.
+- `none`: a legacy project with no source and no checkout.
+
+The source fields are metadata; the copied files stay in the disposable
+workspace and are not stored in the database.
 
 ### Request
 

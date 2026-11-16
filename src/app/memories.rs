@@ -128,6 +128,8 @@ pub fn project_created_content(project: &Project) -> String {
     let mut content = format!("Project '{}' was created.", project.name);
     if let Some(source) = &project.github_source {
         content.push_str(&format!(" GitHub source: {source}."));
+    } else if let Some(source) = &project.folder_source {
+        content.push_str(&format!(" Folder source: {source}."));
     }
     content
 }
@@ -307,7 +309,7 @@ mod tests {
     use crate::domain::ids::{AgentId, LabId, MemoryId, ProjectId};
     use crate::domain::lab::Lab;
     use crate::domain::name::Name;
-    use crate::domain::project::GithubSource;
+    use crate::domain::project::{FolderSource, GithubSource, ProjectSource};
     use crate::domain::settings::{ModelId, ProviderId};
     use crate::domain::skills;
     use std::cell::RefCell;
@@ -400,6 +402,7 @@ mod tests {
                     id: p.clone(),
                     name: "P".to_owned(),
                     github_source: None,
+                    folder_source: None,
                     request_count: 0,
                     story_count: 0,
                     todo: 0,
@@ -539,6 +542,15 @@ mod tests {
         let content = project_created_content(&project);
         assert!(content.contains("Portal"));
         assert!(content.contains("https://github.com/acme/portal"));
+
+        let folder = Project::with_source(
+            ProjectId::parse("2d3e4f50").unwrap(),
+            LabId::parse("a3f91c07").unwrap(),
+            Name::parse("Local Portal").unwrap(),
+            ProjectSource::Folder(FolderSource::parse("/tmp/portal").unwrap()),
+        );
+        let content = project_created_content(&folder);
+        assert!(content.contains("Folder source: /tmp/portal."), "{content}");
     }
 
     #[test]

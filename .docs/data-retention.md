@@ -44,16 +44,19 @@ value.
 ### Project checkouts (`.workspace/`)
 
 A project created with `--github-source` is cloned to
-`.workspace/<project-id>`. The checkout contains the repository's source code
-and git metadata, is outside version control, and is not part of the database
-or the settings file. It is retained until the user removes it; project
-deletion does not remove it automatically in the initial release, so use
-`make clean-workspace` for an explicit reset. VLab does not back it up or
-encrypt it; use disk encryption for sensitive repositories.
+`.workspace/<project-id>`. A project created with `--folder-source` is copied
+to the same location and receives a local git repository inside the copy. The
+checkout contains project files and, for folder sources, the imported copy of
+the original folder. It is outside version control and is not part of the
+database or the settings file. It is retained until the user removes it;
+project deletion does not remove it automatically in the initial release, so
+use `make clean-workspace` for an explicit reset. VLab does not back it up or
+encrypt it; use disk encryption for sensitive sources.
 
 The GitHub token used for the clone is passed through a short-lived private
 askpass helper and the child process environment. It is never part of the
-checkout or its git config.
+checkout or its git config. Folder import reads no credential and performs no
+network call.
 
 ### SQLite database (`vlab.db`)
 
@@ -144,6 +147,7 @@ WP-4 adds these tables ([ADR-0023](adr/adr-0023.md), [ADR-0022](adr/adr-0022.md)
 | `lab_id` | Owning laboratory | Enforces §3.2 ownership and scopes every project command. |
 | `name` | Trimmed user-provided name | Displayed in lists and the board header. |
 | `github_source` | Optional canonical GitHub repository URL (added by schema v4, WP-5) | Project metadata for future GitHub operations; not a credential. |
+| `folder_source` | Optional canonical absolute folder path (added by schema v12, ADR-0054) | Records the imported source folder; the copied files stay in `.workspace/`. A project stores at most one of `github_source` and `folder_source`. |
 | `created_at`, `updated_at` | RFC 3339 UTC timestamps | Ordering and diagnosis. |
 
 #### `requests`

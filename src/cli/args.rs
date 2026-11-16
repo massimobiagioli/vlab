@@ -19,7 +19,7 @@ use crate::app::AppError;
         "list_labs", "new_lab", "open_lab", "delete_lab", "check_lab",
         "list_projects", "new_project", "open_project", "show_project_kanban",
         "delete_project", "new_request", "assign_agent", "logs",
-        "list_agents", "new_agent", "delete_agent", "show_agent_detail", "ask",
+        "list_agents", "new_agent", "load_preset", "delete_agent", "show_agent_detail", "ask",
     ])),
 )]
 pub struct Cli {
@@ -78,6 +78,10 @@ pub struct Cli {
     #[arg(hide = true, long, value_name = "url", help_heading = "Projects")]
     github_source: Option<String>,
 
+    /// Optional absolute folder path for the new project
+    #[arg(hide = true, long, value_name = "path", help_heading = "Projects")]
+    folder_source: Option<String>,
+
     /// Select the current project
     #[arg(
         hide = true,
@@ -120,6 +124,10 @@ pub struct Cli {
     /// Create an agent with a guided procedure
     #[arg(hide = true, long, help_heading = "Agents")]
     new_agent: bool,
+
+    /// Load the preset agent catalog from a YAML file
+    #[arg(hide = true, long, value_name = "file", help_heading = "Agents")]
+    load_preset: Option<String>,
 
     /// Delete an agent from every laboratory (asks for confirmation)
     #[arg(hide = true, long, value_name = "agent-id", help_heading = "Agents")]
@@ -176,6 +184,7 @@ pub enum Action {
     NewProject {
         name: String,
         github_source: Option<String>,
+        folder_source: Option<String>,
     },
     OpenProject {
         project_id: String,
@@ -193,6 +202,9 @@ pub enum Action {
     Logs,
     ListAgents,
     NewAgent,
+    LoadPreset {
+        path: String,
+    },
     DeleteAgent {
         agent_id: String,
         assume_yes: bool,
@@ -227,6 +239,7 @@ impl Action {
             Self::Logs => "--logs",
             Self::ListAgents => "--list-agents",
             Self::NewAgent => "--new-agent",
+            Self::LoadPreset { .. } => "--load-preset",
             Self::DeleteAgent { .. } => "--delete-agent",
             Self::ShowAgentDetail { .. } => "--show-agent-detail",
             Self::Ask { .. } => "--ask",
@@ -249,6 +262,16 @@ impl Cli {
         if self.github_source.is_some() && self.new_project.is_none() {
             return Err(modifier_error(
                 "`--github-source` can only be used with `--new-project`.",
+            ));
+        }
+        if self.folder_source.is_some() && self.new_project.is_none() {
+            return Err(modifier_error(
+                "`--folder-source` can only be used with `--new-project`.",
+            ));
+        }
+        if self.github_source.is_some() && self.folder_source.is_some() {
+            return Err(modifier_error(
+                "`--github-source` and `--folder-source` are mutually exclusive.",
             ));
         }
         if self.yes && !deletion {
@@ -278,6 +301,7 @@ impl Cli {
             Action::NewProject {
                 name,
                 github_source: self.github_source,
+                folder_source: self.folder_source,
             }
         } else if let Some(project_id) = self.open_project {
             Action::OpenProject { project_id }
@@ -297,6 +321,8 @@ impl Cli {
             Action::ListAgents
         } else if self.new_agent {
             Action::NewAgent
+        } else if let Some(path) = self.load_preset {
+            Action::LoadPreset { path }
         } else if let Some(agent_id) = self.delete_agent {
             Action::DeleteAgent {
                 agent_id,
@@ -369,6 +395,14 @@ mod tests {
             })
         );
         assert_eq!(
+            parse(&["--new-project", "Portal", "--folder-source", "/tmp/portal"]),
+            Some(Action::NewProject {
+                name: "Portal".into(),
+                github_source: None,
+                folder_source: Some("/tmp/portal".into()),
+            })
+        );
+        assert_eq!(
             parse(&["--assign-agent", "0b1c2d3e"]),
             Some(Action::AssignAgent {
                 agent_id: "0b1c2d3e".into()
@@ -387,6 +421,12 @@ mod tests {
             Some(Action::Ask {
                 question: "Why?".into(),
                 to_agent: Some("0b1c2d3e".into())
+            })
+        );
+        assert_eq!(
+            parse(&["--load-preset", "assets/agents.yaml"]),
+            Some(Action::LoadPreset {
+                path: "assets/agents.yaml".into()
             })
         );
     }
@@ -425,6 +465,28 @@ mod tests {
                 "`--to-agent` can only be used with `--ask`."
             );
         }
+        for args in [
+            &["--folder-source", "/tmp/portal"][..],
+            &["--list-labs", "--folder-source", "/tmp/portal"],
+        ] {
+            let error = modifier_misuse(args);
+            assert_eq!(
+                error.to_string(),
+                "`--folder-source` can only be used with `--new-project`."
+            );
+        }
+        let error = modifier_misuse(&[
+            "--new-project",
+            "Portal",
+            "--github-source",
+            "https://github.com/acme/portal",
+            "--folder-source",
+            "/tmp/portal",
+        ]);
+        assert_eq!(
+            error.to_string(),
+            "`--github-source` and `--folder-source` are mutually exclusive."
+        );
         for args in [
             &["--yes"][..],
             &["--list-labs", "--yes"],

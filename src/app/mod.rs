@@ -21,6 +21,8 @@ pub mod labs;
 pub mod memories;
 pub mod metrics;
 pub mod planning;
+pub mod populate;
+pub mod presets;
 pub mod projects;
 pub mod provider_retry;
 pub mod requests;
