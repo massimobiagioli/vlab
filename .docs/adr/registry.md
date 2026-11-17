@@ -93,6 +93,7 @@ revises a technical decision must keep it current.
 | ADR-0062 | Fixed three-room MSX floor with bidirectional Kanban | Accepted | 2026-11-17 | ADR-0045 | [adr-0062.md](adr-0062.md) |
 | ADR-0063 | Maintain the Tech Lead skill after every feature | Accepted | 2026-11-17 | — | [adr-0063.md](adr-0063.md) |
 | ADR-0064 | Non-blocking startup resume | Accepted | 2026-11-17 | — | [adr-0064.md](adr-0064.md) |
+| ADR-0065 | Live Kanban refresh and initial-based view keys | Accepted | 2026-11-17 | — | [adr-0065.md](adr-0065.md) |
 
 ## Supersession map
 

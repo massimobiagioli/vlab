@@ -120,9 +120,10 @@ A saved roster needs exactly one Tech Lead. Load the preset catalog first with
 `make load-preset`. The Projects dashboard creates
 projects with a source choice (`None`, `GitHub`, or `Folder`), renames projects
 with `e`, and opens a full-screen,
-Trello-style Kanban board with `v`: lists side by side, cards with the short
+Trello-style Kanban board with `k`: lists side by side, cards with the short
 description only, independent scrolling per list, and `Enter` for a dialog
-with the full story. Press `r` on a project (or `n` on its board) to submit a
+with the full story; it refreshes in place while background work runs. Press
+`r` on a project (or `n` on its board) to submit a
 new request in a simple prompt dialog. Submission returns immediately: the
 request appears as a `REQUEST` card in `TODO`, and the background Tech Lead
 plans it into stories one request at a time. A second request waits visibly in
@@ -146,7 +147,7 @@ face and a state bubble above (`(zzz)`, `( ... )`, `(///)`, `(★)`, `(→)`).
 `⇅` marks an exchange. Room interiors contain titles, furniture, agent faces,
 names, and bubbles; task text appears only in the `Enter` detail.
 `Enter` opens the agent detail with its current tasks and `t` opens the selected
-task. Press `f` to open the active project's Kanban; `f` on the
+task. Press `k` to open the active project's Kanban; `f` on the
 board returns to the floor, and `Esc` returns to the screen that opened the
 current view. Press `o` to populate the active laboratory, or `m` to manage
 laboratory and project memories: `n` creates, `Enter` views, `e` edits, and `d`

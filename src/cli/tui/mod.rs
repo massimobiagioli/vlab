@@ -742,6 +742,7 @@ struct App {
     interactions_return: Screen,
     schedules: Option<schedules::ScheduleView>,
     worker: Option<worker::WorkerHandle>,
+    refresh_tick: u64,
 }
 
 impl App {
@@ -794,6 +795,7 @@ impl App {
             interactions_return: Screen::Group(DashboardGroup::Projects),
             schedules: None,
             worker: None,
+            refresh_tick: 0,
         };
         app.reload();
         app.worker = Some(worker::spawn(app.paths.clone(), app.run_id));
@@ -828,6 +830,10 @@ impl App {
             if !has_event {
                 if animating && let Some(view) = &mut self.floor {
                     view.advance();
+                }
+                self.refresh_tick = self.refresh_tick.wrapping_add(1);
+                if self.refresh_tick.is_multiple_of(5) {
+                    self.refresh_live();
                 }
                 continue;
             }
@@ -882,6 +888,21 @@ impl App {
             self.apply_worker_event(event);
         }
         self.reload();
+    }
+
+    /// Refreshes read-only views while background work changes storage. The
+    /// Kanban board must update without leaving and re-entering the screen.
+    fn refresh_live(&mut self) {
+        match self.screen {
+            Screen::Kanban => {
+                if let Err(error) = self.reload_kanban() {
+                    self.show_error(error);
+                }
+            }
+            Screen::Floor => self.reload(),
+            Screen::Metrics => self.reload_metrics(),
+            _ => {}
+        }
     }
 
     fn apply_worker_event(&mut self, event: worker::WorkerEvent) {
@@ -1472,7 +1493,12 @@ impl App {
                     }
                     KeyCode::Char('?') => self.mode = Mode::Help,
                     KeyCode::Char('/') => self.mode = Mode::Filter(self.filter.clone()),
-                    KeyCode::Up | KeyCode::Char('k') => self.move_selection(-1),
+                    KeyCode::Char('k') if group == DashboardGroup::Projects => {
+                        let result = self.open_kanban();
+                        self.apply_result(result);
+                    }
+                    KeyCode::Up => self.move_selection(-1),
+                    KeyCode::Char('k') => self.move_selection(-1),
                     KeyCode::Down | KeyCode::Char('j') => self.move_selection(1),
                     KeyCode::Left | KeyCode::Char('h') => self.change_page(-1),
                     KeyCode::Right | KeyCode::Char('l') => self.change_page(1),
@@ -1570,10 +1596,6 @@ impl App {
                         if let Err(error) = result {
                             self.show_error(error);
                         }
-                    }
-                    KeyCode::Char('v') if group == DashboardGroup::Projects => {
-                        let result = self.open_kanban();
-                        self.apply_result(result);
                     }
                     KeyCode::Char('i') if group == DashboardGroup::Projects => {
                         let result = self.open_selected_project_interactions();
@@ -2343,13 +2365,13 @@ impl App {
             KeyCode::Char('?') => self.mode = Mode::Help,
             KeyCode::Char('o') => self.open_populate_active(),
             KeyCode::Char('m') => self.open_memories(),
-            KeyCode::Char('f') => {
+            KeyCode::Char('k') => {
                 if let Err(error) = self.open_kanban_from_floor() {
                     self.show_error(error);
                 }
             }
             KeyCode::Char('t') => self.open_floor_task(),
-            KeyCode::Up | KeyCode::Char('k') => {
+            KeyCode::Up => {
                 if let Some(view) = self.floor.as_mut() {
                     view.move_selection(-1);
                 }
@@ -4360,7 +4382,7 @@ fn action_items(group: DashboardGroup) -> Vec<(&'static str, &'static str)> {
             ("[r]", "Request"),
             ("[Enter]", "Open"),
             ("[a]", "Assign"),
-            ("[v]", "Kanban"),
+            ("[k]", "Kanban"),
             ("[i]", "Interactions"),
             ("[s]", "Schedules"),
             ("[d]", "Delete"),
@@ -4973,12 +4995,12 @@ fn populate_help_lines() -> Vec<String> {
 
 fn floor_help_lines() -> Vec<String> {
     vec![
-        "j/k or ↑/↓  previous/next agent".to_owned(),
+        "↑/↓ or j     previous/next agent".to_owned(),
         "h/l or ←/→  previous/next room".to_owned(),
         "g/G         first/last agent".to_owned(),
         "Enter       agent detail with current tasks".to_owned(),
         "t           open the selected agent's first task".to_owned(),
-        "f           open the active project's Kanban".to_owned(),
+        "k           open the active project's Kanban".to_owned(),
         "o           populate the active laboratory".to_owned(),
         "m           laboratory and project memories".to_owned(),
         "r           reload the floor".to_owned(),
@@ -4994,7 +5016,7 @@ fn floor_help_lines() -> Vec<String> {
 
 fn help_lines() -> Vec<String> {
     vec![
-        "j/k or ↑/↓  move selection".to_owned(),
+        "↑/↓ or j     move selection".to_owned(),
         "h/l or ←/→  previous/next page".to_owned(),
         "g/G         first/last page".to_owned(),
         "Enter       open/confirm selection".to_owned(),
@@ -5002,7 +5024,7 @@ fn help_lines() -> Vec<String> {
         "c           duplicate the selected agent".to_owned(),
         "e           edit the selected item".to_owned(),
         "r           new request for the selected project".to_owned(),
-        "v           project Kanban board".to_owned(),
+        "k           project Kanban board".to_owned(),
         "i           project interaction history".to_owned(),
         "s           project scheduled tasks".to_owned(),
         "a           set active or assign".to_owned(),
@@ -5274,6 +5296,7 @@ mod tests {
             interactions_return: Screen::Group(DashboardGroup::Projects),
             schedules: None,
             worker: None,
+            refresh_tick: 0,
         };
         (app, dir)
     }
@@ -5478,7 +5501,7 @@ mod tests {
         let (mut app, _dir) = fixture(Screen::Group(DashboardGroup::Labs));
         app.mode = Mode::Help;
         let screen = rendered(&mut app);
-        assert!(screen.contains("j/k"), "{screen}");
+        assert!(screen.contains("↑/↓"), "{screen}");
         assert!(screen.contains("Esc"), "{screen}");
         assert!(screen.contains("q           quit"), "{screen}");
     }
@@ -5588,7 +5611,7 @@ mod tests {
     #[test]
     fn help_lists_navigation_and_safety_keys() {
         let help = help_lines().join("\n");
-        for key in ["j/k", "Enter", "d", "Esc", "q"] {
+        for key in ["↑/↓", "k", "Enter", "d", "Esc", "q"] {
             assert!(help.contains(key), "{key}: {help}");
         }
     }
@@ -6210,7 +6233,7 @@ mod tests {
     #[test]
     fn the_projects_dashboard_opens_the_board_and_card_detail() {
         let (mut app, _dir) = seeded();
-        app.handle_key(key(KeyCode::Char('v')));
+        app.handle_key(key(KeyCode::Char('k')));
         assert_eq!(app.screen, Screen::Kanban);
         app.handle_key(key(KeyCode::Enter));
         assert!(matches!(app.mode, Mode::Story { .. }), "{:?}", app.mode);
@@ -6245,6 +6268,36 @@ mod tests {
         assert_eq!(app.screen, Screen::Kanban);
         app.handle_key(key(KeyCode::Char('r')));
         assert_eq!(app.status.as_deref(), Some("Board reloaded."));
+    }
+
+    #[test]
+    fn the_kanban_refreshes_without_leaving_the_screen() {
+        let (mut app, _dir) = seeded();
+        app.handle_key(key(KeyCode::Char('k')));
+        assert_eq!(app.screen, Screen::Kanban);
+        app.db
+            .execute(
+                "INSERT INTO stories (id, project_id, request_id, title, description, \
+                 acceptance_criteria_json, priority, complexity, required_skills_json, \
+                 state, due_date, created_at, updated_at) \
+                 VALUES ('4f506172', '0b1c2d3e', '1c2d3e4f', 'Live update', 'D', '[]', \
+                 'high', 'small', '[]', 'TODO', '2026-01-03', '2026-01-01T00:00:00Z', \
+                 '2026-01-01T00:00:00Z')",
+            )
+            .unwrap();
+        app.refresh_live();
+        assert!(
+            app.kanban
+                .as_ref()
+                .unwrap()
+                .board
+                .cards
+                .iter()
+                .any(|card| card.title == "Live update"),
+            "{:?}",
+            app.kanban.as_ref().unwrap().board.cards
+        );
+        assert!(rendered(&mut app).contains("Live update"));
     }
 
     #[test]
@@ -6613,18 +6666,18 @@ mod tests {
         let (mut app, _dir) = seeded();
         crate::app::context::save_active_project(&app.db, &ProjectId::parse("0b1c2d3e").unwrap())
             .unwrap();
-        app.handle_key(key(KeyCode::Char('v')));
+        app.handle_key(key(KeyCode::Char('k')));
         assert_eq!(app.screen, Screen::Kanban);
         app.handle_key(key(KeyCode::Char('f')));
         assert_eq!(app.screen, Screen::Floor);
         assert!(app.floor.is_some());
         assert_eq!(app.floor_return, Screen::Kanban);
-        app.handle_key(key(KeyCode::Char('f')));
+        app.handle_key(key(KeyCode::Char('k')));
         assert_eq!(app.screen, Screen::Kanban);
         app.handle_key(key(KeyCode::Esc));
         assert_eq!(app.screen, Screen::Group(DashboardGroup::Projects));
 
-        app.handle_key(key(KeyCode::Char('v')));
+        app.handle_key(key(KeyCode::Char('k')));
         app.handle_key(key(KeyCode::Char('f')));
         app.handle_key(key(KeyCode::Esc));
         assert_eq!(app.screen, Screen::Kanban);
@@ -6636,7 +6689,7 @@ mod tests {
         app.handle_key(key(KeyCode::Enter));
         assert_eq!(app.screen, Screen::Floor);
         assert_eq!(app.floor_return, Screen::Home);
-        app.handle_key(key(KeyCode::Char('f')));
+        app.handle_key(key(KeyCode::Char('k')));
         assert_eq!(app.screen, Screen::Kanban);
         app.handle_key(key(KeyCode::Esc));
         assert_eq!(app.screen, Screen::Floor);

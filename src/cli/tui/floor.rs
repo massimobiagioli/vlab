@@ -26,7 +26,7 @@ const FLOOR_ACTIONS: [(&str, &str); 11] = [
     ("[←/→]", "Room"),
     ("[Enter]", "Detail"),
     ("[t]", "Task"),
-    ("[f]", "Kanban"),
+    ("[k]", "Kanban"),
     ("[o]", "Populate"),
     ("[m]", "Memories"),
     ("[r]", "Reload"),

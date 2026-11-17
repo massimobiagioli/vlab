@@ -141,7 +141,8 @@ vlab
 ```
 
 Choose **Projects**, then use `n` to create, `e` to rename, `Enter` to open,
-`a` to assign an agent, `v` for the full-screen Kanban board (`←/→` lists,
+`a` to assign an agent, `k` for the full-screen Kanban board, which refreshes
+in place while background work runs (`←/→` lists,
 `↑/↓` cards with per-list scrolling, `PgUp/PgDn` pages, `Enter` opens the
 story detail dialog, `Esc` back), and `d` to delete. The New project form offers
 a source choice (`None`, `GitHub`, or `Folder`) and one source field. The
@@ -317,7 +318,7 @@ below and a state bubble above (`(zzz)`, `( ... )`, `(///)`, `(★)`, `(→)`), 
 `⇅` marks an exchange. Room interiors contain titles, furniture, faces, names,
 and bubbles; task text appears only in the `Enter` detail. `↑/↓` selects agents, `←/→` moves to the
 next occupied room, `Enter` opens the agent detail with its current tasks, `t`
-opens the selected task, `f` opens the active project's Kanban, and `r`
+opens the selected task, `k` opens the active project's Kanban, and `r`
 reloads. The Kanban `f` key returns to the floor; `Esc` preserves the screen
 that opened the current view. Press `m` to open **Memories**: `Tab` switches
 between laboratory and project scope, `n` creates, `Enter` views, `e` edits,

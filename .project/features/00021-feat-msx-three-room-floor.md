@@ -31,8 +31,9 @@ context, and a two-way link with the active project's Kanban board.
    detail; `t` opens the first task's read-only story detail.
 5. Agents move deterministically between room spots and along the corridor,
    with `(zzz)` idle, exchange markers, and no wall-clock or random input.
-6. `f` on the floor opens the active project's Kanban; `f` on the Kanban opens
-   the floor; `Esc` returns to the screen that opened the current view.
+6. `k` on the Projects dashboard and on the floor opens the active project's
+   Kanban; `f` on the Kanban opens the floor; `Esc` returns to the screen that
+   opened the current view.
 7. The Kanban action bar and help expose the floor link; the floor action bar
    exposes the board link.
 8. The scene is read-only, makes no provider call or database write, sanitizes

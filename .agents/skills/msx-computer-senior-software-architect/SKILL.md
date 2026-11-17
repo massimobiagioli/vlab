@@ -123,7 +123,8 @@ copying its limitations blindly.
 - Make the selected agent unmistakable with a marker, inverse style, and a
   detail line. Never rely on color alone.
 - A link between two screens must work in both directions and preserve the
-  return path (`f` opens the other view; `Esc` returns).
+  return path (`k` opens the Kanban from Projects or the floor; `f` opens the
+  floor from the Kanban; `Esc` returns).
 - Prefer explicit labels (`PROJECT LAB`, `WAR ROOM`, `LOUNGE`, `KANBAN`) over
   cryptic icons. Pair every symbol with text.
 - Animate only meaningful transitions: walking to another room, switching
@@ -158,8 +159,8 @@ and stories:
   marker and the legend; never imply a live message trace.
 - Clip every sprite, name, and bubble to its room or the screen. Do not let
   text or wide glyphs spill into adjacent rooms.
-- The floor and Kanban link both ways with `f`; `Esc` returns to the screen
-  that opened the current one. If there is no active project, say so and offer
+- The floor and Kanban link both ways (`k` to the board, `f` to the floor);
+  `Esc` returns to the screen that opened the current one. If there is no active project, say so and offer
   the next action.
 
 ## Workflow for a floor change
@@ -184,7 +185,7 @@ and stories:
   Room.
 - The active project name, task board, and selected agent's task are readable.
 - Movement is deterministic, bounded, and testable; no timers leak into state.
-- The floor and Kanban open each other with `f`; `Esc` preserves the return
+- The floor and Kanban open each other with `k`/`f`; `Esc` preserves the return
   path.
 - `NO_COLOR`, ASCII, narrow terminals, and non-TTY output remain usable.
 - The scene never renders credentials, CVs, prompts, or provider payloads.

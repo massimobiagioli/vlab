@@ -469,7 +469,7 @@ fn the_projects_dashboard_renames_and_opens_the_full_screen_kanban() {
             ("e", 200),
             (" Web", 200),
             ("\r", 400),
-            ("v", 400),
+            ("k", 400),
             ("\r", 300),
             ("\u{1b}", 300),
             ("l", 200),
@@ -572,7 +572,7 @@ fn the_projects_dashboard_submits_a_request_through_the_prompt() {
             ("Add password reset", 200),
             ("\r", 2000),
             ("x", 300),
-            ("v", 400),
+            ("k", 400),
             ("q", 200),
         ],
         &[(

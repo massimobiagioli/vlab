@@ -40,7 +40,7 @@ makes the project current and opens a prompt dialog: type or paste the request
 (`Alt+Enter` adds a line break), `Enter` submits, `Esc` cancels. Submission
 persists the request as `TODO` and returns immediately; it never waits for
 planning. A background Tech Lead worker plans queued requests one at a time and
-runs the bounded workflow. **Kanban** (`v`) opens the selected project's board
+runs the bounded workflow. **Kanban** (`k`) opens the selected project's board
 as a full-screen view: the header shows project, laboratory, Tech Lead,
 optional GitHub source, story counts, and pending intake; the five states are
 side-by-side lists of cards, each showing only the story's short description.
@@ -86,8 +86,9 @@ project and its task board, **War Room** for the Tech Lead and focused agents,
 and **Lounge** for idle agents, joined by a corridor. Agents move
 deterministically between desks and rooms. `↑/↓` selects agents, `←/→` moves to
 the next occupied room, `Enter` opens the agent detail with its current tasks,
-`t` opens the selected agent's first task, `f` opens the active project's
+`t` opens the selected agent's first task, `k` opens the active project's
 Kanban, `o` populates the active laboratory, `m` opens memories, `r` reloads,
+and the Kanban refreshes in place while open.
 `?` shows help, `Esc` returns to home or the Kanban, and `q` quits. The floor is
 read-only; it never calls the provider. On the Kanban, `f` opens the active
 project's floor; `Esc` returns to the screen that opened the current view.

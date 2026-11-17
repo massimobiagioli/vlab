@@ -48,7 +48,8 @@ laboratories staffed by AI agents.
   performs no I/O.
 - **UI:** plain, width-aware output plus `ratatui` full-screen dashboards.
   `NO_COLOR`, `--no-color`, `TERM=dumb`, pipes, and narrow terminals must remain
-  usable.
+  usable. Read-only views refresh in place while background work runs; `k` opens
+  the Kanban and `f` opens the floor from the Kanban (ADR-0065).
 - **Bounded execution:** after planning, assigned stories run a fixed worktree
   action loop with explicit round, time, output, and attempt budgets (ADR-0050).
   The model proposes actions; the application validates and executes them and
@@ -64,7 +65,8 @@ laboratories staffed by AI agents.
 - **Floor:** the laboratory floor is a fixed top-down T-plan MSX scene
   (Project Lab and Lounge above, War Room below) with furniture, doors,
   deterministic slow tours, and a bidirectional `f` link to the active
-  project's Kanban (ADR-0062). Room interiors contain titles, furniture, icons,
+  project's Kanban (`k` to the board, `f` to the floor; ADR-0062). Room
+  interiors contain titles, furniture, icons,
   compact agent faces with names below and state bubbles above; longer task
   text lives in the status line and the `Enter` detail. It is read-only and
   never calls the provider.

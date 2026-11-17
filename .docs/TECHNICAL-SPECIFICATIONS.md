@@ -1044,9 +1044,14 @@ A card shows its `TODO` or `PLANNING` status; `Enter` opens a read-only detail
 with the request text. The background Tech Lead removes the request card when
 planning completes and the resulting stories appear.
 
-`f` opens the active laboratory floor for the current project. From the floor,
-`f` returns to the same project's board, and `Esc` preserves the screen that
-opened the current view.
+The board refreshes in place about once per second while visible, preserving
+the selected column, card, and scroll. Worker completion events also refresh
+it immediately. The refresh is read-only and makes no provider call. `k` opens
+the board from Projects and the floor; `f` opens the floor from the board.
+
+`k` opens the current project's board from the Projects dashboard and from the
+floor. `f` opens the active laboratory floor from the Kanban; `Esc` preserves
+the screen that opened the current view.
 
 ## 11. Persistence and Data Model
 
@@ -1243,7 +1248,8 @@ Live-provider tests shall be opt-in and shall never require committed credential
 - Room assignment covers lead, focused, working, idle, and archived agents.
 - Movement is deterministic and bounded through the corridor.
 - Exchange markers appear only between different roles in one room.
-- `f` links floor and Kanban both ways and `Esc` preserves the return path.
+- `k` opens the Kanban from Projects and the floor; `f` opens the floor from the
+  Kanban; `Esc` preserves the return path.
 - The agent detail shows `Working on`, and `t` opens the story detail.
 - ASCII, no-color, narrow, and empty states remain usable.
 
@@ -1278,8 +1284,8 @@ The initial release is acceptable when:
     background worker or `--run-queue` plans it and runs the bounded workflow
     without blocking the dashboard; a second request visibly waits in `TODO`.
 25. The floor shows the fixed Project Lab, War Room, and Lounge with real task
-    context, deterministic movement and interactions, and a bidirectional `f`
-    link with the active project's Kanban.
+    context, deterministic movement and interactions, and bidirectional links
+    with the active project's Kanban (`k` to the board, `f` to the floor).
 
 ## 18. Incremental Delivery Plan
 
@@ -1349,7 +1355,7 @@ fixed laboratory plan (ADR-0062):
   randomness, provider call, or database write. The scene is an overview of
   stored assignments, not a live trace.
 - `↑/↓` select agents, `←/→` move to the next occupied room, `Enter` opens the
-  agent detail, `t` opens the selected task, `f` opens the active project's
+  agent detail, `t` opens the selected task, `k` opens the active project's
   Kanban, `o` populates the laboratory, `m` opens memories, `r` reloads, and
   `?` shows help. Layout works at 60×20, 80×24, and 100×30.
 - The scene uses a double frame, tiled floors, a top-down T plan with a
@@ -1357,8 +1363,8 @@ fixed laboratory plan (ADR-0062):
   whiteboard, coffee machine, plant, couch, and compact face sprites. Sprite
   text and bubbles are clipped to the room; a walkway with doors connects the
   rooms.
-- The floor and the active project's Kanban link both ways with `f`; `Esc`
-  returns to the screen that opened the current view. The scene renders no
+- The floor and the active project's Kanban link both ways (`k` to the board,
+  `f` to the floor); `Esc` returns to the screen that opened the current view. The scene renders no
   model text, CV, or credential.
 
 `m` opens **Memories**, with laboratory and project tabs:
