@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00017` |
 | Branch | `feat/agent-duplicate` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-17 |
 | Related ADRs | ADR-0058 (duplication), ADR-0020 (agent validation), ADR-0022 (memories) |
 | Scope | Duplicate an agent profile with optional agent-memory preservation |
@@ -62,8 +62,7 @@ the source agent's memories.
   validation, unknown sources, and no-write-on-failure.
 - The dashboard test opens Duplicate from Agents, selects `Preserve memory`,
   submits, and verifies the new profile and copied memory.
-- Hosted CI has not been run in this session; the plan stays `In progress`
-  until it is green.
+- Hosted CI is green on commit `6fad608`.
 
 ## Task checklist
 
@@ -76,5 +75,5 @@ the source agent's memories.
   data model, retention, and security docs.
 - [x] **F05-01** Add application, database, and dashboard tests.
 - [x] **F06-01** Run `make check` and fix every failure.
-- [ ] **F06-02** Push the branch, confirm hosted CI is green, and set the
+- [x] **F06-02** Push the branch, confirm hosted CI is green, and set the
   status to `Done`.

@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00015` |
 | Branch | `feat/project-interactions` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-16 |
 | Related ADRs | ADR-0056 (interaction history), ADR-0050 (workflow), ADR-0028 (content-free metadata) |
 | Scope | Read-only project page with planning, work, and review interactions and recaps |
@@ -69,8 +69,7 @@ project data; no free-form chat is invented.
   and full-recap detail.
 - The dashboard test opens Interactions from Projects, opens a detail, and
   returns to the originating screen.
-- Hosted CI has not been run in this session; the plan stays `In progress`
-  until it is green.
+- Hosted CI is green on commit `6fad608`.
 
 ## Task checklist
 
@@ -83,5 +82,5 @@ project data; no free-form chat is invented.
   data model, retention, and security docs.
 - [x] **F05-01** Add database, read-model, migration, and dashboard tests.
 - [x] **F06-01** Run `make check` and fix every failure.
-- [ ] **F06-02** Push the branch, confirm hosted CI is green, and set the
+- [x] **F06-02** Push the branch, confirm hosted CI is green, and set the
   status to `Done`.

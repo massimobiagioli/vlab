@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00018` |
 | Branch | `feat/agent-file` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-17 |
 | Related ADRs | ADR-0060 (agent definitions), ADR-0020 (validation), ADR-0059 (file store) |
 | Scope | Read an agent from a markdown frontmatter file and create the profile |
@@ -49,8 +49,7 @@ the body is the CV. A usable active laboratory is joined automatically.
 - `tests/agent_definition.rs` covers profile creation, active-laboratory
   membership, the second-lead rejection, catalog-only creation, file
   validation, and the CLI path including the structural memory.
-- Hosted CI has not been run in this session; the plan stays `In progress`
-  until it is green.
+- Hosted CI is green on commit `6fad608`.
 
 ## Task checklist
 
@@ -61,5 +60,5 @@ the body is the CV. A usable active laboratory is joined automatically.
 - [x] **F04-01** Update the specification, CLI reference, README, and playbook.
 - [x] **F05-01** Add parser, application, and CLI tests.
 - [x] **F06-01** Run `make check` and fix every failure.
-- [ ] **F06-02** Push the branch, confirm hosted CI is green, and set the
+- [x] **F06-02** Push the branch, confirm hosted CI is green, and set the
   status to `Done`.

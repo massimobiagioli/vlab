@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00016` |
 | Branch | `feat/schedules` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-16 |
 | Related ADRs | ADR-0057 (schedules), ADR-0050 (bounded execution), ADR-0044 (request intake) |
 | Scope | Project schedules storage, dashboard page, bounded due-run, and CLI/Makefile runner |
@@ -70,8 +70,7 @@ or a monthly dependency/framework update.
 - `src/cli/tui/schedules.rs` tests cover the list, navigation, and full detail;
   the dashboard test creates, pauses, and deletes a schedule.
 - `src/cli/args.rs` covers `--run-schedules`.
-- Hosted CI has not been run in this session; the plan stays `In progress`
-  until it is green.
+- Hosted CI is green on commit `6fad608`.
 
 ## Task checklist
 
@@ -84,5 +83,5 @@ or a monthly dependency/framework update.
   model, retention, observability, and security docs.
 - [x] **F06-01** Add database, run, dashboard, and argument tests.
 - [x] **F07-01** Run `make check` and fix every failure.
-- [ ] **F07-02** Push the branch, confirm hosted CI is green, and set the
+- [x] **F07-02** Push the branch, confirm hosted CI is green, and set the
   status to `Done`.

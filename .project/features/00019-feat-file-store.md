@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00019` |
 | Branch | `feat/file-store` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-17 |
 | Related ADRs | ADR-0059 (file store), ADR-0022 (memories), ADR-0059 |
 | Scope | File-backed memories, relative references, documents import, tracked skeleton |
@@ -56,8 +56,7 @@ a documents store with agent/project/lab folders, and provide
   input, and the CLI path.
 - `tests/cli_memories.rs` and `tests/planning_flow.rs` read content from the
   referenced files.
-- Hosted CI has not been run in this session; the plan stays `In progress`
-  until it is green.
+- Hosted CI is green on commit `6fad608`.
 
 ## Task checklist
 
@@ -71,5 +70,5 @@ a documents store with agent/project/lab folders, and provide
 - [x] **F07-01** Update the specification, CLI reference, README, playbook,
   data model, retention, and security docs.
 - [x] **F08-01** Run `make check` and fix every failure.
-- [ ] **F08-02** Push the branch, confirm hosted CI is green, and set the
+- [x] **F08-02** Push the branch, confirm hosted CI is green, and set the
   status to `Done`.
