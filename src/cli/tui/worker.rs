@@ -35,7 +35,7 @@ pub(super) enum WorkerEvent {
     Finished {
         request_id: RequestId,
         outcome: PlanningOutcome,
-        workflow: Option<Result<(usize, usize, usize), String>>,
+        workflow: Option<Result<(usize, usize, usize, usize), String>>,
     },
     Background(String),
     Warning(String),
@@ -200,7 +200,14 @@ fn run(
                     cancel.clone(),
                     run_id,
                 )
-                .map(|report| (report.completed, report.failed, report.remaining))
+                .map(|report| {
+                    (
+                        report.completed,
+                        report.failed,
+                        report.remaining,
+                        report.remediated,
+                    )
+                })
                 .map_err(|error| format!("{} {}", error, error.hint())),
             ),
             _ => None,

@@ -189,7 +189,8 @@ fn the_agent_writes_a_file_commits_it_and_stores_the_outcome() {
         workflow::WorkflowReport {
             completed: 1,
             failed: 0,
-            remaining: 0
+            remaining: 0,
+            remediated: 0
         }
     );
     let detail = story(&fixture);
@@ -253,19 +254,38 @@ fn a_provider_failure_keeps_the_story_in_progress_and_counts_the_attempt() {
 }
 
 #[test]
-fn three_attempts_block_the_story_without_calling_the_provider() {
+fn an_exhausted_story_is_remediated_by_the_tech_lead_and_finishes() {
     let fixture = fixture(true);
     fixture
         .db
         .execute("UPDATE stories SET execution_attempts = 3 WHERE id = '5a617283'")
         .unwrap();
-    let provider = ScriptedProvider::new(Vec::new());
+    let provider = ScriptedProvider::new(vec![
+        Ok(response(
+            r#"{"decision":"Retry with the lead and make the missing file explicit.","context":"Create README.md, then verify it exists.","assignee_id":"1c2d3e4f"}"#,
+        )),
+        Ok(response(
+            r#"{"actions":[{"tool":"write_file","path":"README.md","content":"changed\n"}],"done":false}"#,
+        )),
+        Ok(response(
+            r#"{"actions":[],"done":true,"summary":"Updated the README."}"#,
+        )),
+        Ok(response(r#"{"review_outcome":"OK.","accepted":true}"#)),
+    ]);
     let report = run(&fixture, &provider);
-    assert_eq!(report.failed, 1);
-    assert!(provider.requests().is_empty());
+    assert_eq!(report.remediated, 1);
+    assert_eq!(report.completed, 1);
     let detail = story(&fixture);
-    assert_eq!(detail.state, kanban::StoryState::Blocked);
-    assert!(detail.outcome.is_none());
+    assert_eq!(detail.state, kanban::StoryState::Done);
+    assert_eq!(detail.assignee.as_deref(), Some("Grace"));
+    assert!(
+        detail
+            .tech_lead_context
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Create README.md")
+    );
+    assert_eq!(provider.requests().len(), 4);
 }
 
 #[test]
@@ -290,7 +310,7 @@ fn an_assigned_todo_story_is_executed() {
 }
 
 #[test]
-fn a_rejected_review_blocks_the_story_and_keeps_the_commit() {
+fn a_rejected_review_is_remediated_and_the_story_finishes() {
     let fixture = fixture(true);
     let provider = ScriptedProvider::new(vec![
         Ok(response(
@@ -302,14 +322,26 @@ fn a_rejected_review_blocks_the_story_and_keeps_the_commit() {
         Ok(response(
             r#"{"review_outcome":"Incomplete.","accepted":false}"#,
         )),
+        Ok(response(
+            r#"{"decision":"Address the review and rerun the checks.","context":"The reviewer found the README incomplete; add the missing section.","assignee_id":"2d3e4f50"}"#,
+        )),
+        Ok(response(
+            r#"{"actions":[{"tool":"write_file","path":"README.md","content":"complete\n","append":true}],"done":false}"#,
+        )),
+        Ok(response(
+            r#"{"actions":[],"done":true,"summary":"Completed the README."}"#,
+        )),
+        Ok(response(
+            r#"{"review_outcome":"Now complete.","accepted":true}"#,
+        )),
     ]);
     let report = run(&fixture, &provider);
-    assert_eq!(report.completed, 0);
-    assert_eq!(report.failed, 1);
+    assert_eq!(report.remediated, 1);
+    assert_eq!(report.completed, 1);
     let detail = story(&fixture);
-    assert_eq!(detail.state, kanban::StoryState::Blocked);
+    assert_eq!(detail.state, kanban::StoryState::Done);
     let outcome = detail.outcome.unwrap();
-    assert!(!outcome.accepted);
+    assert!(outcome.accepted);
     assert!(outcome.commit_sha.is_some());
 }
 

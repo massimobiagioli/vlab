@@ -140,6 +140,7 @@ pub struct ExecutionStory {
     pub complexity: String,
     pub project_name: String,
     pub request_text: String,
+    pub tech_lead_context: Option<String>,
 }
 
 /// Runs one bounded work loop and commits the result.
@@ -572,6 +573,12 @@ fn round_prompt(
         escape(&story.complexity)
     ));
     user.push_str("</story>\n");
+    if let Some(context) = &story.tech_lead_context {
+        user.push_str(&format!(
+            "<tech_lead_context>{}</tech_lead_context>\n",
+            escape(&context.chars().take(4_000).collect::<String>())
+        ));
+    }
     user.push_str("<request>");
     user.push_str(&escape(
         &story.request_text.chars().take(4_000).collect::<String>(),
@@ -615,6 +622,7 @@ mod tests {
             complexity: "small".to_owned(),
             project_name: "Portal".to_owned(),
             request_text: "R".to_owned(),
+            tech_lead_context: None,
         }
     }
 

@@ -56,7 +56,9 @@ in its border. Use `←/→` or `h/l` for lists, `↑/↓` or `j/k` for cards,
 read-only; state changes come from the application workflow. After
 planning, assigned stories are executed for real in a git worktree and then
 moved through `IN_REVIEW` to `DONE` (work by the assignee, review by the first
-active QA or the Tech Lead). A `DONE` card detail shows the work summary,
+active QA or the Tech Lead). A `BLOCKED` story is taken over by the Tech Lead,
+given bounded context, optionally reassigned, and retried for up to three
+remediation cycles. A card detail shows the Tech Lead context, work summary,
 review, reviewer, branch, worktree, commit, and completion time. VLab never
 merges the branch automatically.
 

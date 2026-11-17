@@ -931,8 +931,8 @@ impl App {
                     }
                 };
                 self.status = Some(match workflow {
-                    Some(Ok((completed, failed, remaining))) => format!(
-                        "{base} Workflow: {completed} completed, {failed} failed, {remaining} remaining."
+                    Some(Ok((completed, failed, remaining, remediated))) => format!(
+                        "{base} Workflow: {completed} completed, {failed} failed, {remaining} remaining, {remediated} remediated."
                     ),
                     Some(Err(reason)) => format!("{base} Workflow skipped: {reason}"),
                     None => base,
@@ -4657,6 +4657,16 @@ fn story_lines(story: &kanban::StoryDetail, theme: Theme, width: usize) -> Vec<L
     );
     section(
         &mut lines,
+        "Tech Lead context",
+        story
+            .tech_lead_context
+            .iter()
+            .map(|context| clean(context))
+            .collect(),
+        "",
+    );
+    section(
+        &mut lines,
         "Assignment rationale",
         story
             .rationale
@@ -5866,6 +5876,7 @@ mod tests {
             acceptance_criteria: (0..30).map(|index| format!("Criterion {index}")).collect(),
             required_skills: Vec::new(),
             rationale: Some("Last line of the dialog".to_owned()),
+            tech_lead_context: None,
             outcome: None,
         };
         let (mut app, _dir) = kanban_fixture(Vec::new());

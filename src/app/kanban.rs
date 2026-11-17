@@ -157,6 +157,7 @@ pub struct StoryDetail {
     pub acceptance_criteria: Vec<String>,
     pub required_skills: Vec<String>,
     pub rationale: Option<String>,
+    pub tech_lead_context: Option<String>,
     pub outcome: Option<StoryOutcome>,
 }
 

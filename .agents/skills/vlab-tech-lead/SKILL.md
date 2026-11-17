@@ -65,6 +65,11 @@ laboratories staffed by AI agents.
 - **Clarification:** the Tech Lead must resolve its own questions. Up to two
   bounded follow-up calls are allowed; new requests never wait for a human, and
   unresolved questions fail with `clarification_unresolved` (ADR-0066).
+- **Blocked stories:** the Tech Lead takes over a `BLOCKED` story, records a
+  bounded decision/context, may reassign it, resets execution attempts, and
+  returns it to `IN_PROGRESS` for up to three remediation cycles. The
+  application owns the transition and never marks `DONE` without a reviewed
+  commit (ADR-0067).
 - **Floor:** the laboratory floor is a fixed top-down T-plan MSX scene
   (Project Lab and Lounge above, War Room below) with furniture, doors,
   deterministic slow tours, and a bidirectional `f` link to the active
@@ -402,7 +407,7 @@ Ask these before approving any VLab change:
 - `.docs/configuration.md`
 - `.docs/adr/registry.md`
 - `.docs/adr/adr-0061.md`, `.docs/adr/adr-0062.md`, `.docs/adr/adr-0063.md`,
-  `.docs/adr/adr-0064.md`, `.docs/adr/adr-0066.md`
+  `.docs/adr/adr-0064.md`, `.docs/adr/adr-0066.md`, `.docs/adr/adr-0067.md`
 - `.agents/skills/msx-computer-senior-software-architect/SKILL.md`
 - `.project/IMPLEMENTATION-PLAN.md`
 - `.project/features/`

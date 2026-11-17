@@ -121,14 +121,22 @@ then drains queued requests. There is no pre-dashboard blocking message
    `IN_PROGRESS`, a `workflow_failed` event is recorded with an error code, and
    planning remains `PLANNED`. After three failed attempts the story becomes
    `BLOCKED`.
+7. A blocked story is remediated by the Tech Lead: it reads the previous
+   outcome, makes a technical decision, adds bounded context, optionally
+   reassigns to an active roster agent, resets execution attempts, increments
+   the remediation counter, clears the stale outcome, and returns the story to
+   `IN_PROGRESS`. The same workflow pass retries it. Up to three remediation
+   cycles are allowed; an impossible story remains `BLOCKED` and is never
+   falsely marked `DONE`.
 
 The review decides the final state. An accepted review sets `DONE`. A rejected
 review keeps the commit on `vlab/<story-id>`, stores `review_accepted = 0`, and
-sets `BLOCKED` so a human can inspect the work. `DONE` means the work was
-executed, committed, and accepted by the reviewer; it does not mean the branch
-was merged or deployed, or that every check passed. Limits: 24 rounds, four
-actions per round, 120-second call timeout, 8,192 output tokens, 15-minute work
-deadline, 60-second command timeout, 64 KiB captured output, and three attempts.
+starts Tech Lead remediation rather than waiting for a human. `DONE` means the
+work was executed, committed, and accepted by the reviewer; it does not mean the
+branch was merged or deployed, or that every check passed. Limits: 24 rounds,
+four actions per round, 120-second call timeout, 8,192 output tokens, 15-minute
+work deadline, 60-second command timeout, 64 KiB captured output, three
+execution attempts, three remediation cycles, and a 45-minute workflow deadline.
 One empty-output retry per round is allowed. Commands run with a cleared
 environment and no OS sandbox; use a trusted machine and account.
 

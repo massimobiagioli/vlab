@@ -49,7 +49,7 @@ ORDER BY created_at, id";
 const SELECT_STORY: &str = "\
 SELECT s.id, s.request_id, s.title, s.description, s.state, a.name, s.priority, s.complexity, \
        s.due_date, (s.due_date < date('now')) AS overdue, s.acceptance_criteria_json, \
-       s.required_skills_json, s.assignment_rationale \
+       s.required_skills_json, s.assignment_rationale, s.tech_lead_context \
 FROM stories s JOIN projects p ON p.id = s.project_id \
 LEFT JOIN agents a ON a.id = s.assigned_agent_id \
 WHERE s.id = ?1 AND s.project_id = ?2 AND p.lab_id = ?3";
@@ -67,6 +67,7 @@ type StoryRow = (
     i64,
     String,
     String,
+    Option<String>,
     Option<String>,
 );
 
@@ -193,6 +194,7 @@ pub async fn story(
         criteria,
         skills,
         rationale,
+        tech_lead_context,
     )) = row
     else {
         return Ok(None);
@@ -241,6 +243,7 @@ pub async fn story(
         acceptance_criteria,
         required_skills,
         rationale,
+        tech_lead_context,
         outcome,
     }))
 }

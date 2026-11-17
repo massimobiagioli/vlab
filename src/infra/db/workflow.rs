@@ -1,4 +1,4 @@
-//! SQLite implementation of the real workflow store (ADR-0050).
+//! SQLite implementation of the real workflow store (ADR-0050, ADR-0067).
 
 use sqlx::SqliteConnection;
 
@@ -9,13 +9,29 @@ use crate::infra::db::{Database, map_sqlx_error};
 
 const SELECT_PENDING: &str = "\
 SELECT s.id, s.title, s.description, s.acceptance_criteria_json, s.priority, \
-       s.complexity, p.name, s.assigned_agent_id, r.content, s.execution_attempts \
+       s.complexity, p.name AS project_name, s.assigned_agent_id AS assignee, \
+       r.content AS request_text, s.execution_attempts, s.remediation_attempts, \
+       s.tech_lead_context, o.work_outcome, o.review_outcome, \
+       o.reviewer_agent_id, o.review_accepted, o.branch, o.worktree_path, o.commit_sha \
 FROM stories s \
 JOIN projects p ON p.id = s.project_id \
 JOIN requests r ON r.id = s.request_id \
 LEFT JOIN story_outcomes o ON o.story_id = s.id \
 WHERE s.project_id = ?1 AND s.state IN ('TODO', 'IN_PROGRESS', 'IN_REVIEW') \
-  AND s.assigned_agent_id IS NOT NULL AND o.story_id IS NULL \
+  AND s.assigned_agent_id IS NOT NULL \
+ORDER BY s.created_at, s.id";
+
+const SELECT_BLOCKED: &str = "\
+SELECT s.id, s.title, s.description, s.acceptance_criteria_json, s.priority, \
+       s.complexity, p.name AS project_name, s.assigned_agent_id AS assignee, \
+       r.content AS request_text, s.execution_attempts, s.remediation_attempts, \
+       s.tech_lead_context, o.work_outcome, o.review_outcome, \
+       o.reviewer_agent_id, o.review_accepted, o.branch, o.worktree_path, o.commit_sha \
+FROM stories s \
+JOIN projects p ON p.id = s.project_id \
+JOIN requests r ON r.id = s.request_id \
+LEFT JOIN story_outcomes o ON o.story_id = s.id \
+WHERE s.project_id = ?1 AND s.state = 'BLOCKED' AND s.assigned_agent_id IS NOT NULL \
 ORDER BY s.created_at, s.id";
 
 const SET_STATE: &str = "\
@@ -26,6 +42,12 @@ const INCREMENT_ATTEMPTS: &str = "\
 UPDATE stories SET execution_attempts = execution_attempts + 1, \
   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
 WHERE id = ?1 RETURNING execution_attempts";
+
+const REMEDIATE: &str = "\
+UPDATE stories SET assigned_agent_id = ?2, state = 'IN_PROGRESS', \
+  execution_attempts = 0, remediation_attempts = remediation_attempts + 1, \
+  tech_lead_context = ?3, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+WHERE id = ?1";
 
 const UPSERT_OUTCOME: &str = "\
 INSERT INTO story_outcomes (story_id, work_outcome, review_outcome, reviewer_agent_id, \
@@ -41,35 +63,63 @@ ON CONFLICT (story_id) DO UPDATE SET \
   commit_sha = excluded.commit_sha, \
   completed_at = excluded.completed_at";
 
-type Row = (
-    String,
-    String,
-    String,
-    String,
-    String,
-    String,
-    String,
-    String,
-    String,
-    i64,
-);
+#[derive(sqlx::FromRow)]
+struct Row {
+    id: String,
+    title: String,
+    description: String,
+    acceptance_criteria_json: String,
+    priority: String,
+    complexity: String,
+    project_name: String,
+    assignee: String,
+    request_text: String,
+    execution_attempts: i64,
+    remediation_attempts: i64,
+    tech_lead_context: Option<String>,
+    work_outcome: Option<String>,
+    review_outcome: Option<String>,
+    reviewer_agent_id: Option<String>,
+    review_accepted: Option<i64>,
+    branch: Option<String>,
+    worktree_path: Option<String>,
+    commit_sha: Option<String>,
+}
 
 impl WorkflowStore for Database {
     fn in_progress_stories(&self, project: &ProjectId) -> Result<Vec<WorkflowStory>, StorageError> {
-        self.block_on(async {
-            let mut connection = self
-                .pool()
-                .acquire()
-                .await
-                .map_err(|error| map_sqlx_error(self.path(), &error))?;
-            let rows: Vec<Row> = sqlx::query_as(SELECT_PENDING)
-                .bind(project.as_str())
-                .fetch_all(&mut *connection)
-                .await
-                .map_err(|error| map_sqlx_error(self.path(), &error))?;
-            rows.into_iter()
-                .map(|row| map_row(row).ok_or(StorageError::Operation))
-                .collect()
+        self.stories(project, SELECT_PENDING)
+    }
+
+    fn blocked_stories(&self, project: &ProjectId) -> Result<Vec<WorkflowStory>, StorageError> {
+        self.stories(project, SELECT_BLOCKED)
+    }
+
+    fn remediate_story(
+        &self,
+        story: &StoryId,
+        assignee: &AgentId,
+        context: &str,
+    ) -> Result<(), StorageError> {
+        let story = story.clone();
+        let assignee = assignee.clone();
+        let context = context.to_owned();
+        self.transaction(move |connection| {
+            Box::pin(async move {
+                sqlx::query(REMEDIATE)
+                    .bind(story.as_str())
+                    .bind(assignee.as_str())
+                    .bind(&context)
+                    .execute(&mut *connection)
+                    .await
+                    .map_err(|_| StorageError::Operation)?;
+                sqlx::query("DELETE FROM story_outcomes WHERE story_id = ?1")
+                    .bind(story.as_str())
+                    .execute(&mut *connection)
+                    .await
+                    .map_err(|_| StorageError::Operation)?;
+                Ok(())
+            })
         })
     }
 
@@ -133,6 +183,30 @@ impl WorkflowStore for Database {
     }
 }
 
+impl Database {
+    fn stories(
+        &self,
+        project: &ProjectId,
+        sql: &'static str,
+    ) -> Result<Vec<WorkflowStory>, StorageError> {
+        self.block_on(async {
+            let mut connection = self
+                .pool()
+                .acquire()
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))?;
+            let rows: Vec<Row> = sqlx::query_as(sql)
+                .bind(project.as_str())
+                .fetch_all(&mut *connection)
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))?;
+            rows.into_iter()
+                .map(|row| map_row(row).ok_or(StorageError::Operation))
+                .collect()
+        })
+    }
+}
+
 async fn set_state(
     connection: &mut SqliteConnection,
     story: &StoryId,
@@ -147,28 +221,34 @@ async fn set_state(
 }
 
 fn map_row(row: Row) -> Option<WorkflowStory> {
-    let (
-        id,
-        title,
-        description,
-        criteria,
-        priority,
-        complexity,
-        project_name,
-        assignee,
-        request_text,
-        execution_attempts,
-    ) = row;
+    let last_outcome = match (row.work_outcome, row.review_outcome) {
+        (Some(work_outcome), Some(review_outcome)) => {
+            let reviewer_agent_id = AgentId::parse(row.reviewer_agent_id.as_deref()?)?;
+            Some(StoryOutcome {
+                work_outcome,
+                review_outcome,
+                reviewer_agent_id,
+                accepted: row.review_accepted.unwrap_or(0) != 0,
+                branch: row.branch.unwrap_or_default(),
+                worktree_path: row.worktree_path.unwrap_or_default(),
+                commit_sha: row.commit_sha.unwrap_or_default(),
+            })
+        }
+        _ => None,
+    };
     Some(WorkflowStory {
-        id: StoryId::parse(&id)?,
-        title,
-        description,
-        acceptance_criteria: serde_json::from_str(&criteria).ok()?,
-        priority,
-        complexity,
-        project_name,
-        assignee: AgentId::parse(&assignee)?,
-        request_text,
-        execution_attempts: u32::try_from(execution_attempts).ok()?,
+        id: StoryId::parse(&row.id)?,
+        title: row.title,
+        description: row.description,
+        acceptance_criteria: serde_json::from_str(&row.acceptance_criteria_json).ok()?,
+        priority: row.priority,
+        complexity: row.complexity,
+        project_name: row.project_name,
+        assignee: AgentId::parse(&row.assignee)?,
+        request_text: row.request_text,
+        execution_attempts: u32::try_from(row.execution_attempts).ok()?,
+        remediation_attempts: u32::try_from(row.remediation_attempts).ok()?,
+        tech_lead_context: row.tech_lead_context,
+        last_outcome,
     })
 }

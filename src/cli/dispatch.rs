@@ -234,8 +234,11 @@ pub fn dispatch(
                             Ok(report) => write_stdout(
                                 stdout,
                                 &format!(
-                                    "Workflow: {} completed, {} failed, {} remaining.\n",
-                                    report.completed, report.failed, report.remaining
+                                    "Workflow: {} completed, {} failed, {} remaining, {} remediated.\n",
+                                    report.completed,
+                                    report.failed,
+                                    report.remaining,
+                                    report.remediated
                                 ),
                             )?,
                             Err(error) => write_stderr(
@@ -820,8 +823,8 @@ pub(crate) fn resume_pending_workflow(stderr: &mut dyn Write, run_id: RunId, can
             let _ = write_stderr(
                 stderr,
                 &format!(
-                    "Workflow: {} completed, {} failed, {} remaining.\n",
-                    report.completed, report.failed, report.remaining
+                    "Workflow: {} completed, {} failed, {} remaining, {} remediated.\n",
+                    report.completed, report.failed, report.remaining, report.remediated
                 ),
             );
         }

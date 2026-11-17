@@ -196,7 +196,9 @@ requests are not duplicated into a second table or into events.
 | `assigned_agent_id` | Project roster member or `NULL` | Assignment; references are validated locally. |
 | `assignment_rationale` | Bounded explanation or `NULL` | Explains the assignment or why it is unassigned. |
 | `state` | Kanban state | Board column written only by the application workflow. Assigned stories start in `IN PROGRESS`; unassigned stories start in `TODO` (ADR-0047). |
-| `execution_attempts` | Integer counter | Bounds paid retries; three failures set `BLOCKED` (ADR-0050). |
+| `execution_attempts` | Integer counter | Bounds paid retries; three failures set `BLOCKED` and start Tech Lead remediation (ADR-0050, ADR-0067). |
+| `remediation_attempts` | Integer counter (schema v16) | Bounds autonomous blocked-story retries to three cycles (ADR-0067). |
+| `tech_lead_context` | Bounded decision and context text or `NULL` (schema v16) | Gives the next attempt the Tech Lead's technical decision; untrusted prompt data, displayed sanitized. |
 | `due_date` | `YYYY-MM-DD` | Locally computed estimate, not a commitment. |
 | `created_at`, `updated_at` | RFC 3339 UTC timestamps | Ordering and diagnosis. |
 

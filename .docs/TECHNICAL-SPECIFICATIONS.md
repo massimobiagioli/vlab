@@ -1033,8 +1033,8 @@ dialog (ADR-0043). The five states are side-by-side lists of bordered cards; a
 card shows only the story's short description (title). Each list scrolls
 independently and shows how many cards are above and below. `Enter` on a card
 opens a detail dialog with every field listed above plus complexity,
-description, acceptance criteria, required skills, assignment rationale, and
-the originating request; long details scroll. Terminals too narrow for five
+description, acceptance criteria, required skills, assignment rationale,
+Tech Lead context, and the originating request; long details scroll. Terminals too narrow for five
 readable lists show a window of adjacent lists around the focused one. The
 plain `--show-project-kanban` output keeps the full card fields.
 
@@ -1261,6 +1261,14 @@ Live-provider tests shall be opt-in and shall never require committed credential
 - The agent detail shows `Working on`, and `t` opens the story detail.
 - ASCII, no-color, narrow, and empty states remain usable.
 
+### Workflow Remediation Tests
+
+- An exhausted story is remediated, reassigned, and completes.
+- A rejected review is remediated with Tech Lead context and completes.
+- The remediation prompt and strict decision parser reject malformed output.
+- The remediation counter and context persist and migration preserves data.
+- A story that cannot finish remains `BLOCKED`, never `DONE`.
+
 ## 17. Acceptance Criteria
 
 The initial release is acceptable when:
@@ -1297,6 +1305,9 @@ The initial release is acceptable when:
 26. New requests never wait for human clarification: the Tech Lead resolves
     ambiguity in up to two bounded follow-up calls, otherwise the request fails
     with `clarification_unresolved` and no partial stories.
+27. A blocked story is remediated by the Tech Lead with bounded context and an
+    active assignee, then returned to `IN_PROGRESS` for up to three cycles; the
+    application never marks it `DONE` without a reviewed commit.
 
 ## 18. Incremental Delivery Plan
 
@@ -1431,18 +1442,27 @@ After planning, the application runs real, bounded execution (ADR-0050):
   laboratory roster when the project roster is empty; if there is no QA, the
   Tech Lead reviews. The review receives the summary, changed files, and a
   bounded diff and returns `review_outcome` and an `accepted` boolean. An
-  accepted review sets `DONE`; a rejected review keeps the commit on the branch
-  and sets `BLOCKED` for human attention.
-- The story becomes `DONE` when the reviewer accepts it. A rejected review
-  keeps the commit on `vlab/<story-id>`, stores it in `story_outcomes` with
-  `review_accepted = 0`, and moves the story to `BLOCKED` for human attention.
+  accepted review sets `DONE`.
+- A rejected review keeps the commit on `vlab/<story-id>`, stores it in
+  `story_outcomes` with `review_accepted = 0`, and marks the story `BLOCKED`
+  for autonomous Tech Lead remediation rather than human attention.
 - On provider, tool, or validation failure the story stays in progress, a
   content-free `workflow_failed` event is recorded, and the planning request is
   still `PLANNED`. After three failed attempts the story becomes `BLOCKED`.
+- A blocked story is passed to the Tech Lead with the request, story,
+  acceptance criteria, previous work/review, previous context, and active
+  roster. The Tech Lead returns a bounded decision/context and a valid assignee;
+  the application stores the context, may reassign the story, resets the
+  execution attempts, increments `remediation_attempts`, clears the stale
+  outcome, and moves it back to `IN_PROGRESS`. Up to three remediation cycles
+  are attempted per story before it remains `BLOCKED`. The model never chooses
+  a state transition, grants permission, or marks `DONE` without a reviewed
+  commit.
 - Bounds: 24 work rounds, 120-second call timeout, 8,192 output tokens, four
   actions per round, 15-minute work deadline, 60-second command timeout, 64 KiB
-  captured command output, and three attempts. One empty-output retry per round
-  is allowed. Stories are processed sequentially.
+  captured command output, three attempts, three remediation cycles, and a
+  45-minute workflow deadline. One empty-output retry per round is allowed.
+  Stories are processed sequentially.
 - Commands run in the worktree with a cleared environment, a private `HOME`,
   and no inherited secrets. There is no OS sandbox or network isolation; this is
   a documented residual risk.

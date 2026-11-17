@@ -117,6 +117,7 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0064.md`](.docs/adr/adr-0064.md) | Non-blocking startup resume. |
 | [`.docs/adr/adr-0065.md`](.docs/adr/adr-0065.md) | Live Kanban refresh and initial-based view keys. |
 | [`.docs/adr/adr-0066.md`](.docs/adr/adr-0066.md) | Autonomous clarification resolution. |
+| [`.docs/adr/adr-0067.md`](.docs/adr/adr-0067.md) | Autonomous remediation of blocked stories. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
 | [`.project/features/`](.project/features/) | Tracked feature plans with task checklists (ADR-0037). |
 

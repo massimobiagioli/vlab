@@ -95,6 +95,7 @@ revises a technical decision must keep it current.
 | ADR-0064 | Non-blocking startup resume | Accepted | 2026-11-17 | — | [adr-0064.md](adr-0064.md) |
 | ADR-0065 | Live Kanban refresh and initial-based view keys | Accepted | 2026-11-17 | — | [adr-0065.md](adr-0065.md) |
 | ADR-0066 | Autonomous clarification resolution | Accepted | 2026-11-17 | — | [adr-0066.md](adr-0066.md) |
+| ADR-0067 | Autonomous remediation of blocked stories | Accepted | 2026-11-17 | — | [adr-0067.md](adr-0067.md) |
 
 ## Supersession map
 

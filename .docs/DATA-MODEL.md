@@ -96,7 +96,11 @@ records title, description, acceptance criteria, required skills, priority,
 complexity, optional assignment and rationale, a Kanban state, and a locally
 computed due date. Planning creates assigned stories in `IN PROGRESS` and
 unassigned stories in `TODO` (ADR-0047). The bounded real workflow may execute a
-story in a worktree, advance it to `IN_REVIEW`, and then `DONE`.
+story in a worktree, advance it to `IN_REVIEW`, and then `DONE`. A blocked story
+stores a bounded `tech_lead_context` and a `remediation_attempts` counter; the
+Tech Lead may reassign it, add context, reset the execution attempts, and move
+it back to `IN_PROGRESS` for a bounded number of remediation cycles
+(ADR-0067).
 
 ### Story outcome
 

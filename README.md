@@ -324,11 +324,16 @@ vlab --show-project-kanban
 request and plans it. DeepSeek returns a strict JSON proposal; VLab validates
 it, assigns only project agents (or active laboratory members when the project
 has no assignments), computes due dates locally in UTC (2/5/10 calendar days by
-complexity), and inserts all stories in one transaction. Clarification,
-provider, validation, budget, timeout, and cancellation outcomes preserve the
-request. A second request waits in `TODO` until the first finishes. Retries are
-bounded and may incur additional provider charges; exactly-once remote
-execution is not promised.
+complexity), and inserts all stories in one transaction. The Tech Lead resolves
+clarification autonomously in up to two bounded follow-up calls; unresolved
+questions fail with `clarification_unresolved`, never a human prompt. Assigned
+stories execute in worktrees; a story that blocks after three attempts or a
+rejected review is taken over by the Tech Lead, given bounded technical context,
+optionally reassigned, and retried automatically for up to three remediation
+cycles. Provider, validation, budget, timeout, and cancellation outcomes
+preserve the request. A second request waits in `TODO` until the first
+finishes. Retries are bounded and may incur additional provider charges;
+exactly-once remote execution is not promised.
 
 Planning prompts include laboratory, project, and Tech Lead agent memories
 within 8 KiB, delimited as data. A successful plan also stores a short

@@ -237,9 +237,12 @@ vlab --show-project-kanban
 
 The board shows `TODO`, `IN PROGRESS`, `IN REVIEW`, `BLOCKED`, and `DONE`,
 with assignee, priority, due date, counts, and pending intake. It is read-only;
-states are changed only by the application workflow. Open a `DONE` card with
-`Enter` to read its work summary, review, reviewer, branch, worktree, commit,
-and completion time. VLab never merges the branch automatically.
+states are changed only by the application workflow. A blocked story is
+remediated by the Tech Lead: it gets bounded context, may be reassigned, and
+returns to `IN PROGRESS` automatically for up to three cycles; the card is never
+falsely marked `DONE`. Open a `DONE` card with `Enter` to read its work summary,
+review, reviewer, branch, worktree, commit, and completion time. VLab never
+merges the branch automatically.
 
 ### Interactions
 
