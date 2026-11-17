@@ -312,8 +312,10 @@ backups of `settings.yaml` as secrets.
 From the home dashboard choose **Lab floor** (or press `5`). The fixed scene
 has a **Project Lab** with the active project's task board, a **War Room** with
 the Tech Lead and focused agents, and a **Lounge** for idle agents, connected
-by a corridor. Agents move deterministically; `(zzz)` marks idle work and
-`( ? )`/`( ! )`/`⇅` mark exchanges. `↑/↓` selects agents, `←/→` moves to the
+by a corridor. Agents move deterministically; faces and colors carry their
+state and `⇅` marks an exchange. Room interiors contain only titles, furniture,
+and icons; names appear in the status line and task text only in the `Enter`
+detail. `↑/↓` selects agents, `←/→` moves to the
 next occupied room, `Enter` opens the agent detail with its current tasks, `t`
 opens the selected task, `f` opens the active project's Kanban, and `r`
 reloads. The Kanban `f` key returns to the floor; `Esc` preserves the screen

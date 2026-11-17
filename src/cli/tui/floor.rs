@@ -12,13 +12,13 @@ use ratatui::widgets::Paragraph;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::app::directory::AgentTask;
-use crate::app::floor::{Floor, FloorAgent, FloorRoom};
+use crate::app::floor::{Floor, FloorAgent, FloorPod, FloorRoom};
 use crate::app::kanban::StoryState;
 
 use super::{Theme, action_grid, clean};
 
-const LEG_TICKS: u64 = 18;
-const WALK_TICKS: u64 = 6;
+const LEG_TICKS: u64 = 36;
+const WALK_TICKS: u64 = 12;
 const MAX_TOUR: usize = 4;
 
 const FLOOR_ACTIONS: [(&str, &str); 11] = [
@@ -218,12 +218,17 @@ fn status_line(
             theme.muted_style(),
         ));
     };
+    if view.floor.active_project.is_none() {
+        return Line::from(Span::styled(
+            truncate_width(
+                "No active project · open one from Projects · Enter shows this agent",
+                width,
+            ),
+            theme.muted_style(),
+        ));
+    }
     let room = room_name(view.floor.room_for(agent));
-    let task = agent
-        .primary_task()
-        .map(|task| format!("[{}] {}", task.state.label(), clean(&task.title)))
-        .unwrap_or_else(|| "no open task".to_owned());
-    let details = format!(" · {} · {room} · {task}", clean(&agent.role));
+    let details = format!(" · {} · {room} · Enter detail · t task", clean(&agent.role));
     Line::from(vec![
         Span::styled("Selected: ", theme.key()),
         Span::styled(
@@ -236,9 +241,9 @@ fn status_line(
 
 fn legend_line(theme: Theme, width: usize) -> Line<'static> {
     let legend = if theme.unicode {
-        "(◕‿◕) agent · ★ lead · (zzz) idle · ⇅ exchange · ▸ task · [f] board · read-only"
+        "(•‿•) agent · ★ lead · ⇅ exchange · Enter detail · [f] board · read-only"
     } else {
-        "(o_o) agent · * lead · (zzz) idle · : exchange · > task · [f] board · read-only"
+        "(o_o) agent · * lead · : exchange · Enter detail · [f] board · read-only"
     };
     Line::from(Span::styled(
         truncate_width(legend, width),
@@ -259,9 +264,9 @@ fn render_scene(frame: &mut Frame<'_>, area: Rect, theme: Theme, view: &mut Floo
     };
     canvas.frame(tl, tr, bl, br, h, v);
     let lab = clean(&view.floor.lab.name);
-    canvas.title(2, 0, &format!("▌ LAB FLOOR · MSX ▌ {lab}"), theme.title());
+    canvas.title(2, 0, &format!("▌ LAB FLOOR ▌ {lab}"), theme.title());
 
-    let Some((rooms, corridor_y)) = layout(&canvas) else {
+    let Some(layout) = layout(&canvas) else {
         canvas.centered(
             1,
             1,
@@ -275,8 +280,8 @@ fn render_scene(frame: &mut Frame<'_>, area: Rect, theme: Theme, view: &mut Floo
     };
 
     if view.floor.agents.is_empty() {
-        for (index, room) in rooms.iter().enumerate() {
-            draw_room(&mut canvas, *room, index, &view.floor, theme);
+        for (index, room) in layout.rooms.iter().enumerate() {
+            draw_room(&mut canvas, *room, index, &view.floor, &layout, theme);
         }
         canvas.centered(
             1,
@@ -290,11 +295,11 @@ fn render_scene(frame: &mut Frame<'_>, area: Rect, theme: Theme, view: &mut Floo
         return;
     }
 
-    draw_corridor(&mut canvas, &rooms, corridor_y, theme);
-    for (index, room) in rooms.iter().enumerate() {
-        draw_room(&mut canvas, *room, index, &view.floor, theme);
+    draw_corridor(&mut canvas, &layout, theme);
+    for (index, room) in layout.rooms.iter().enumerate() {
+        draw_room(&mut canvas, *room, index, &view.floor, &layout, theme);
     }
-    draw_agents(&mut canvas, &view.floor, view, &rooms, corridor_y, theme);
+    draw_agents(&mut canvas, &view.floor, view, &layout, theme);
     finish(frame, area, canvas);
 }
 
@@ -340,15 +345,72 @@ impl RoomRect {
     }
 }
 
-fn layout(canvas: &Canvas) -> Option<([RoomRect; 3], usize)> {
+#[derive(Debug, Clone, Copy)]
+struct FloorPlan {
+    rooms: [RoomRect; 3],
+    corridor_y: usize,
+    /// Top-down T plan on wide terminals; compact side-by-side fallback when
+    /// the scene is too short for a readable center room.
+    t_shape: bool,
+}
+
+fn layout(canvas: &Canvas) -> Option<FloorPlan> {
     let inner_w = canvas.width.saturating_sub(2);
     let inner_h = canvas.height.saturating_sub(2);
-    if inner_w < 30 || inner_h < 6 {
+    if inner_w < 30 || inner_h < 5 {
         return None;
     }
+    if inner_h >= 12 && inner_w >= 48 {
+        return t_layout(inner_w, inner_h);
+    }
+    row_layout(inner_w, inner_h)
+}
+
+fn t_layout(inner_w: usize, inner_h: usize) -> Option<FloorPlan> {
+    let top_h = (inner_h * 45 / 100).clamp(4, inner_h.saturating_sub(4));
+    let side_w = inner_w.saturating_sub(4) / 2;
+    if side_w < 12 {
+        return row_layout(inner_w, inner_h);
+    }
+    let center_w = side_w
+        .saturating_sub(2)
+        .clamp(12, inner_w.saturating_sub(2));
+    let center_x = 1 + (inner_w - center_w) / 2;
+    let center_y = 1 + top_h + 1;
+    let center_h = inner_h.saturating_sub(top_h + 2);
+    if center_h < 3 {
+        return row_layout(inner_w, inner_h);
+    }
+    let rooms = [
+        RoomRect {
+            x: 1,
+            y: 1,
+            w: side_w,
+            h: top_h,
+        },
+        RoomRect {
+            x: center_x,
+            y: center_y,
+            w: center_w,
+            h: center_h,
+        },
+        RoomRect {
+            x: 1 + inner_w - side_w,
+            y: 1,
+            w: side_w,
+            h: top_h,
+        },
+    ];
+    Some(FloorPlan {
+        rooms,
+        corridor_y: 1 + top_h / 2,
+        t_shape: true,
+    })
+}
+
+fn row_layout(inner_w: usize, inner_h: usize) -> Option<FloorPlan> {
     let gap = if inner_w >= 66 { 1 } else { 0 };
-    let total_gap = gap * 2;
-    let room_w = (inner_w.saturating_sub(total_gap)) / 3;
+    let room_w = (inner_w.saturating_sub(gap * 2)) / 3;
     if room_w < 9 {
         return None;
     }
@@ -357,7 +419,6 @@ fn layout(canvas: &Canvas) -> Option<([RoomRect; 3], usize)> {
     if room_h < 4 {
         return None;
     }
-    let y = 1;
     let first_x = 1;
     let second_x = first_x + room_w + gap;
     let third_x = second_x + room_w + gap;
@@ -365,24 +426,40 @@ fn layout(canvas: &Canvas) -> Option<([RoomRect; 3], usize)> {
     let rooms = [
         RoomRect {
             x: first_x,
-            y,
+            y: 1,
             w: room_w,
             h: room_h,
         },
         RoomRect {
             x: second_x,
-            y,
+            y: 1,
             w: room_w,
             h: room_h,
         },
         RoomRect {
             x: third_x,
-            y,
+            y: 1,
             w: third_w.max(room_w),
             h: room_h,
         },
     ];
-    Some((rooms, 1 + room_h))
+    Some(FloorPlan {
+        rooms,
+        corridor_y: 1 + room_h,
+        t_shape: false,
+    })
+}
+
+fn room_door(index: usize, layout: &FloorPlan) -> (usize, usize) {
+    let room = layout.rooms[index];
+    if !layout.t_shape {
+        return (room.x + room.w / 2, room.y + room.h.saturating_sub(1));
+    }
+    match index {
+        0 => (room.x + room.w.saturating_sub(1), layout.corridor_y),
+        1 => (room.x + room.w / 2, room.y),
+        _ => (room.x, layout.corridor_y),
+    }
 }
 
 fn room_index(room: FloorRoom) -> usize {
@@ -405,8 +482,15 @@ fn room_name(room: FloorRoom) -> &'static str {
 // Rooms and furniture
 // ---------------------------------------------------------------------------
 
-fn draw_room(canvas: &mut Canvas, room: RoomRect, index: usize, floor: &Floor, theme: Theme) {
-    draw_room_shell(canvas, room, index, theme);
+fn draw_room(
+    canvas: &mut Canvas,
+    room: RoomRect,
+    index: usize,
+    floor: &Floor,
+    layout: &FloorPlan,
+    theme: Theme,
+) {
+    draw_room_shell(canvas, room, index, layout, theme);
     match index {
         0 => draw_project_lab(canvas, room, floor, theme),
         1 => draw_war_room(canvas, room, floor, theme),
@@ -414,7 +498,13 @@ fn draw_room(canvas: &mut Canvas, room: RoomRect, index: usize, floor: &Floor, t
     }
 }
 
-fn draw_room_shell(canvas: &mut Canvas, room: RoomRect, index: usize, theme: Theme) {
+fn draw_room_shell(
+    canvas: &mut Canvas,
+    room: RoomRect,
+    index: usize,
+    layout: &FloorPlan,
+    theme: Theme,
+) {
     let title = match index {
         0 => "PROJECT LAB",
         1 => "WAR ROOM",
@@ -442,6 +532,22 @@ fn draw_room_shell(canvas: &mut Canvas, room: RoomRect, index: usize, theme: The
         star,
         accent,
     );
+    let (door_x, door_y) = room_door(index, layout);
+    let door = match (layout.t_shape, index) {
+        (true, 0) => '┤',
+        (true, 2) => '├',
+        (true, 1) => '┬',
+        _ => '╥',
+    };
+    canvas.set(door_x, door_y, door, accent);
+    if layout.t_shape && index == 1 {
+        canvas.set(
+            room.x + room.w / 2,
+            room.y + room.h.saturating_sub(1),
+            '╨',
+            accent,
+        );
+    }
 }
 
 fn fill_floor(canvas: &mut Canvas, room: RoomRect, theme: Theme) {
@@ -462,179 +568,135 @@ fn fill_floor(canvas: &mut Canvas, room: RoomRect, theme: Theme) {
 
 fn draw_project_lab(canvas: &mut Canvas, room: RoomRect, floor: &Floor, theme: Theme) {
     let accent = room_accent(0, theme);
-    let inner_x = room.inner_x();
-    let inner_w = room.inner_w();
     let y = room.inner_y();
-    let pod = floor.active_pod();
-    let subtitle = pod
-        .map(|pod| {
-            let suffix = if pod.whole_lab { " · whole lab" } else { "" };
-            format!("{}{}", clean(&pod.name), suffix)
-        })
-        .unwrap_or_else(|| "NO ACTIVE PROJECT".to_owned());
-    paint_text(
-        canvas,
-        inner_x,
-        y,
-        inner_w,
-        &subtitle,
-        if pod.is_some() {
-            accent
-        } else {
-            theme.warning_style()
-        },
-    );
-    let board_y = y + 1;
-    let task_rows = room.inner_h().saturating_sub(4).max(1);
-    let Some(pod) = pod else {
-        paint_text(
-            canvas,
-            inner_x,
-            board_y,
-            inner_w,
-            "Open a project from Projects.",
-            theme.muted_style(),
-        );
-        draw_desk(canvas, room, theme);
-        return;
-    };
-    if pod.tasks.is_empty() {
-        paint_text(
-            canvas,
-            inner_x,
-            board_y,
-            inner_w,
-            "No open tasks.",
-            theme.muted_style(),
-        );
-    } else {
-        for (row, task) in pod.tasks.iter().take(task_rows).enumerate() {
-            let line = format!("{} {}", state_glyph(task.state, theme), clean(&task.title));
-            paint_text(
-                canvas,
-                inner_x,
-                board_y + row,
-                inner_w,
-                &line,
-                task_style(task.state, theme),
-            );
-        }
-        if pod.tasks.len() > task_rows {
-            paint_text(
-                canvas,
-                inner_x,
-                board_y + task_rows,
-                inner_w,
-                &format!("+{} more", pod.tasks.len() - task_rows),
-                theme.muted_style(),
-            );
-        }
-    }
+    draw_task_board(canvas, room, floor.active_pod(), theme);
+    let board = if theme.unicode { "[▤]" } else { "[#]" };
+    paint_text(canvas, room.inner_x(), y + 1, 3, board, accent);
+    draw_plant(canvas, room, theme);
     draw_desk(canvas, room, theme);
+    draw_chair_row(canvas, room, theme);
 }
 
 fn draw_war_room(canvas: &mut Canvas, room: RoomRect, floor: &Floor, theme: Theme) {
     let accent = room_accent(1, theme);
-    let inner_x = room.inner_x();
-    let inner_w = room.inner_w();
     let y = room.inner_y();
-    let lead = floor.lead.as_ref().and_then(|id| floor.agent(id));
-    let lead_text = lead
-        .map(|agent| format!("★ TECH LEAD: {}", clean(&agent.name)))
-        .unwrap_or_else(|| "NO TECH LEAD · run check-lab".to_owned());
-    paint_text(
-        canvas,
-        inner_x,
+    let star = if theme.unicode { '★' } else { '*' };
+    canvas.set(room.inner_x(), y, star, theme.warning_style());
+    let clock = if theme.unicode { '◷' } else { 'o' };
+    canvas.set(
+        room.x + room.w.saturating_sub(3),
         y,
-        inner_w,
-        &lead_text,
-        theme.warning_style(),
-    );
-    let focused = floor
-        .focused_agents()
-        .filter(|agent| floor.room_for(agent) == FloorRoom::WarRoom)
-        .count();
-    paint_text(
-        canvas,
-        inner_x,
-        y + 1,
-        inner_w,
-        &format!("focus desks: {focused}"),
+        clock,
         theme.muted_style(),
     );
-    let board = if theme.unicode {
-        "[▤] WHITEBOARD"
-    } else {
-        "[#] WHITEBOARD"
-    };
-    paint_text(canvas, inner_x, y + 2, inner_w, board, accent);
-    if room.inner_h() >= 7 {
+    let board = if theme.unicode { "[▤]" } else { "[#]" };
+    paint_text(canvas, room.inner_x(), y + 1, 3, board, accent);
+    if room.inner_h() >= 6 {
         paint_text(
             canvas,
-            inner_x,
-            y + 3,
-            inner_w,
-            "coordinate · decide · unblock",
+            room.inner_x() + 5,
+            y + 1,
+            2,
+            if theme.unicode { "▤▤" } else { "##" },
             theme.muted_style(),
         );
     }
+    draw_focus_desks(canvas, room, floor, theme);
+    draw_plant(canvas, room, theme);
     draw_desk(canvas, room, theme);
 }
 
 fn draw_lounge(canvas: &mut Canvas, room: RoomRect, floor: &Floor, theme: Theme) {
     let accent = room_accent(2, theme);
-    let inner_x = room.inner_x();
-    let inner_w = room.inner_w();
     let y = room.inner_y();
-    let idle = floor
-        .agents
-        .iter()
-        .filter(|agent| floor.room_for(agent) == FloorRoom::Lounge)
-        .count();
-    let couch = if theme.unicode {
-        "╰──╯"
-    } else {
-        "[__]"
-    };
     let coffee = if theme.unicode { "[☕]" } else { "[c]" };
-    let plant = if theme.unicode { "♣" } else { "*" };
+    paint_text(canvas, room.inner_x(), y, 4, coffee, accent);
+    let tv = if theme.unicode { "[▓]" } else { "[#]" };
     paint_text(
         canvas,
-        inner_x,
+        room.x + room.w.saturating_sub(5),
         y,
-        inner_w,
-        &format!("{couch}  {coffee}  {plant}"),
-        accent,
-    );
-    paint_text(
-        canvas,
-        inner_x,
-        y + 1,
-        inner_w,
-        &format!("{idle} idle agent(s)"),
+        3,
+        tv,
         theme.muted_style(),
     );
-    if room.inner_h() >= 7 {
-        paint_text(
-            canvas,
-            inner_x,
-            y + 2,
-            inner_w,
-            "coffee · rest · recharge",
-            theme.muted_style(),
-        );
-    }
-    if idle == 0 {
-        paint_text(
-            canvas,
-            inner_x,
-            room.y + room.h.saturating_sub(2),
-            inner_w,
-            "Everyone is busy.",
-            theme.muted_style(),
-        );
-    }
+    draw_plant(canvas, room, theme);
     draw_couch(canvas, room, theme);
+    if room.inner_h() >= 7 {
+        let rug = if theme.unicode {
+            "≈≈≈≈"
+        } else {
+            "~~~~"
+        };
+        paint_text(
+            canvas,
+            room.inner_x() + 2,
+            room.inner_y() + 2,
+            room.inner_w().saturating_sub(3),
+            rug,
+            theme.muted_style(),
+        );
+    }
+    let _ = floor;
+}
+
+fn draw_task_board(canvas: &mut Canvas, room: RoomRect, pod: Option<&FloorPod>, theme: Theme) {
+    let Some(pod) = pod else {
+        return;
+    };
+    let y = room.inner_y();
+    let mut x = room.inner_x() + 5;
+    for task in pod.tasks.iter().take(5) {
+        if x + 1 >= room.x + room.w.saturating_sub(1) {
+            break;
+        }
+        canvas.set(
+            x,
+            y + 1,
+            if theme.unicode { '■' } else { '#' },
+            task_style(task.state, theme),
+        );
+        x += 2;
+    }
+}
+
+fn draw_focus_desks(canvas: &mut Canvas, room: RoomRect, floor: &Floor, theme: Theme) {
+    let focused = floor
+        .focused_agents()
+        .filter(|agent| floor.room_for(agent) == FloorRoom::WarRoom)
+        .count();
+    let y = (room.inner_y() + 3).min(room.floor_y().saturating_sub(1));
+    for index in 0..focused.min(3) {
+        let x = room.inner_x() + 1 + index * 7;
+        let desk = if theme.unicode { "▄▄▄" } else { "___" };
+        paint_text(canvas, x, y, 3, desk, theme.border_style());
+        let terminal = if theme.unicode { "[▥]" } else { "[#]" };
+        paint_text(canvas, x + 3, y, 3, terminal, theme.title());
+    }
+}
+
+fn draw_chair_row(canvas: &mut Canvas, room: RoomRect, theme: Theme) {
+    let y = room.floor_y().saturating_sub(1);
+    if y <= room.inner_y() {
+        return;
+    }
+    let chair = if theme.unicode { '▣' } else { 'o' };
+    for index in 0..2 {
+        let x = room.inner_x() + 2 + index * 7;
+        if x + 1 < room.x + room.w.saturating_sub(1) {
+            canvas.set(x, y, chair, theme.muted_style());
+        }
+    }
+}
+
+fn draw_plant(canvas: &mut Canvas, room: RoomRect, theme: Theme) {
+    let plant = if theme.unicode { '♣' } else { '*' };
+    canvas.set(
+        room.x + room.w.saturating_sub(3),
+        room.inner_y() + 2,
+        plant,
+        theme.success_style(),
+    );
 }
 
 fn draw_desk(canvas: &mut Canvas, room: RoomRect, theme: Theme) {
@@ -677,59 +739,50 @@ fn draw_couch(canvas: &mut Canvas, room: RoomRect, theme: Theme) {
     );
 }
 
-fn draw_corridor(canvas: &mut Canvas, rooms: &[RoomRect; 3], corridor_y: usize, theme: Theme) {
-    let y = corridor_y;
+fn draw_corridor(canvas: &mut Canvas, layout: &FloorPlan, theme: Theme) {
+    let (h, v, cross, door) = if theme.unicode {
+        ('─', '│', '┼', '╥')
+    } else {
+        ('-', '|', '+', '+')
+    };
+    let y = layout.corridor_y;
     if y >= canvas.height.saturating_sub(1) {
         return;
     }
-    let (h, door) = if theme.unicode {
-        ('─', '╥')
+    if layout.t_shape {
+        let (left_x, _) = room_door(0, layout);
+        let (right_x, _) = room_door(2, layout);
+        for x in left_x.min(right_x)..=left_x.max(right_x) {
+            canvas.set(x, y, h, theme.border_style());
+        }
+        let center = layout.rooms[1];
+        let center_x = center.x + center.w / 2;
+        for row in y..=center.y {
+            canvas.set(center_x, row, v, theme.border_style());
+        }
+        canvas.set(left_x, y, door, theme.title());
+        canvas.set(right_x, y, door, theme.title());
+        canvas.set(center_x, y, cross, theme.border_style());
+        canvas.set(center_x, center.y, door, theme.title());
+        let arrow = if theme.unicode { '›' } else { '>' };
+        let back = if theme.unicode { '‹' } else { '<' };
+        canvas.set(center_x.saturating_sub(2), y, arrow, theme.muted_style());
+        canvas.set(center_x + 2, y, back, theme.muted_style());
+        canvas.set(
+            center_x,
+            center.y + center.h.saturating_sub(1),
+            if theme.unicode { '╨' } else { '+' },
+            theme.title(),
+        );
     } else {
-        ('-', '+')
-    };
-    for x in 1..canvas.width.saturating_sub(1) {
-        canvas.set(x, y, h, theme.border_style());
+        for x in 1..canvas.width.saturating_sub(1) {
+            canvas.set(x, y, h, theme.border_style());
+        }
+        for (index, _) in layout.rooms.iter().enumerate() {
+            let (door_x, door_y) = room_door(index, layout);
+            canvas.set(door_x, door_y, door, theme.title());
+        }
     }
-    for room in rooms {
-        let door_x = room.door_x();
-        canvas.set(door_x, y, door, theme.title());
-        canvas.set(door_x, y.saturating_sub(1), door, theme.title());
-    }
-    let label = "VLAB · MSX · CORRIDOR";
-    let label = if theme.unicode {
-        label
-    } else {
-        "VLAB - MSX - CORRIDOR"
-    };
-    let label_x = 1 + canvas.width.saturating_sub(2 + label.width()) / 2;
-    paint_text(
-        canvas,
-        label_x,
-        y,
-        canvas.width.saturating_sub(label_x + 1),
-        label,
-        theme.muted_style(),
-    );
-    // A couple of direction markers keep the corridor from reading as a rule.
-    canvas.set(
-        2,
-        y,
-        if theme.unicode { '▶' } else { '>' },
-        theme.muted_style(),
-    );
-    canvas.set(
-        canvas.width.saturating_sub(3),
-        y,
-        if theme.unicode { '◀' } else { '<' },
-        theme.muted_style(),
-    );
-    let link_width = rooms[0].door_x().saturating_sub(4);
-    let link = if link_width >= "[f] KANBAN".width() {
-        "[f] KANBAN"
-    } else {
-        "[f]"
-    };
-    paint_text(canvas, 3, y, link_width, link, theme.key());
 }
 
 fn room_accent(index: usize, theme: Theme) -> Style {
@@ -766,21 +819,6 @@ fn task_style(state: StoryState, theme: Theme) -> Style {
     Style::default().fg(color).add_modifier(Modifier::BOLD)
 }
 
-fn state_glyph(state: StoryState, theme: Theme) -> &'static str {
-    match (state, theme.unicode) {
-        (StoryState::Todo, true) => "◇",
-        (StoryState::Todo, false) => "-",
-        (StoryState::InProgress, true) => "▶",
-        (StoryState::InProgress, false) => ">",
-        (StoryState::InReview, true) => "◉",
-        (StoryState::InReview, false) => "o",
-        (StoryState::Blocked, true) => "!",
-        (StoryState::Blocked, false) => "!",
-        (StoryState::Done, true) => "✓",
-        (StoryState::Done, false) => "x",
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Agents and movement
 // ---------------------------------------------------------------------------
@@ -796,8 +834,7 @@ fn draw_agents(
     canvas: &mut Canvas,
     floor: &Floor,
     view: &FloorView,
-    rooms: &[RoomRect; 3],
-    corridor_y: usize,
+    layout: &FloorPlan,
     theme: Theme,
 ) {
     let mut by_room: [Vec<&FloorAgent>; 3] = [Vec::new(), Vec::new(), Vec::new()];
@@ -806,16 +843,28 @@ fn draw_agents(
         by_room[room].push(agent);
     }
 
-    let pixel = canvas.width >= 76 && rooms[0].inner_w() >= 22;
     let mut drawn: Vec<DrawnAgent> = Vec::with_capacity(floor.agents.len());
     for (room_index_value, agents) in by_room.iter().enumerate() {
-        let room = rooms[room_index_value];
+        let room = layout.rooms[room_index_value];
         let count = agents.len().max(1);
         for (slot, agent) in agents.iter().enumerate() {
-            let spots = tour_for(floor, agent, room_index_value, room, slot, count, rooms);
-            let (x, y, walking) = position_at(agent, &spots, view.tick, rooms, corridor_y);
+            let spots = tour_for(
+                floor,
+                agent,
+                room_index_value,
+                room,
+                slot,
+                count,
+                &layout.rooms,
+            );
+            let (x, y, walking) = position_at(agent, &spots, view.tick, layout);
             let selected = view.selected_agent().is_some_and(|sel| sel.id == agent.id);
-            draw_agent(canvas, floor, agent, x, y, walking, selected, pixel, theme);
+            let max_x = if walking {
+                canvas.width.saturating_sub(2)
+            } else {
+                room.x + room.w.saturating_sub(2)
+            };
+            draw_agent(canvas, floor, agent, x, y, walking, selected, max_x, theme);
             drawn.push(DrawnAgent {
                 room: room_index_value,
                 x,
@@ -825,7 +874,7 @@ fn draw_agents(
             });
         }
     }
-    draw_exchanges(canvas, &drawn, rooms, theme);
+    draw_exchanges(canvas, &drawn, &layout.rooms, theme);
 }
 
 fn tour_for(
@@ -838,6 +887,12 @@ fn tour_for(
     rooms: &[RoomRect; 3],
 ) -> Vec<Spot> {
     let mut spots = room_spots(rect, room, slot, count);
+    if room == 1 && floor.lead.as_ref() != Some(&agent.id) {
+        let focus_y = (rect.inner_y() + 3).min(rect.floor_y().saturating_sub(1));
+        for spot in &mut spots {
+            spot.y = focus_y;
+        }
+    }
     // A worker may walk to the War Room to coordinate with the lead. This is
     // the only cross-room tour and is grounded in stored assignments.
     if room == 0 && floor.lead.is_some() && agent.is_working() {
@@ -855,16 +910,46 @@ fn tour_for(
 fn room_spots(rect: RoomRect, room: usize, slot: usize, count: usize) -> Vec<Spot> {
     let usable = rect.inner_w().saturating_sub(2).max(1);
     let step = (usable / count.max(1)).max(3);
-    let base = rect.inner_x() + 1 + (slot * step) % usable;
-    let y = rect.floor_y();
+    let base = rect.inner_x() + 3 + (slot * step) % usable;
+    let desk_y = rect.floor_y();
+    let mid_y = (rect.inner_y() + 3).min(desk_y.saturating_sub(1));
+    let upper_y = (rect.inner_y() + 2).min(mid_y);
     let second = (base + step.min(4)).min(rect.x + rect.w.saturating_sub(3));
     let third = (second + step.min(4)).min(rect.x + rect.w.saturating_sub(3));
     match room {
-        0 | 1 => vec![Spot { room, x: base, y }, Spot { room, x: second, y }],
+        0 | 1 => vec![
+            Spot {
+                room,
+                x: base,
+                y: desk_y,
+            },
+            Spot {
+                room,
+                x: second,
+                y: mid_y,
+            },
+            Spot {
+                room,
+                x: base,
+                y: upper_y,
+            },
+        ],
         _ => vec![
-            Spot { room, x: base, y },
-            Spot { room, x: second, y },
-            Spot { room, x: third, y },
+            Spot {
+                room,
+                x: base,
+                y: desk_y,
+            },
+            Spot {
+                room,
+                x: second,
+                y: mid_y,
+            },
+            Spot {
+                room,
+                x: third,
+                y: upper_y,
+            },
         ],
     }
 }
@@ -873,50 +958,51 @@ fn position_at(
     agent: &FloorAgent,
     spots: &[Spot],
     tick: u64,
-    rooms: &[RoomRect; 3],
-    corridor_y: usize,
+    layout: &FloorPlan,
 ) -> (usize, usize, bool) {
     if spots.is_empty() {
         return (1, 1, false);
     }
-    let offset = stable_hash(agent.id.as_str()) % LEG_TICKS;
-    let phase = tick.wrapping_add(offset) % (LEG_TICKS * spots.len() as u64);
+    let cycle = LEG_TICKS * spots.len() as u64;
+    let offset = stable_hash(agent.id.as_str()) % cycle;
+    let phase = tick.wrapping_add(offset) % cycle;
     let leg = (phase / LEG_TICKS) as usize;
     let within = phase % LEG_TICKS;
     let from = spots[leg];
     let to = spots[(leg + 1) % spots.len()];
     if within < WALK_TICKS && spots.len() > 1 {
-        let (x, y) = path_point(from, to, within, WALK_TICKS, rooms, corridor_y);
+        let (x, y) = path_point(from, to, within, WALK_TICKS, layout);
         (x, y, true)
     } else {
         (from.x, from.y, false)
     }
 }
 
-fn path_point(
-    from: Spot,
-    to: Spot,
-    step: u64,
-    steps: u64,
-    rooms: &[RoomRect; 3],
-    corridor_y: usize,
-) -> (usize, usize) {
+fn path_point(from: Spot, to: Spot, step: u64, steps: u64, layout: &FloorPlan) -> (usize, usize) {
     if from.room == to.room {
         return interpolate(from.x, from.y, to.x, to.y, step, steps);
     }
-    let from_room = rooms[from.room];
-    let to_room = rooms[to.room];
-    let points = [
-        (from.x, from.y),
-        (
-            from_room.door_x(),
-            from_room.y + from_room.h.saturating_sub(1),
-        ),
-        (from_room.door_x(), corridor_y),
-        (to_room.door_x(), corridor_y),
-        (to_room.door_x(), to_room.y + to_room.h.saturating_sub(1)),
-        (to.x, to.y),
-    ];
+    let from_door = room_door(from.room, layout);
+    let to_door = room_door(to.room, layout);
+    let points: Vec<(usize, usize)> = if layout.t_shape {
+        let center = layout.rooms[1];
+        let hub = (center.x + center.w / 2, layout.corridor_y);
+        vec![(from.x, from.y), from_door, hub, to_door, (to.x, to.y)]
+    } else {
+        let from_room = layout.rooms[from.room];
+        let to_room = layout.rooms[to.room];
+        vec![
+            (from.x, from.y),
+            (
+                from_room.door_x(),
+                from_room.y + from_room.h.saturating_sub(1),
+            ),
+            (from_room.door_x(), layout.corridor_y),
+            (to_room.door_x(), layout.corridor_y),
+            (to_room.door_x(), to_room.y + to_room.h.saturating_sub(1)),
+            (to.x, to.y),
+        ]
+    };
     let lengths: Vec<usize> = points
         .windows(2)
         .map(|pair| pair[0].0.abs_diff(pair[1].0) + pair[0].1.abs_diff(pair[1].1))
@@ -982,7 +1068,7 @@ fn draw_agent(
     y: usize,
     walking: bool,
     selected: bool,
-    pixel: bool,
+    max_x: usize,
     theme: Theme,
 ) {
     let lead = floor.lead.as_ref() == Some(&agent.id);
@@ -994,91 +1080,28 @@ fn draw_agent(
     let prefix = if selected {
         if theme.unicode { "▶" } else { ">" }
     } else {
-        ""
+        " "
     };
-    let bubble = if agent.is_idle() {
-        "(zzz)"
-    } else if walking {
-        if theme.unicode { "(→)" } else { "(>)" }
-    } else if agent.is_focused() {
-        "(///)"
+    let sprite = if walking {
+        "(•_•)"
     } else if lead {
-        "(★)"
+        if theme.unicode {
+            "★(•‿•)"
+        } else {
+            "*(o_o)"
+        }
+    } else if agent.is_idle() {
+        "(-_-)"
+    } else if agent.is_focused() {
+        "(>_<)"
+    } else if theme.unicode {
+        "(•‿•)"
     } else {
-        "( ... )"
+        "(o_o)"
     };
-    if pixel {
-        let (top, bottom) = if walking {
-            if theme.unicode {
-                ("▝▄▘", "█>█")
-            } else {
-                (".-.", "|>|")
-            }
-        } else if lead {
-            if theme.unicode {
-                ("▗▄▖", "█★█")
-            } else {
-                (".-.", "|*|")
-            }
-        } else {
-            if theme.unicode {
-                ("▗▄▖", "█◕█")
-            } else {
-                (".-.", "|o|")
-            }
-        };
-        paint_text(canvas, x, y.saturating_sub(1), 4, top, base);
-        paint_text(canvas, x, y, 4, bottom, base);
-        let name_x = x + 4;
-        let name_w = canvas.width.saturating_sub(name_x + 1);
-        paint_text(canvas, name_x, y, name_w, &clean(&agent.name), base);
-        let bubble_x = name_x + name_w.saturating_sub(bubble.width() + 1);
-        paint_text(
-            canvas,
-            bubble_x,
-            y,
-            bubble.width(),
-            bubble,
-            if selected { base } else { theme.muted_style() },
-        );
-        if !prefix.is_empty() {
-            paint_text(canvas, x, y.saturating_sub(1), 1, prefix, base);
-        }
-    } else {
-        let sprite = if walking {
-            "(>_>)"
-        } else if lead {
-            if theme.unicode {
-                "★(◕‿◕)"
-            } else {
-                "*(o_o)"
-            }
-        } else {
-            if theme.unicode {
-                "(◕‿◕)"
-            } else {
-                "(o_o)"
-            }
-        };
-        let line = if prefix.is_empty() {
-            format!("{sprite} {bubble}")
-        } else {
-            format!("{prefix}{sprite} {bubble}")
-        };
-        let available = canvas.width.saturating_sub(x + 1);
-        paint_text(canvas, x, y, available, &line, base);
-        let name_x = x + line.width() + 1;
-        if name_x < canvas.width.saturating_sub(1) {
-            paint_text(
-                canvas,
-                name_x,
-                y,
-                canvas.width.saturating_sub(name_x + 1),
-                &clean(&agent.name),
-                if selected { base } else { theme.muted_style() },
-            );
-        }
-    }
+    let text = format!("{prefix}{sprite}");
+    let available = max_x.saturating_sub(x).max(1);
+    paint_text(canvas, x, y, available, &text, base);
 }
 
 fn draw_exchanges(canvas: &mut Canvas, drawn: &[DrawnAgent], rooms: &[RoomRect; 3], theme: Theme) {
@@ -1439,24 +1462,22 @@ mod tests {
             "PROJECT LAB",
             "WAR ROOM",
             "LOUNGE",
-            "CORRIDOR",
             "Portal",
-            "Reset password",
-            "Audit log",
-            "TECH LEAD",
-            "focus desks",
-            "WHITEBOARD",
-            "idle agent",
-            "[f] KANBAN",
+            "★",
+            "▤",
             "Selected:",
             "read-only",
         ] {
             assert!(screen.contains(text), "{text}: {screen}");
         }
-        assert!(screen.contains("▗▄▖"), "{screen}");
         assert!(screen.contains("░"), "{screen}");
         assert!(screen.contains("☕"), "{screen}");
         assert!(screen.contains("♣"), "{screen}");
+        assert!(!screen.contains("Reset password"), "{screen}");
+        assert!(!screen.contains("Audit log"), "{screen}");
+        assert!(!screen.contains("TECH LEAD"), "{screen}");
+        assert!(!screen.contains("Bea"), "{screen}");
+        assert!(!screen.contains("Cid"), "{screen}");
     }
 
     #[test]
@@ -1464,13 +1485,7 @@ mod tests {
         for (width, height) in [(60, 20), (80, 24), (100, 30)] {
             let mut view = FloorView::new(floor());
             let screen = scene(&mut view, width, height, theme(true));
-            for text in [
-                "PROJECT LAB",
-                "WAR ROOM",
-                "LOUNGE",
-                "Portal",
-                "Reset password",
-            ] {
+            for text in ["PROJECT LAB", "WAR ROOM", "LOUNGE", "Portal"] {
                 assert!(screen.contains(text), "{width}x{height} {text}: {screen}");
             }
         }
@@ -1505,7 +1520,8 @@ mod tests {
         let model = floor();
         let agent = model.agent(&agent_id("10000002")).unwrap();
         let canvas = Canvas::new(100, 30);
-        let (rooms, corridor_y) = layout(&canvas).expect("layout");
+        let layout = layout(&canvas).expect("layout");
+        let rooms = layout.rooms;
         let spots = vec![
             Spot {
                 room: 0,
@@ -1523,14 +1539,14 @@ mod tests {
                 y: rooms[1].floor_y(),
             },
         ];
-        let first = position_at(agent, &spots, 0, &rooms, corridor_y);
-        let same = position_at(agent, &spots, 0, &rooms, corridor_y);
-        let later = position_at(agent, &spots, 6, &rooms, corridor_y);
+        let first = position_at(agent, &spots, 0, &layout);
+        let same = position_at(agent, &spots, 0, &layout);
+        let later = position_at(agent, &spots, 6, &layout);
         assert_eq!(first, same);
         assert_ne!(first, later);
         // The path through the corridor never leaves the canvas.
         for tick in 0..60 {
-            let (x, y, _) = position_at(agent, &spots, tick, &rooms, corridor_y);
+            let (x, y, _) = position_at(agent, &spots, tick, &layout);
             assert!(x < canvas.width && y < canvas.height, "{tick}: {x},{y}");
         }
     }
@@ -1538,7 +1554,8 @@ mod tests {
     #[test]
     fn exchanges_are_drawn_for_two_different_roles_in_a_room() {
         let mut canvas = Canvas::new(60, 24);
-        let (rooms, _) = layout(&canvas).expect("layout");
+        let layout = layout(&canvas).expect("layout");
+        let rooms = layout.rooms;
         let drawn = vec![
             DrawnAgent {
                 room: 0,
@@ -1583,7 +1600,7 @@ mod tests {
         let screen = scene(&mut view, 80, 24, theme(true));
         assert!(screen.contains("No active agents"), "{screen}");
         assert!(screen.contains("PROJECT LAB"), "{screen}");
-        assert!(screen.contains("NO ACTIVE PROJECT"), "{screen}");
+        assert!(screen.contains("no active project"), "{screen}");
     }
 
     #[test]

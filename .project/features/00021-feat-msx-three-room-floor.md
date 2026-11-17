@@ -18,15 +18,18 @@ context, and a two-way link with the active project's Kanban board.
 ## Acceptance criteria
 
 1. The floor always shows three fixed rooms — Project Lab, War Room, Lounge —
-   and a corridor at 60×20, 80×24, and 100×30; rooms do not paginate.
-2. The Project Lab names the active project and shows its open tasks with
-   state; with no active project it gives the next action.
+   and a corridor at 60×20, 80×24, and 100×30; the T plan is used where the
+   scene fits and a compact row is the narrow fallback. Rooms do not paginate.
+2. The Project Lab shows the active project's task-state dots without mixing
+   task text into the scene; with no active project the header gives the next
+   action.
 3. The Tech Lead is in the War Room, focused agents use focus desks, active
    project workers are in the Project Lab, and every other active agent is in
    the Lounge; each appears once and archived agents are counted.
-4. Selecting an agent shows its current task in the status line; `Enter` opens
-   the detail with a `Working on` section; `t` opens the first task's read-only
-   story detail.
+4. Room interiors contain only titles, furniture, icons, and agent faces.
+   Selecting an agent shows its name, role, and room in the status line;
+   `Enter` opens the detail with a `Working on` section; `t` opens the first
+   task's read-only story detail.
 5. Agents move deterministically between room spots and along the corridor,
    with `(zzz)` idle, exchange markers, and no wall-clock or random input.
 6. `f` on the floor opens the active project's Kanban; `f` on the Kanban opens
@@ -65,9 +68,10 @@ context, and a two-way link with the active project's Kanban board.
   audit, deny).
 - `src/app/floor.rs` tests cover the active project, attached tasks, fixed room
   assignment, task detail, and empty states.
-- `src/cli/tui/floor.rs` tests cover the three rooms, task board, decorations,
-  60×20/80×24/100×30, ASCII, deterministic movement, exchanges, selection,
-  empty states, and the selected task.
+- `src/cli/tui/floor.rs` tests cover the T plan and row fallback, three rooms,
+  furniture/decoration icons, task-state dots without room prose,
+  60×20/80×24/100×30, ASCII, deterministic slower movement, exchanges,
+  selection, empty states, and the selected task.
 - `tests/db_tasks.rs` covers the project and agent open-task queries, ordering,
   state, and assignee.
 - `src/cli/tui/mod.rs` tests cover the bidirectional Kanban link, preserved

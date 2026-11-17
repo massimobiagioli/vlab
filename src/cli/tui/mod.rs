@@ -816,7 +816,7 @@ impl App {
             }
             let animating = self.screen == Screen::Floor && matches!(self.mode, Mode::Browse);
             let timeout = if animating {
-                std::time::Duration::from_millis(120)
+                std::time::Duration::from_millis(150)
             } else {
                 std::time::Duration::from_millis(200)
             };
