@@ -891,16 +891,21 @@ enqueued immediately:
    model-chosen order.
 4. Mark the selected request as `PLANNING`.
 5. Give the Tech Lead the request and relevant team context, including the project agent roster (or the laboratory roster when none is assigned) and the bounded memories defined in §3.5.
-6. Obtain structured user-story proposals.
-7. Validate the proposals locally.
-8. Persist valid stories, assignments, due dates, and rationale atomically.
-9. Mark the request as `PLANNED`.
-10. Run the bounded real execution workflow (ADR-0050): for each assigned
+6. Obtain structured user-story proposals. The Tech Lead is told that no human
+   is available and must resolve ambiguity with explicit assumptions.
+7. If the proposal contains clarification questions, make up to two bounded
+   follow-up calls with the same context and require a story-only plan. Never
+   ask the human; if questions remain after two calls, fail the request with
+   `clarification_unresolved`.
+8. Validate the proposals locally.
+9. Persist valid stories, assignments, due dates, and rationale atomically.
+10. Mark the request as `PLANNED`.
+11. Run the bounded real execution workflow (ADR-0050): for each assigned
     `IN_PROGRESS` story, create a git worktree, run the bounded action loop,
     commit, review, and mark the story `DONE`. Review is assigned to the first
     active QA in the project roster, else the Tech Lead.
-11. Best effort: request and store a bounded model-generated project memory summary.
-12. Refresh the dashboard with the outcome and continue with the next queued
+12. Best effort: request and store a bounded model-generated project memory summary.
+13. Refresh the dashboard with the outcome and continue with the next queued
     request.
 
 The original request shall remain linked to every generated story.
@@ -967,15 +972,18 @@ These dates are planning estimates, not delivery commitments.
 
 ### 9.6 Incomplete or Failed Planning
 
-If clarification is necessary, preserve the request as `NEEDS_CLARIFICATION` and show the questions.
+The Tech Lead resolves clarification autonomously as described in §9.2. New
+requests do not wait for a human. If the bounded clarification calls still
+return questions, the request is preserved as `FAILED` with the stable code
+`clarification_unresolved`; a provider or validation failure is preserved with
+its own code.
 
-If processing fails, preserve it as `FAILED` with an actionable reason.
+In every case the request remains visible in the `TODO` intake view for
+traceability. No partially validated story set shall be committed.
 
-In either case, the request remains visible in the `TODO` intake view.
-
-No partially validated story set shall be committed.
-
-The initial release does not include a dedicated retry command. Users may submit a revised request; the previous record remains available for traceability.
+`NEEDS_CLARIFICATION` remains readable for legacy rows, but new planning never
+writes it. The initial release does not include a dedicated retry command.
+Users may submit a revised request; the previous record remains available.
 
 ## 10. Kanban Overview
 
@@ -1286,6 +1294,9 @@ The initial release is acceptable when:
 25. The floor shows the fixed Project Lab, War Room, and Lounge with real task
     context, deterministic movement and interactions, and bidirectional links
     with the active project's Kanban (`k` to the board, `f` to the floor).
+26. New requests never wait for human clarification: the Tech Lead resolves
+    ambiguity in up to two bounded follow-up calls, otherwise the request fails
+    with `clarification_unresolved` and no partial stories.
 
 ## 18. Incremental Delivery Plan
 

@@ -24,6 +24,10 @@ use std::time::Duration;
 
 pub const STALE_PLANNING_SECONDS: i64 = 240;
 
+/// The Tech Lead must resolve its own clarification questions. Two bounded
+/// follow-up turns are allowed before the request fails without asking a human.
+pub const MAX_CLARIFICATION_ROUNDS: u32 = 2;
+
 fn contains_secret(value: &str, secret: Option<&str>) -> bool {
     secret.is_some_and(|secret| !secret.is_empty() && value.contains(secret))
 }
@@ -320,7 +324,7 @@ pub fn plan_queued(
             open_stories: store.agent_open_story_count(&member.id)?,
         });
     }
-    let prompt = prompt::build(&PlanningContext {
+    let planning_context = PlanningContext {
         project_id: project.id.to_string(),
         project_name: project.name.clone(),
         lab_name: lab.name,
@@ -333,7 +337,8 @@ pub fn plan_queued(
         request_date: created_at.chars().take(10).collect(),
         model: settings.model.to_string(),
         max_output_tokens: limits.max_output_tokens,
-    });
+    };
+    let prompt = prompt::build(&planning_context);
 
     let cancel_check = cancel.clone();
     let mut budget = Budget::new(limits, cancel);
@@ -436,7 +441,7 @@ pub fn plan_queued(
             validation: true,
         });
     }
-    let validated = match schema::validate(&response.content) {
+    let mut validated = match schema::validate(&response.content) {
         Ok(plan) => plan,
         Err(error) => {
             finish_failed(
@@ -462,21 +467,161 @@ pub fn plan_queued(
             });
         }
     };
-    if !validated.questions.is_empty() {
-        store.finish_clarification(&request_id, &validated.questions)?;
-        record(
+    let mut clarification_rounds = 0;
+    while !validated.questions.is_empty() {
+        if clarification_rounds >= MAX_CLARIFICATION_ROUNDS {
+            finish_failed(
+                store,
+                &request_id,
+                "clarification_unresolved",
+                "the team could not resolve the open questions autonomously.",
+            )?;
+            record(
+                store,
+                run_id,
+                EventKind::PlanningFailed,
+                Outcome::Failure,
+                Some(&request_id),
+                Some("clarification_unresolved"),
+                None,
+            );
+            return Ok(PlanningOutcome::Failed {
+                request_id,
+                code: "clarification_unresolved",
+                hint: "the team could not resolve the open questions autonomously.",
+                validation: true,
+            });
+        }
+        clarification_rounds += 1;
+        let clarification = prompt::build_clarification(&planning_context, &validated.questions);
+        let clarification_limits = ExecutionLimits {
+            max_attempts: 1,
+            total_deadline: Duration::from_secs(90),
+            ..limits
+        };
+        let mut clarification_budget = Budget::new(clarification_limits, cancel_check.clone());
+        let clarification_response = match invocation::invoke(
             store,
+            &lead.id,
+            InvocationKind::Planning,
+            settings.provider.as_str(),
+            provider,
+            &clarification,
+            &mut clarification_budget,
+            clock,
             run_id,
-            EventKind::PlanningCompleted,
-            Outcome::Success,
-            Some(&request_id),
-            None,
-            None,
-        );
-        return Ok(PlanningOutcome::NeedsClarification {
-            request_id,
-            questions: validated.questions,
-        });
+        ) {
+            Ok(response) => {
+                if cancel_check.is_cancelled() {
+                    finish_failed(
+                        store,
+                        &request_id,
+                        "cancelled",
+                        "the operation was cancelled.",
+                    )?;
+                    record(
+                        store,
+                        run_id,
+                        EventKind::PlanningFailed,
+                        Outcome::Cancelled,
+                        Some(&request_id),
+                        Some("cancelled"),
+                        None,
+                    );
+                    return Ok(PlanningOutcome::Cancelled { request_id });
+                }
+                response
+            }
+            Err(ProviderError::Cancelled) => {
+                finish_failed(
+                    store,
+                    &request_id,
+                    "cancelled",
+                    "the operation was cancelled.",
+                )?;
+                record(
+                    store,
+                    run_id,
+                    EventKind::PlanningFailed,
+                    Outcome::Cancelled,
+                    Some(&request_id),
+                    Some("cancelled"),
+                    None,
+                );
+                return Ok(PlanningOutcome::Cancelled { request_id });
+            }
+            Err(error) => {
+                let (code, hint) = provider_failure(&error);
+                finish_failed(store, &request_id, code, hint)?;
+                record(
+                    store,
+                    run_id,
+                    EventKind::PlanningFailed,
+                    Outcome::Failure,
+                    Some(&request_id),
+                    Some(code),
+                    None,
+                );
+                return Ok(PlanningOutcome::Failed {
+                    request_id,
+                    code,
+                    hint,
+                    validation: false,
+                });
+            }
+        };
+        if contains_secret(
+            &clarification_response.content,
+            settings.credentials.deepseek_api_key.as_deref(),
+        ) {
+            finish_failed(
+                store,
+                &request_id,
+                "validation",
+                "the clarification response contained a value that looks like the provider credential.",
+            )?;
+            record(
+                store,
+                run_id,
+                EventKind::PlanningFailed,
+                Outcome::Failure,
+                Some(&request_id),
+                Some("validation"),
+                None,
+            );
+            return Ok(PlanningOutcome::Failed {
+                request_id,
+                code: "validation",
+                hint: "remove credentials from the provider response.",
+                validation: true,
+            });
+        }
+        validated = match schema::validate(&clarification_response.content) {
+            Ok(plan) => plan,
+            Err(error) => {
+                finish_failed(
+                    store,
+                    &request_id,
+                    "validation",
+                    "the clarification response did not pass local validation.",
+                )?;
+                record(
+                    store,
+                    run_id,
+                    EventKind::PlanningFailed,
+                    Outcome::Failure,
+                    Some(&request_id),
+                    Some("validation"),
+                    None,
+                );
+                return Ok(PlanningOutcome::Failed {
+                    request_id,
+                    code: "validation",
+                    hint: error.rule,
+                    validation: true,
+                });
+            }
+        };
     }
     let applied = match rules::apply(validated, &members, &created_at) {
         Ok(stories) => stories,

@@ -62,6 +62,9 @@ laboratories staffed by AI agents.
   headless drain. The same worker runs due schedules and resumes pending
   stories after the dashboard opens; startup never blocks on a pre-terminal
   message (ADR-0064).
+- **Clarification:** the Tech Lead must resolve its own questions. Up to two
+  bounded follow-up calls are allowed; new requests never wait for a human, and
+  unresolved questions fail with `clarification_unresolved` (ADR-0066).
 - **Floor:** the laboratory floor is a fixed top-down T-plan MSX scene
   (Project Lab and Lounge above, War Room below) with furniture, doors,
   deterministic slow tours, and a bidirectional `f` link to the active
@@ -399,7 +402,7 @@ Ask these before approving any VLab change:
 - `.docs/configuration.md`
 - `.docs/adr/registry.md`
 - `.docs/adr/adr-0061.md`, `.docs/adr/adr-0062.md`, `.docs/adr/adr-0063.md`,
-  `.docs/adr/adr-0064.md`
+  `.docs/adr/adr-0064.md`, `.docs/adr/adr-0066.md`
 - `.agents/skills/msx-computer-senior-software-architect/SKILL.md`
 - `.project/IMPLEMENTATION-PLAN.md`
 - `.project/features/`

@@ -180,7 +180,7 @@ surface. Deletion follows the owning laboratory or project.
 
 | Code | Meaning |
 |---|---|
-| 0 | Success, including a planning clarification. |
+| 0 | Success, including an autonomously resolved planning clarification. |
 | 1 | Operation/provider/storage failure. |
 | 2 | Invalid arguments, input, or configuration. |
 | 3 | Missing entity or active context. |

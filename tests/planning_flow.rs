@@ -302,29 +302,84 @@ fn planning_uses_only_the_assigned_project_roster_when_present() {
 }
 
 #[test]
-fn clarification_preserves_questions_and_no_stories() {
+fn clarification_is_resolved_autonomously_and_creates_stories() {
     let fixture = fixture();
-    let provider = ScriptedProvider::new(vec![Ok(ProviderResponse {
-        content: r#"{"schema_version":1,"clarification_questions":["Which users?"],"stories":[]}"#
-            .to_owned(),
-        model: "m".to_owned(),
-        usage: None,
-        finish_reason: None,
-        request_id: None,
-    })]);
+    let provider = ScriptedProvider::new(vec![
+        Ok(ProviderResponse {
+            content:
+                r#"{"schema_version":1,"clarification_questions":["Which users?"],"stories":[]}"#
+                    .to_owned(),
+            model: "m".to_owned(),
+            usage: None,
+            finish_reason: None,
+            request_id: None,
+        }),
+        Ok(ProviderResponse {
+            content: valid_plan(),
+            model: "m".to_owned(),
+            usage: None,
+            finish_reason: None,
+            request_id: None,
+        }),
+    ]);
     let outcome = run(&fixture, &provider, "Do the thing");
-    let PlanningOutcome::NeedsClarification {
-        request_id,
-        questions,
+    let PlanningOutcome::Planned { request_id, .. } = outcome else {
+        panic!("unexpected outcome: {outcome:?}");
+    };
+    assert_eq!(status(&fixture.db, request_id.as_str()), "PLANNED");
+    assert!(provider.requests().len() >= 2);
+    let count: i64 = fixture.db.block_on(async {
+        sqlx::query_scalar("SELECT count(*) FROM stories")
+            .fetch_one(fixture.db.pool())
+            .await
+            .unwrap()
+    });
+    assert_eq!(count, 1);
+    assert!(
+        provider.requests()[1]
+            .system
+            .contains("No human is available")
+    );
+    assert!(provider.requests()[1].user.contains("<open_questions>"));
+}
+
+#[test]
+fn unresolved_clarification_fails_without_asking_a_human() {
+    let fixture = fixture();
+    let questions =
+        r#"{"schema_version":1,"clarification_questions":["Which users?"],"stories":[]}"#;
+    let provider = ScriptedProvider::new(vec![
+        Ok(ProviderResponse {
+            content: questions.to_owned(),
+            model: "m".to_owned(),
+            usage: None,
+            finish_reason: None,
+            request_id: None,
+        }),
+        Ok(ProviderResponse {
+            content: questions.to_owned(),
+            model: "m".to_owned(),
+            usage: None,
+            finish_reason: None,
+            request_id: None,
+        }),
+        Ok(ProviderResponse {
+            content: questions.to_owned(),
+            model: "m".to_owned(),
+            usage: None,
+            finish_reason: None,
+            request_id: None,
+        }),
+    ]);
+    let outcome = run(&fixture, &provider, "Do the thing");
+    let PlanningOutcome::Failed {
+        request_id, code, ..
     } = outcome
     else {
         panic!("unexpected outcome: {outcome:?}");
     };
-    assert_eq!(questions, ["Which users?"]);
-    assert_eq!(
-        status(&fixture.db, request_id.as_str()),
-        "NEEDS_CLARIFICATION"
-    );
+    assert_eq!(code, "clarification_unresolved");
+    assert_eq!(status(&fixture.db, request_id.as_str()), "FAILED");
     let count: i64 = fixture.db.block_on(async {
         sqlx::query_scalar("SELECT count(*) FROM stories")
             .fetch_one(fixture.db.pool())

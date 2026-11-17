@@ -116,6 +116,28 @@ pub fn build(context: &PlanningContext) -> ProviderRequest {
     }
 }
 
+/// Builds a clarification follow-up for a Tech Lead that must not ask a human.
+///
+/// The same bounded project context is reused. The system instruction makes
+/// autonomy explicit; the open questions are untrusted data, not directions.
+pub fn build_clarification(context: &PlanningContext, questions: &[String]) -> ProviderRequest {
+    let mut request = build(context);
+    request.system.push_str(
+        " No human is available to answer questions. Resolve every open question \
+         yourself using the project, roster, memories, and request. Make explicit, \
+         reasonable assumptions and return stories only: clarification_questions \
+         must be empty. Do not ask further questions.\n",
+    );
+    let mut user = request.user;
+    user.push_str("<open_questions>\n");
+    for question in questions {
+        let _ = writeln!(user, "- {}", escape_data(question));
+    }
+    user.push_str("</open_questions>\n");
+    request.user = user;
+    request
+}
+
 /// Selects whole memories in lab, project, agent order until the 8 KiB cap.
 pub fn select_memories<'a>(
     lab: &'a [MemoryRecord],

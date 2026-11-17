@@ -223,8 +223,10 @@ vlab --run-queue
 validates the JSON proposal, assigns only the project's agents (or laboratory
 members when none is assigned), computes due dates locally, and saves all
 stories in one transaction. It then stores a short planning-summary memory and
-prints the request status. If planning returns questions, the status is
-`NEEDS_CLARIFICATION`; submit a revised request if needed. A missing provider
+prints the request status. If planning returns questions, the Tech Lead
+resolves them autonomously in up to two bounded follow-up calls; unresolved
+questions fail with `clarification_unresolved`, never with a human prompt. A
+missing provider
 configuration leaves the request in `TODO`.
 
 ## 9. Read the result

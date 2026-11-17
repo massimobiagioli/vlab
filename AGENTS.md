@@ -116,6 +116,7 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0063.md`](.docs/adr/adr-0063.md) | Maintain the Tech Lead skill after every feature. |
 | [`.docs/adr/adr-0064.md`](.docs/adr/adr-0064.md) | Non-blocking startup resume. |
 | [`.docs/adr/adr-0065.md`](.docs/adr/adr-0065.md) | Live Kanban refresh and initial-based view keys. |
+| [`.docs/adr/adr-0066.md`](.docs/adr/adr-0066.md) | Autonomous clarification resolution. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
 | [`.project/features/`](.project/features/) | Tracked feature plans with task checklists (ADR-0037). |
 

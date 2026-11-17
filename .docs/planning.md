@@ -52,18 +52,22 @@ Intake and planning are separate (ADR-0061):
 5. Build a bounded prompt with the roster, request text, request date, and the
    selected scoped memories (laboratory, project, Tech Lead agent).
 6. One logical provider invocation through the bounded retry policy.
-7. Parse and validate JSON schema version 1 locally.
-8. Apply project-roster and due-date rules locally.
-9. In one transaction, insert every story as `IN PROGRESS` when it has an
-   assignee and as `TODO` otherwise, then set the terminal status (ADR-0047).
-10. Run the bounded real execution workflow for pending assigned stories
+7. If the proposal contains clarification questions, make up to two bounded
+   follow-up calls with the same context and require a story-only plan. If
+   questions remain, fail the request with `clarification_unresolved`; never
+   ask the human.
+8. Parse and validate JSON schema version 1 locally.
+9. Apply project-roster and due-date rules locally.
+10. In one transaction, insert every story as `IN_PROGRESS` when it has an
+    assignee and as `TODO` otherwise, then set the terminal status (ADR-0047).
+11. Run the bounded real execution workflow for pending assigned stories
     (ADR-0050).
-11. Record `request_queued`, `planning_started`, `provider_attempt`, workflow
+12. Record `request_queued`, `planning_started`, `provider_attempt`, workflow
     events, and `planning_completed` or `planning_failed` with no content.
-12. Continue with the next queued request.
+13. Continue with the next queued request.
 
 No partial story set is committed. The request row is written at intake and is
-preserved on clarification, validation failure, provider failure, timeout,
+preserved on autonomous clarification, validation failure, provider failure, timeout,
 budget exhaustion, and cancellation. A request that cannot be planned by the
 worker is marked `FAILED` with a stable code so the queue advances; a missing
 provider configuration leaves it in `TODO` and pauses the worker.
@@ -74,7 +78,8 @@ provider configuration leaves it in `TODO` and pauses the worker.
 |---|---|---|
 | Queued for the background Tech Lead | `TODO` | 0 |
 | Stories created | `PLANNED` | 0 |
-| Questions returned | `NEEDS_CLARIFICATION` | 0 |
+| Questions resolved autonomously | `PLANNED` | 0 |
+| Questions remain after two autonomous rounds | `FAILED` (`clarification_unresolved`) | 4 |
 | Local validation/assignment/date failure | `FAILED` (`validation`) | 4 |
 | Provider authentication/rate/transport/server/timeout | `FAILED` (provider code) | 1 |
 | Budget exhausted | `FAILED` (`budget_exceeded`) | 1 |
@@ -136,7 +141,8 @@ environment and no OS sandbox; use a trusted machine and account.
   the `Authorization` header.
 - Attempt timeout 60 s, connect timeout 10 s, total planning deadline 240 s,
   response body cap 256 KiB, max output tokens 4096.
-- Planning uses at most one logical invocation and two retries. Only
+- Planning uses one initial logical invocation with up to two retries, plus at
+  most two autonomous clarification invocations with one attempt each. Only
   rate-limit, timeout, transport, and 5xx failures are retried; authentication,
   malformed output, oversized output, validation failures, and cancellation are
   not. Workflow calls use one attempt per call and are bounded separately
@@ -200,7 +206,7 @@ same validation and is untrusted prompt context.
 
 | Limit | Value |
 |---|---|
-| Logical invocation per request | 1 |
+| Logical invocations per request | 1 initial + up to 2 clarification (1 attempt each) |
 | HTTP attempts | 1 + up to 2 retries |
 | Attempt timeout | 60 s |
 | Connect timeout | 10 s |
