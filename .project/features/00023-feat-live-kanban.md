@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00023` |
 | Branch | `feat/live-kanban` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-17 |
 | Related ADRs | ADR-0065 (refresh and keys), ADR-0038 (dashboards), ADR-0062 (floor link) |
 | Scope | In-place Kanban refresh and consistent `k`/`f` shortcuts |
@@ -51,7 +51,7 @@ point.
 - `the_kanban_refreshes_without_leaving_the_screen` inserts a story and calls
   the live refresh without changing screen.
 - `the_kanban_and_floor_link_both_ways` covers `k`/`f` and `Esc`.
-- Hosted CI has not run; the plan stays `In progress` until it is green.
+- Hosted CI is green on commit `502f9ce`.
 
 ## Task checklist
 
@@ -61,4 +61,4 @@ point.
   floor from Kanban.
 - [x] **F03-01** Update action bars, help, tests, and documentation.
 - [x] **F04-01** Run `make check`.
-- [ ] **F04-02** Push, confirm hosted CI is green, and set the status to `Done`.
+- [x] **F04-02** Push, confirm hosted CI is green, and set the status to `Done`.
