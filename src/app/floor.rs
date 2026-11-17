@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::app::AppError;
-use crate::app::directory::{AgentRecord, Directory, LabOverview};
+use crate::app::directory::{AgentRecord, AgentTask, Directory, LabOverview};
 use crate::app::projects::ProjectStore;
 use crate::app::storage::AppStateStore;
 use crate::domain::agent::Role;
@@ -27,6 +27,8 @@ pub struct FloorAgent {
     pub open_stories: u64,
     /// Projects whose pod includes this agent (explicit or whole-lab).
     pub projects: Vec<ProjectId>,
+    /// Open stories assigned to this agent, in work order.
+    pub tasks: Vec<AgentTask>,
 }
 
 impl FloorAgent {
@@ -43,6 +45,11 @@ impl FloorAgent {
     /// An agent with exactly one open story works in the project huddle.
     pub fn is_working(&self) -> bool {
         self.open_stories > 0 && !self.is_focused()
+    }
+
+    /// The first open task, used by the status line and the `t` action.
+    pub fn primary_task(&self) -> Option<&AgentTask> {
+        self.tasks.first()
     }
 }
 
@@ -62,6 +69,8 @@ pub struct FloorPod {
     /// The project has no explicit roster, so the whole active laboratory
     /// works on it (planning semantics, ADR-0034).
     pub whole_lab: bool,
+    /// Open stories in this project, including unassigned `TODO` work.
+    pub tasks: Vec<AgentTask>,
 }
 
 /// Everything the floor screen renders, computed from stored data only.
@@ -69,15 +78,45 @@ pub struct FloorPod {
 pub struct Floor {
     pub lab: LabOverview,
     pub lead: Option<AgentId>,
+    pub active_project: Option<ProjectId>,
     pub agents: Vec<FloorAgent>,
     pub pods: Vec<FloorPod>,
     /// Active members are shown; archived members are counted and hidden.
     pub archived: usize,
 }
 
+/// The three fixed rooms of the laboratory plan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FloorRoom {
+    ProjectLab,
+    WarRoom,
+    Lounge,
+}
+
 impl Floor {
     pub fn agent(&self, id: &AgentId) -> Option<&FloorAgent> {
         self.agents.iter().find(|agent| &agent.id == id)
+    }
+
+    pub fn active_pod(&self) -> Option<&FloorPod> {
+        let project = self.active_project.as_ref()?;
+        self.pods
+            .iter()
+            .find(|pod| pod.project_id.as_ref() == Some(project))
+    }
+
+    /// The fixed room that owns this agent for the current floor snapshot.
+    pub fn room_for(&self, agent: &FloorAgent) -> FloorRoom {
+        if self.lead.as_ref() == Some(&agent.id) || agent.is_focused() {
+            return FloorRoom::WarRoom;
+        }
+        if agent.is_idle() {
+            return FloorRoom::Lounge;
+        }
+        match self.active_pod() {
+            Some(pod) if pod.members.contains(&agent.id) => FloorRoom::ProjectLab,
+            _ => FloorRoom::Lounge,
+        }
     }
 
     pub fn selected(&self, index: usize) -> Option<&FloorAgent> {
@@ -142,6 +181,9 @@ pub fn show(
     state: &impl AppStateStore,
 ) -> Result<Floor, AppError> {
     let lab_id = crate::app::context::active_lab(state)?.require()?;
+    let selected_project = crate::app::context::active_project(state)
+        .ok()
+        .and_then(|active| active.require().ok());
     let lab = store.lab(&lab_id)?.ok_or_else(|| AppError::NotFound {
         entity: crate::app::EntityKind::Laboratory,
         id: lab_id.to_string(),
@@ -173,10 +215,11 @@ pub fn show(
                 .collect()
         };
         pods.push(FloorPod {
-            project_id: Some(project.id),
+            project_id: Some(project.id.clone()),
             name: project.name,
             members,
             whole_lab,
+            tasks: store.project_open_tasks(&project.id)?,
         });
     }
 
@@ -195,6 +238,7 @@ pub fn show(
             name: "Lounge".to_owned(),
             members: lounge,
             whole_lab: false,
+            tasks: Vec::new(),
         });
     }
 
@@ -240,12 +284,16 @@ pub fn show(
                 .unwrap_or_default(),
             open_stories: store.agent_open_story_count(&id)?,
             projects,
+            tasks: store.agent_open_tasks(&id)?,
         });
     }
 
+    let active_project =
+        selected_project.filter(|id| pods.iter().any(|pod| pod.project_id.as_ref() == Some(id)));
     Ok(Floor {
         lab,
         lead,
+        active_project,
         agents,
         pods,
         archived,
@@ -259,9 +307,11 @@ mod tests {
 
     use super::*;
     use crate::app::directory::LabOverview;
+    use crate::app::kanban::StoryState;
     use crate::app::projects::ProjectOverview;
     use crate::app::storage::{AppStateKey, StorageError};
     use crate::domain::ids::LabId;
+    use crate::domain::ids::StoryId;
     use crate::domain::lab::Lab;
     use crate::domain::project::Project;
 
@@ -272,6 +322,8 @@ mod tests {
         projects: RefCell<HashMap<LabId, Vec<ProjectOverview>>>,
         assignments: RefCell<HashMap<ProjectId, Vec<AgentId>>>,
         open: RefCell<HashMap<AgentId, u64>>,
+        tasks: RefCell<HashMap<AgentId, Vec<AgentTask>>>,
+        project_tasks: RefCell<HashMap<ProjectId, Vec<AgentTask>>>,
         active: RefCell<HashMap<&'static str, String>>,
     }
 
@@ -337,6 +389,17 @@ mod tests {
         fn agent_open_story_count(&self, id: &AgentId) -> Result<u64, StorageError> {
             Ok(self.open.borrow().get(id).copied().unwrap_or(0))
         }
+        fn agent_open_tasks(&self, id: &AgentId) -> Result<Vec<AgentTask>, StorageError> {
+            Ok(self.tasks.borrow().get(id).cloned().unwrap_or_default())
+        }
+        fn project_open_tasks(&self, id: &ProjectId) -> Result<Vec<AgentTask>, StorageError> {
+            Ok(self
+                .project_tasks
+                .borrow()
+                .get(id)
+                .cloned()
+                .unwrap_or_default())
+        }
     }
 
     impl ProjectStore for Fake {
@@ -395,6 +458,20 @@ mod tests {
         }
     }
 
+    fn task(id: &str, project: &str, title: &str, state: StoryState) -> AgentTask {
+        AgentTask {
+            id: StoryId::parse(id).unwrap(),
+            project_id: project_id(project),
+            project_name: "Portal".to_owned(),
+            title: title.to_owned(),
+            state,
+            priority: "high".to_owned(),
+            due_date: "2026-01-03".to_owned(),
+            assignee: None,
+            assignee_name: Some("Ada".to_owned()),
+        }
+    }
+
     fn project(id: &str, name: &str) -> ProjectOverview {
         ProjectOverview {
             id: project_id(id),
@@ -447,8 +524,24 @@ mod tests {
                 id("10000004"), // archived: filtered out
             ],
         );
+        fake.active.borrow_mut().insert(
+            AppStateKey::ActiveProjectId.as_str(),
+            project_id("20000001").to_string(),
+        );
         fake.open.borrow_mut().insert(id("10000002"), 2);
         fake.open.borrow_mut().insert(id("10000003"), 0);
+        let bea_task = task(
+            "30000001",
+            "20000001",
+            "Reset password",
+            StoryState::InProgress,
+        );
+        fake.tasks
+            .borrow_mut()
+            .insert(id("10000002"), vec![bea_task.clone()]);
+        fake.project_tasks
+            .borrow_mut()
+            .insert(project_id("20000001"), vec![bea_task]);
         fake
     }
 
@@ -577,6 +670,53 @@ mod tests {
             floor
                 .focused_agents()
                 .all(|agent| agent.id != id("10000001"))
+        );
+    }
+
+    #[test]
+    fn the_active_project_tasks_and_fixed_rooms_are_resolved() {
+        let floor = show(&fake(), &fake()).unwrap();
+        assert_eq!(floor.active_project, Some(project_id("20000001")));
+        assert_eq!(
+            floor
+                .active_pod()
+                .expect("active project")
+                .tasks
+                .first()
+                .expect("task")
+                .title,
+            "Reset password"
+        );
+        let bea = floor.agent(&id("10000002")).unwrap();
+        assert_eq!(
+            bea.primary_task().expect("agent task").title,
+            "Reset password"
+        );
+        assert_eq!(
+            floor.room_for(floor.agent(&id("10000001")).unwrap()),
+            FloorRoom::WarRoom
+        );
+        assert_eq!(floor.room_for(bea), FloorRoom::WarRoom);
+        assert_eq!(
+            floor.room_for(floor.agent(&id("10000003")).unwrap()),
+            FloorRoom::Lounge
+        );
+    }
+
+    #[test]
+    fn a_single_task_worker_is_in_the_project_lab_and_idle_is_in_the_lounge() {
+        let fake = fake();
+        *fake.open.borrow_mut().get_mut(&id("10000002")).unwrap() = 1;
+        let floor = show(&fake, &fake).unwrap();
+        let bea = floor.agent(&id("10000002")).unwrap();
+        assert_eq!(floor.room_for(bea), FloorRoom::ProjectLab);
+        fake.active
+            .borrow_mut()
+            .remove(AppStateKey::ActiveProjectId.as_str());
+        let floor = show(&fake, &fake).unwrap();
+        assert_eq!(
+            floor.room_for(floor.agent(&id("10000002")).unwrap()),
+            FloorRoom::Lounge
         );
     }
 

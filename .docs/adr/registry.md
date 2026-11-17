@@ -73,7 +73,7 @@ revises a technical decision must keep it current.
 | ADR-0042 | Reusable form modal for dashboard editing | Accepted | 2026-11-13 | — | [adr-0042.md](adr-0042.md) |
 | ADR-0043 | Project editing and full-screen Kanban board | Accepted | 2026-11-13 | — | [adr-0043.md](adr-0043.md) |
 | ADR-0044 | Request intake from the dashboards | Accepted | 2026-11-13 | — | [adr-0044.md](adr-0044.md) |
-| ADR-0045 | Read-only laboratory floor view | Accepted | 2026-11-13 | — | [adr-0045.md](adr-0045.md) |
+| ADR-0045 | Read-only laboratory floor view | Superseded | 2026-11-13 | — | [adr-0045.md](adr-0045.md) |
 | ADR-0046 | Manual laboratory and project memories from the floor | Accepted | 2026-11-13 | — | [adr-0046.md](adr-0046.md) |
 | ADR-0047 | Assigned stories start in IN PROGRESS | Accepted | 2026-11-13 | — | [adr-0047.md](adr-0047.md) |
 | ADR-0048 | Bounded no-tool story workflow simulation | Superseded | 2026-11-13 | — | [adr-0048.md](adr-0048.md) |
@@ -90,6 +90,8 @@ revises a technical decision must keep it current.
 | ADR-0059 | Markdown file store for memories and documents | Accepted | 2026-11-17 | — | [adr-0059.md](adr-0059.md) |
 | ADR-0060 | Agent definitions from markdown files | Accepted | 2026-11-17 | — | [adr-0060.md](adr-0060.md) |
 | ADR-0061 | Background request queue with serial Tech Lead processing | Accepted | 2026-11-17 | — | [adr-0061.md](adr-0061.md) |
+| ADR-0062 | Fixed three-room MSX floor with bidirectional Kanban | Accepted | 2026-11-17 | ADR-0045 | [adr-0062.md](adr-0062.md) |
+| ADR-0063 | Maintain the Tech Lead skill after every feature | Accepted | 2026-11-17 | — | [adr-0063.md](adr-0063.md) |
 
 ## Supersession map
 
@@ -101,3 +103,4 @@ revises a technical decision must keep it current.
 | ADR-0015 | ADR-0030 |
 | ADR-0005 | ADR-0038 |
 | ADR-0048 | ADR-0050 |
+| ADR-0045 | ADR-0062 |

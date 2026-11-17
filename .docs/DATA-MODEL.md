@@ -142,6 +142,13 @@ outcome, stable error code, duration, attempt, provider/model, optional schema
 versions, and timestamp. It has no free-text field and never stores request,
 prompt, response, CV, memory, or credential content.
 
+### Floor read model
+
+Derived, never persisted: the active laboratory and project, active agents,
+their open tasks, the fixed Project Lab/War Room/Lounge assignment, and a
+presentation tick. The tick and agent positions are view state only; they are
+not stored, audited, or sent to the provider (ADR-0062).
+
 ### Interaction
 
 Execution metadata for a model-backed operation: agent, kind, provider, model,

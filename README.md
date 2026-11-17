@@ -136,18 +136,22 @@ with `p`, delete with `d`, and open its full request with `Enter`. Due schedules
 run on dashboard startup and with `make run-schedules`; the page never calls the
 provider.
 
-The **Lab floor** is a deterministic MSX-style 2D laboratory scene: a tiled
-floor, accent-colored project pods, two-line block sprites at wide sizes,
-the Tech Lead at a central desk, `(zzz)` for idle agents, `( ? )`/`( ! )` exchange
-bubbles for two working agents of different roles, and an isolated `focus desk`
-with `(///)` when an agent has several open stories. Press `o` to populate the
-active laboratory, or `m` to manage laboratory and project memories: `n`
-creates, `Enter` views, `e` edits, and `d` deletes after confirmation. Agent
-memories remain automatic and are stored as markdown files under
-`data/memories`; documents imported with `make import` live under
-`data/documents`. In the **Agents** dashboard, `c` duplicates the selected
-profile with a new name and an optional `Preserve memory` choice. The floor
-scene stays read-only. In a non-TTY stream VLab prints help instead of blocking.
+The **Lab floor** is a fixed three-room MSX laboratory: **Project Lab** for the
+active project and its task board, **War Room** for the Tech Lead and focused
+agents, and **Lounge** for idle agents, joined by a corridor with desks, a
+whiteboard, a coffee machine, a plant, and a couch. Agents move deterministically
+between desks and rooms; `(zzz)` marks idle work and `( ? )`/`( ! )`/`⇅` mark
+exchanges. `Enter` opens the agent detail with its current tasks and `t` opens
+the selected task. Press `f` to open the active project's Kanban; `f` on the
+board returns to the floor, and `Esc` returns to the screen that opened the
+current view. Press `o` to populate the active laboratory, or `m` to manage
+laboratory and project memories: `n` creates, `Enter` views, `e` edits, and `d`
+deletes after confirmation. Agent memories remain automatic and are stored as
+markdown files under `data/memories`; documents imported with `make import`
+live under `data/documents`. In the **Agents** dashboard, `c` duplicates the
+selected profile with a new name and an optional `Preserve memory` choice. The
+floor scene stays read-only. In a non-TTY stream VLab prints help instead of
+blocking.
 
 The **Metrics** entry (or `6`) shows the active laboratory at a glance:
 project count, `TODO`/in progress/in review/blocked/done counts, open, closed,

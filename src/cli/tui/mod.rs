@@ -727,7 +727,9 @@ struct App {
     status: Option<String>,
     home_selected: usize,
     kanban: Option<KanbanView>,
+    kanban_return: Screen,
     floor: Option<floor::FloorView>,
+    floor_return: Screen,
     floor_error: Option<String>,
     memory: Option<memory::MemoryView>,
     metrics: Option<metrics::LabMetrics>,
@@ -779,7 +781,9 @@ impl App {
             status: None,
             home_selected: 0,
             kanban: None,
+            kanban_return: Screen::Group(DashboardGroup::Projects),
             floor: None,
+            floor_return: Screen::Home,
             floor_error: None,
             memory: None,
             metrics: None,
@@ -810,15 +814,21 @@ impl App {
                 }
                 return Ok(());
             }
-            let has_event =
-                event::poll(std::time::Duration::from_millis(200)).map_err(|error| {
-                    AppError::Io {
-                        context: "polling terminal input",
-                        kind: error.kind(),
-                    }
-                })?;
+            let animating = self.screen == Screen::Floor && matches!(self.mode, Mode::Browse);
+            let timeout = if animating {
+                std::time::Duration::from_millis(120)
+            } else {
+                std::time::Duration::from_millis(200)
+            };
+            let has_event = event::poll(timeout).map_err(|error| AppError::Io {
+                context: "polling terminal input",
+                kind: error.kind(),
+            })?;
             self.drain_worker();
             if !has_event {
+                if animating && let Some(view) = &mut self.floor {
+                    view.advance();
+                }
                 continue;
             }
             let event = event::read().map_err(|error| AppError::Io {
@@ -1628,6 +1638,10 @@ impl App {
                     self.apply_result(result);
                 }
             }
+            KeyCode::Char('f') => {
+                self.open_floor_from_kanban();
+                self.status = Some("Laboratory floor · press f to return to the board.".to_owned());
+            }
             KeyCode::Left | KeyCode::Char('h') => {
                 if let Some(view) = self.kanban.as_mut() {
                     view.move_column(-1);
@@ -1683,11 +1697,35 @@ impl App {
     fn open_kanban(&mut self) -> Result<(), AppError> {
         let project = self
             .selected_project()
+            .map(|project| project.id.clone())
             .ok_or_else(|| AppError::Precondition {
                 problem: "no project is selected.".to_owned(),
                 hint: "Move the selection.".to_owned(),
             })?;
-        let board = kanban::show(&self.db, &self.db, project.id.as_str())?;
+        self.kanban_return = Screen::Group(DashboardGroup::Projects);
+        let board = kanban::show(&self.db, &self.db, project.as_str())?;
+        self.kanban = Some(KanbanView::new(board));
+        self.screen = Screen::Kanban;
+        self.status = None;
+        Ok(())
+    }
+
+    fn open_kanban_from_floor(&mut self) -> Result<(), AppError> {
+        let project = self
+            .floor
+            .as_ref()
+            .and_then(|view| view.floor.active_project.clone())
+            .or_else(|| self.active_project.clone())
+            .ok_or_else(|| AppError::Precondition {
+                problem: "no active project is selected.".to_owned(),
+                hint: "Open a project from Projects, then return to the floor.".to_owned(),
+            })?;
+        // Going back to the board that opened this floor must keep that
+        // board's own return path (Projects), not trap the user in a loop.
+        if self.floor_return != Screen::Kanban {
+            self.kanban_return = Screen::Floor;
+        }
+        let board = kanban::show(&self.db, &self.db, project.as_str())?;
         self.kanban = Some(KanbanView::new(board));
         self.screen = Screen::Kanban;
         self.status = None;
@@ -1705,7 +1743,7 @@ impl App {
 
     fn close_kanban(&mut self) {
         self.kanban = None;
-        self.screen = Screen::Group(DashboardGroup::Projects);
+        self.screen = self.kanban_return;
         self.status = None;
         self.reload();
     }
@@ -1775,6 +1813,18 @@ impl App {
     }
 
     fn open_floor(&mut self) {
+        self.floor_return = Screen::Home;
+        self.screen = Screen::Floor;
+        self.status = None;
+        self.reload();
+    }
+
+    fn open_floor_from_kanban(&mut self) {
+        // Returning to a floor that opened this board must not lose its own
+        // return path (for example Home -> Floor -> Kanban -> Floor).
+        if self.kanban_return != Screen::Floor {
+            self.floor_return = Screen::Kanban;
+        }
         self.screen = Screen::Floor;
         self.status = None;
         self.reload();
@@ -2277,13 +2327,25 @@ impl App {
         match key.code {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Esc => {
-                self.home_selected = 4;
-                self.screen = Screen::Home;
-                self.status = None;
+                if self.floor_return == Screen::Kanban && self.kanban.is_some() {
+                    self.screen = Screen::Kanban;
+                    self.status = None;
+                    self.reload();
+                } else {
+                    self.home_selected = 4;
+                    self.screen = Screen::Home;
+                    self.status = None;
+                }
             }
             KeyCode::Char('?') => self.mode = Mode::Help,
             KeyCode::Char('o') => self.open_populate_active(),
             KeyCode::Char('m') => self.open_memories(),
+            KeyCode::Char('f') => {
+                if let Err(error) = self.open_kanban_from_floor() {
+                    self.show_error(error);
+                }
+            }
+            KeyCode::Char('t') => self.open_floor_task(),
             KeyCode::Up | KeyCode::Char('k') => {
                 if let Some(view) = self.floor.as_mut() {
                     view.move_selection(-1);
@@ -2506,19 +2568,54 @@ impl App {
     }
 
     fn open_floor_agent(&mut self) {
-        let Some(id) = self
+        let Some(agent) = self
             .floor
             .as_ref()
             .and_then(floor::FloorView::selected_agent)
-            .map(|agent| agent.id.clone())
+            .cloned()
         else {
             return;
         };
-        match agents::detail(&self.db, id.as_str()) {
+        match agents::detail(&self.db, agent.id.as_str()) {
             Ok(detail) => {
+                let mut lines = agent_detail_lines(&detail);
+                lines.push("Working on:".to_owned());
+                if agent.tasks.is_empty() {
+                    lines.push("  no open task (idle)".to_owned());
+                } else {
+                    for task in &agent.tasks {
+                        lines.push(format!(
+                            "  [{}] {} · {} · due {}",
+                            task.state.label(),
+                            clean(&task.title),
+                            clean(&task.project_name),
+                            clean(&task.due_date)
+                        ));
+                    }
+                }
                 self.mode = Mode::Message {
                     title: format!("Agent {}", detail.profile.id),
-                    lines: agent_detail_lines(&detail),
+                    lines,
+                };
+            }
+            Err(error) => self.show_error(error),
+        }
+    }
+
+    fn open_floor_task(&mut self) {
+        let Some(task) = self
+            .floor
+            .as_ref()
+            .and_then(floor::FloorView::selected_task)
+        else {
+            self.status = Some("No open task for the selected agent.".to_owned());
+            return;
+        };
+        match kanban::story(&self.db, &self.db, &task.project_id, &task.id) {
+            Ok(detail) => {
+                self.mode = Mode::Story {
+                    detail: Box::new(detail),
+                    scroll: 0,
                 };
             }
             Err(error) => self.show_error(error),
@@ -4293,13 +4390,14 @@ fn action_items(group: DashboardGroup) -> Vec<(&'static str, &'static str)> {
     }
 }
 
-const KANBAN_ACTIONS: [(&str, &str); 10] = [
+const KANBAN_ACTIONS: [(&str, &str); 11] = [
     ("[n]", "Request"),
     ("[←/→]", "List"),
     ("[↑/↓]", "Card"),
     ("[PgUp/Dn]", "Scroll"),
     ("[Enter]", "Detail"),
     ("[i]", "Interactions"),
+    ("[f]", "Floor"),
     ("[r]", "Reload"),
     ("[?]", "Help"),
     ("[Esc]", "Back"),
@@ -4807,9 +4905,11 @@ fn kanban_help_lines() -> Vec<String> {
         "g/G         first/last card in the list".to_owned(),
         "Enter       card detail (↑/↓ scroll, Esc close)".to_owned(),
         "n           new request for this project".to_owned(),
+        "i           project interaction history".to_owned(),
+        "f           open the active project's laboratory floor".to_owned(),
         "r           reload the board".to_owned(),
         "?           this help".to_owned(),
-        "Esc         back to projects".to_owned(),
+        "Esc         back to the previous screen".to_owned(),
         "q           quit".to_owned(),
         String::new(),
         "The board is read-only; it never changes story state.".to_owned(),
@@ -4871,19 +4971,21 @@ fn populate_help_lines() -> Vec<String> {
 fn floor_help_lines() -> Vec<String> {
     vec![
         "j/k or ↑/↓  previous/next agent".to_owned(),
-        "h/l or ←/→  previous/next pod page".to_owned(),
+        "h/l or ←/→  previous/next room".to_owned(),
         "g/G         first/last agent".to_owned(),
-        "Enter       agent detail".to_owned(),
+        "Enter       agent detail with current tasks".to_owned(),
+        "t           open the selected agent's first task".to_owned(),
+        "f           open the active project's Kanban".to_owned(),
         "o           populate the active laboratory".to_owned(),
         "m           laboratory and project memories".to_owned(),
         "r           reload the floor".to_owned(),
         "?           this help".to_owned(),
-        "Esc         back to home".to_owned(),
+        "Esc         back to home or the Kanban".to_owned(),
         "q           quit".to_owned(),
         String::new(),
-        "The floor is a read-only overview of assignments, not live activity.".to_owned(),
-        "(zzz) means no open stories; ( ? ) ( ! ) is an exchange;".to_owned(),
-        "(///) is focused work at an isolated desk.".to_owned(),
+        "The fixed rooms are Project Lab, War Room, and Lounge.".to_owned(),
+        "Movement is a deterministic animation of stored state, not live activity.".to_owned(),
+        "(zzz) idle · ( ? ) ( ! ) exchange · (///) focused work.".to_owned(),
     ]
 }
 
@@ -5156,7 +5258,9 @@ mod tests {
             status: None,
             home_selected: 0,
             kanban: None,
+            kanban_return: Screen::Group(DashboardGroup::Projects),
             floor: None,
+            floor_return: Screen::Home,
             floor_error: None,
             memory: None,
             metrics: None,
@@ -6492,6 +6596,80 @@ mod tests {
             "{:?}",
             app.status
         );
+    }
+
+    #[test]
+    fn the_kanban_and_floor_link_both_ways() {
+        let (mut app, _dir) = seeded();
+        crate::app::context::save_active_project(&app.db, &ProjectId::parse("0b1c2d3e").unwrap())
+            .unwrap();
+        app.handle_key(key(KeyCode::Char('v')));
+        assert_eq!(app.screen, Screen::Kanban);
+        app.handle_key(key(KeyCode::Char('f')));
+        assert_eq!(app.screen, Screen::Floor);
+        assert!(app.floor.is_some());
+        assert_eq!(app.floor_return, Screen::Kanban);
+        app.handle_key(key(KeyCode::Char('f')));
+        assert_eq!(app.screen, Screen::Kanban);
+        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(app.screen, Screen::Group(DashboardGroup::Projects));
+
+        app.handle_key(key(KeyCode::Char('v')));
+        app.handle_key(key(KeyCode::Char('f')));
+        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(app.screen, Screen::Kanban);
+        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(app.screen, Screen::Group(DashboardGroup::Projects));
+
+        app.screen = Screen::Home;
+        app.home_selected = 4;
+        app.handle_key(key(KeyCode::Enter));
+        assert_eq!(app.screen, Screen::Floor);
+        assert_eq!(app.floor_return, Screen::Home);
+        app.handle_key(key(KeyCode::Char('f')));
+        assert_eq!(app.screen, Screen::Kanban);
+        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(app.screen, Screen::Floor);
+        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(app.screen, Screen::Home);
+    }
+
+    #[test]
+    fn the_floor_detail_and_task_action_show_the_current_story() {
+        let (mut app, _dir) = seeded();
+        app.db
+            .execute(
+                "INSERT INTO agents (id, name, role, description, skills_json, provider, model, \
+                 archived_at, created_at, updated_at) \
+                 VALUES ('aaaaaaaa', 'Grace', 'lead', 'Plans work', '[]', 'deepseek', \
+                 'deepseek-chat', NULL, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            )
+            .unwrap();
+        app.db
+            .execute(
+                "INSERT INTO lab_memberships (lab_id, agent_id, joined_at) \
+                 VALUES ('a3f91c07', 'aaaaaaaa', '2026-01-01T00:00:00Z')",
+            )
+            .unwrap();
+        app.db
+            .execute(
+                "UPDATE stories SET assigned_agent_id = 'aaaaaaaa', state = 'IN_PROGRESS' \
+                 WHERE id = '2d3e4f50'",
+            )
+            .unwrap();
+        crate::app::context::save_active_project(&app.db, &ProjectId::parse("0b1c2d3e").unwrap())
+            .unwrap();
+        app.screen = Screen::Floor;
+        app.reload();
+        app.handle_key(key(KeyCode::Enter));
+        let Mode::Message { lines, .. } = &app.mode else {
+            panic!("expected agent detail, got {:?}", app.mode);
+        };
+        assert!(lines.iter().any(|line| line == "Working on:"), "{lines:?}");
+        assert!(lines.iter().any(|line| line.contains("Reset")), "{lines:?}");
+        app.handle_key(key(KeyCode::Esc));
+        app.handle_key(key(KeyCode::Char('t')));
+        assert!(matches!(app.mode, Mode::Story { .. }), "{:?}", app.mode);
     }
 
     #[test]

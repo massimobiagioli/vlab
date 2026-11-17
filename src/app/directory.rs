@@ -4,11 +4,12 @@
 //! with SQLite. Records keep the stored strings as-is so that `--check-lab`
 //! can report malformed values instead of failing the whole command.
 
+use crate::app::kanban::StoryState;
 use crate::app::storage::StorageError;
 use crate::domain::agent::{
     AgentError, AgentProfile, Description, DescriptionError, Role, RoleError,
 };
-use crate::domain::ids::{AgentId, LabId, ProjectId};
+use crate::domain::ids::{AgentId, LabId, ProjectId, StoryId};
 use crate::domain::lab::Lab;
 use crate::domain::name::{Name, NameError};
 use crate::domain::settings::{ModelId, ProviderId, SettingsError};
@@ -22,6 +23,20 @@ pub struct LabOverview {
     pub description: String,
     pub agent_count: u64,
     pub project_count: u64,
+}
+
+/// One open story as shown on the laboratory floor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentTask {
+    pub id: StoryId,
+    pub project_id: ProjectId,
+    pub project_name: String,
+    pub title: String,
+    pub state: StoryState,
+    pub priority: String,
+    pub due_date: String,
+    pub assignee: Option<AgentId>,
+    pub assignee_name: Option<String>,
 }
 
 /// A stored agent row, before field-level validation.
@@ -196,6 +211,16 @@ pub trait Directory {
     }
 
     fn agent_project_names(&self, _: &AgentId) -> Result<Vec<(ProjectId, String)>, StorageError> {
+        Ok(Vec::new())
+    }
+
+    /// Open stories assigned to `id`, newest work first by state and due date.
+    fn agent_open_tasks(&self, _: &AgentId) -> Result<Vec<AgentTask>, StorageError> {
+        Ok(Vec::new())
+    }
+
+    /// Open stories in `project`, including unassigned `TODO` work.
+    fn project_open_tasks(&self, _: &ProjectId) -> Result<Vec<AgentTask>, StorageError> {
         Ok(Vec::new())
     }
 }

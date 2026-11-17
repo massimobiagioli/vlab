@@ -80,13 +80,16 @@ arrows, `h/l` for pages, the action keys in the bottom bar, `/` to filter, and
 per-state card counts, open, closed, total, completion percentage, pending
 intake, and a per-project table. `r` reloads it. A card is open when its state
 is `TODO`, `IN PROGRESS`, `IN REVIEW`, or `BLOCKED`; it is closed when `DONE`. The
-**Lab floor** is a read-only 2D scene of the active laboratory: project pods,
-the Tech Lead desk, `(zzz)` for idle agents, `( ? )`/`( ! )` exchange bubbles
-for two working agents of different roles, and `(///)` at an isolated focus
-desk for an agent with two or more open stories. Use `↑/↓` for agents,
-`←/→` for pods, `Enter` for agent detail, `o` to populate the active
-laboratory, `m` for memories, `r` to reload, `?` for help, `Esc` home, and `q`
-to quit. The scene itself stays read-only; `o` opens the membership editor.
+**Lab floor** is a fixed three-room MSX scene: **Project Lab** for the active
+project and its task board, **War Room** for the Tech Lead and focused agents,
+and **Lounge** for idle agents, joined by a corridor. Agents move
+deterministically between desks and rooms. `↑/↓` selects agents, `←/→` moves to
+the next occupied room, `Enter` opens the agent detail with its current tasks,
+`t` opens the selected agent's first task, `f` opens the active project's
+Kanban, `o` populates the active laboratory, `m` opens memories, `r` reloads,
+`?` shows help, `Esc` returns to home or the Kanban, and `q` quits. The floor is
+read-only; it never calls the provider. On the Kanban, `f` opens the active
+project's floor; `Esc` returns to the screen that opened the current view.
 
 The **Memories** screen opened with `m` has `Lab` and `Project` tabs. `Tab` or
 `←/→` switches scope, `↑/↓` moves, `Enter` shows the full memory, `n` creates

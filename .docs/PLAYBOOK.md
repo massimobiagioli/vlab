@@ -309,14 +309,18 @@ backups of `settings.yaml` as secrets.
 
 ## 12. Watch the lab floor and manage memories
 
-From the home dashboard choose **Lab floor** (or press `5`). The scene shows
-project pods, the Tech Lead desk, `(zzz)` for idle agents, exchange bubbles for
-two working agents of different roles, and an isolated focus desk for an agent
-with several open stories. `↑/↓` selects agents, `←/→` pages pods, `Enter`
-opens the agent detail, and `r` reloads. Press `m` to open **Memories**:
-`Tab` switches between laboratory and project scope, `n` creates, `Enter`
-views, `e` edits, and `d` deletes after confirmation. Content is bounded and
-credentials are rejected. Agent memories have no manual surface.
+From the home dashboard choose **Lab floor** (or press `5`). The fixed scene
+has a **Project Lab** with the active project's task board, a **War Room** with
+the Tech Lead and focused agents, and a **Lounge** for idle agents, connected
+by a corridor. Agents move deterministically; `(zzz)` marks idle work and
+`( ? )`/`( ! )`/`⇅` mark exchanges. `↑/↓` selects agents, `←/→` moves to the
+next occupied room, `Enter` opens the agent detail with its current tasks, `t`
+opens the selected task, `f` opens the active project's Kanban, and `r`
+reloads. The Kanban `f` key returns to the floor; `Esc` preserves the screen
+that opened the current view. Press `m` to open **Memories**: `Tab` switches
+between laboratory and project scope, `n` creates, `Enter` views, `e` edits,
+and `d` deletes after confirmation. Content is bounded and credentials are
+rejected. Agent memories have no manual surface.
 
 ## 13. Read laboratory metrics
 

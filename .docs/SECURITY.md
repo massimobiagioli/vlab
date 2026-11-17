@@ -75,6 +75,7 @@ Prompts are behavioral guidance, not security boundaries.
 | Schedule → workflow | Do not grant the model a timer or arbitrary command authority. Due schedules create normal bounded requests, at most three per pass; the existing planning/workflow rules and budgets apply; no background daemon. |
 | Queue → worker | Intake only writes a `TODO` request. One in-process worker reads the oldest request, uses its own database connection, runs one bounded planning/workflow at a time, never touches the terminal, and stops on cancellation. No model-chosen order, no parallel provider call, no daemon. |
 | File store → local disk | Reject absolute paths, `..`, symlinks, and paths outside the data directory; bound markdown files; write with private permissions; never execute imported content. |
+| Floor → terminal | The floor is read-only: it renders sanitized stored names, task titles, and states, never prompts, responses, CVs, or credentials; animation is presentation state only and never calls the provider or writes. |
 | Model → orchestrator | Validate responses; never interpret proposals as authorization. |
 | Workflow output → story state | Accept only strict action/review JSON; the application validates and executes actions, owns `IN_REVIEW`/`DONE`, and the model cannot choose a transition. |
 | Orchestrator → worktree | Resolve every path inside the story worktree; reject absolute paths, `..`, and symlink escapes; bound file size, command time, and output. |

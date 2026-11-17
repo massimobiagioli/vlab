@@ -1041,6 +1041,10 @@ A card shows its `TODO` or `PLANNING` status; `Enter` opens a read-only detail
 with the request text. The background Tech Lead removes the request card when
 planning completes and the resulting stories appear.
 
+`f` opens the active laboratory floor for the current project. From the floor,
+`f` returns to the same project's board, and `Esc` preserves the screen that
+opened the current view.
+
 ## 11. Persistence and Data Model
 
 ### 11.1 Recommended Storage
@@ -1229,6 +1233,17 @@ Live-provider tests shall be opt-in and shall never require committed credential
 - `--new-request` queues and exits; `--run-queue` drains a bounded batch.
 - Secret-bearing text is rejected before the request row.
 
+### Floor Tests
+
+- Three fixed rooms and the corridor render at 60×20, 80×24, and 100×30.
+- The active project, task board, and selected agent's task are readable.
+- Room assignment covers lead, focused, working, idle, and archived agents.
+- Movement is deterministic and bounded through the corridor.
+- Exchange markers appear only between different roles in one room.
+- `f` links floor and Kanban both ways and `Esc` preserves the return path.
+- The agent detail shows `Working on`, and `t` opens the story detail.
+- ASCII, no-color, narrow, and empty states remain usable.
+
 ## 17. Acceptance Criteria
 
 The initial release is acceptable when:
@@ -1259,6 +1274,9 @@ The initial release is acceptable when:
 24. Request intake returns immediately with a `TODO` request; a serial
     background worker or `--run-queue` plans it and runs the bounded workflow
     without blocking the dashboard; a second request visibly waits in `TODO`.
+25. The floor shows the fixed Project Lab, War Room, and Lounge with real task
+    context, deterministic movement and interactions, and a bidirectional `f`
+    link with the active project's Kanban.
 
 ## 18. Incremental Delivery Plan
 
@@ -1300,24 +1318,39 @@ The home dashboard lists **Lab floor** as a fifth entry and **Metrics** as a
 sixth. `Enter` or `5` opens the active laboratory's floor; `6` opens the
 metrics screen. `Esc` returns home and `q` quits.
 
-The floor is a read-only, deterministic, MSX-inspired terminal scene:
+The floor is a read-only, deterministic, MSX-inspired terminal scene with a
+fixed laboratory plan (ADR-0062):
 
-- Active agents are shown; archived agents are hidden and counted.
-- Each project is a pod built from its explicit roster. A project with no
-  roster uses the whole active laboratory, matching planning (§9.4). Agents in
-  no pod sit in a `Lounge` pod.
-- The first active `lead` is the Tech Lead at a central coordination desk and is
-  not repeated in the pods.
-- Zero open stories show `(zzz)`. Two working agents of different roles in the
-  same project sit adjacent with `( ? )`, `( ! )`, and `⇅`. Two or more open
-  stories isolate an agent at a `focus desk` with `(///)` or `(</>)`.
-- `↑/↓` select agents, `←/→` page pods, `Enter` opens the existing agent detail,
-  `r` reloads, and `?` shows help. Layout works at 60×20, 80×24, and 100×30;
-  hidden pods and members use explicit indicators.
-- The scene uses a tiled floor, accent-colored project pods, and block sprites:
-  two-line pixel sprites at wide sizes, compact one-line sprites at 60×20.
-- The scene is an overview of stored assignments, not a live trace. It calls no
-  provider, writes nothing, and renders no model text, CV, or credential.
+- Three rooms do not paginate or change position: **Project Lab** for the
+  active project, **War Room** for the Tech Lead and focused agents, and
+  **Lounge** for idle or unrelated agents. A corridor with doors connects them.
+- The first active `lead` is in the War Room. An agent with two or more open
+  stories is focused there. A working member of the active project is in the
+  Project Lab; every other active agent is in the Lounge. Every active agent
+  appears once; archived agents are hidden and counted.
+- The Project Lab names the active project and shows its open tasks with their
+  state, including unassigned `TODO` work. The selected agent's status line
+  shows its current task. `Enter` opens the agent detail with a `Working on`
+  section; `t` opens the selected agent's first task as the read-only story
+  detail.
+- Zero open stories show `(zzz)`. Two agents of different roles in the same
+  room may show `( ? )`, `( ! )`, and `⇅`. Two or more open stories isolate an
+  agent at a focus desk with `(///)`.
+- Agents move deterministically between desks, the board, and the corridor
+  according to stored state. The tick is presentation-only: no wall-clock
+  randomness, provider call, or database write. The scene is an overview of
+  stored assignments, not a live trace.
+- `↑/↓` select agents, `←/→` move to the next occupied room, `Enter` opens the
+  agent detail, `t` opens the selected task, `f` opens the active project's
+  Kanban, `o` populates the laboratory, `m` opens memories, `r` reloads, and
+  `?` shows help. Layout works at 60×20, 80×24, and 100×30.
+- The scene uses a double frame, inverted title bar, `MSX` badge, tiled floors,
+  room accent colors, desks, whiteboard, coffee machine, plant, couch, and
+  block sprites: two-line pixel sprites at wide sizes, compact one-line sprites
+  at narrow sizes. The corridor shows `[f] KANBAN`.
+- The floor and the active project's Kanban link both ways with `f`; `Esc`
+  returns to the screen that opened the current view. The scene renders no
+  model text, CV, or credential.
 
 `m` opens **Memories**, with laboratory and project tabs:
 

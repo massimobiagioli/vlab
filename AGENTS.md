@@ -111,6 +111,9 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0058.md`](.docs/adr/adr-0058.md) | Agent duplication with optional memory preservation. |
 | [`.docs/adr/adr-0059.md`](.docs/adr/adr-0059.md) | Markdown file store for memories and documents. |
 | [`.docs/adr/adr-0060.md`](.docs/adr/adr-0060.md) | Agent definitions from markdown files. |
+| [`.docs/adr/adr-0061.md`](.docs/adr/adr-0061.md) | Background request queue with serial Tech Lead processing. |
+| [`.docs/adr/adr-0062.md`](.docs/adr/adr-0062.md) | Fixed three-room MSX floor with bidirectional Kanban. |
+| [`.docs/adr/adr-0063.md`](.docs/adr/adr-0063.md) | Maintain the Tech Lead skill after every feature. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
 | [`.project/features/`](.project/features/) | Tracked feature plans with task checklists (ADR-0037). |
 
@@ -180,6 +183,7 @@ work.
 | Skill | Path | Use when |
 |---|---|---|
 | `vlab-tech-lead` | [`.agents/skills/vlab-tech-lead/SKILL.md`](.agents/skills/vlab-tech-lead/SKILL.md) | Planning or reviewing a feature end to end; understanding the project, invariants, ADRs, feature plans, and delivery gates. |
+| `msx-computer-senior-software-architect` | [`.agents/skills/msx-computer-senior-software-architect/SKILL.md`](.agents/skills/msx-computer-senior-software-architect/SKILL.md) | Designing MSX-inspired retro graphics, sprites, rooms, animation, and game-like UX in a Rust terminal; translating MSX ideas into `ratatui`. |
 | `vlab-adr` | [`.agents/skills/vlab-adr/SKILL.md`](.agents/skills/vlab-adr/SKILL.md) | Making, revising, or superseding a technical decision; maintaining the registry. |
 | `vlab-rust-tdd` | [`.agents/skills/vlab-rust-tdd/SKILL.md`](.agents/skills/vlab-rust-tdd/SKILL.md) | Implementing or fixing any Rust behavior, domain rule, or test. |
 | `vlab-cli-contract` | [`.agents/skills/vlab-cli-contract/SKILL.md`](.agents/skills/vlab-cli-contract/SKILL.md) | Adding or changing commands, flags, help, output, exit codes, or confirmations. |
@@ -190,6 +194,11 @@ work.
 
 Do not duplicate these procedures in tool-specific files. If a tool cannot
 discover `.agents/skills` natively, configure it to load that directory.
+
+After every implemented feature, update `.agents/skills/vlab-tech-lead` with
+the new project-map entries, invariants, commands, screens, routing, references,
+and lessons. Keep it operational; remove stale guidance instead of appending a
+changelog.
 
 ---
 

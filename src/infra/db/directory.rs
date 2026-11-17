@@ -1,9 +1,10 @@
 //! SQLite implementation of the laboratory and agent directory port.
 
-use crate::app::directory::{AgentRecord, Directory, LabOverview};
+use crate::app::directory::{AgentRecord, AgentTask, Directory, LabOverview};
+use crate::app::kanban::StoryState;
 use crate::app::storage::StorageError;
 use crate::domain::agent::AgentProfile;
-use crate::domain::ids::{AgentId, LabId};
+use crate::domain::ids::{AgentId, LabId, ProjectId, StoryId};
 use crate::domain::lab::Lab;
 use crate::infra::db::{Database, agents, labs, map_sqlx_error};
 
@@ -264,6 +265,97 @@ impl Directory for Database {
                         name,
                     ))
                 })
+                .collect()
+        })
+    }
+
+    fn agent_open_tasks(&self, id: &AgentId) -> Result<Vec<AgentTask>, StorageError> {
+        self.open_tasks("s.assigned_agent_id = ?1", Some(id.as_str()), None)
+    }
+
+    fn project_open_tasks(&self, id: &ProjectId) -> Result<Vec<AgentTask>, StorageError> {
+        self.open_tasks("s.project_id = ?1", None, Some(id.as_str()))
+    }
+}
+
+impl Database {
+    fn open_tasks(
+        &self,
+        filter: &'static str,
+        agent: Option<&str>,
+        project: Option<&str>,
+    ) -> Result<Vec<AgentTask>, StorageError> {
+        self.block_on(async {
+            let mut connection = self
+                .pool()
+                .acquire()
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))?;
+            let sql = format!(
+                "SELECT s.id, s.project_id, p.name, s.title, s.state, s.priority, \
+                        s.due_date, s.assigned_agent_id, a.name \
+                 FROM stories s JOIN projects p ON p.id = s.project_id \
+                 LEFT JOIN agents a ON a.id = s.assigned_agent_id \
+                 WHERE s.state != 'DONE' AND {filter} \
+                 ORDER BY CASE s.state \
+                     WHEN 'IN_PROGRESS' THEN 0 WHEN 'IN_REVIEW' THEN 1 \
+                     WHEN 'BLOCKED' THEN 2 ELSE 3 END, s.due_date, s.id"
+            );
+            let mut query = sqlx::query_as::<
+                _,
+                (
+                    String,
+                    String,
+                    String,
+                    String,
+                    String,
+                    String,
+                    String,
+                    Option<String>,
+                    Option<String>,
+                ),
+            >(sqlx::AssertSqlSafe(sql));
+            if let Some(agent) = agent {
+                query = query.bind(agent);
+            } else if let Some(project) = project {
+                query = query.bind(project);
+            }
+            let rows = query
+                .fetch_all(&mut *connection)
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))?;
+            rows.into_iter()
+                .map(
+                    |(
+                        id,
+                        project_id,
+                        project_name,
+                        title,
+                        state,
+                        priority,
+                        due_date,
+                        assignee,
+                        assignee_name,
+                    )| {
+                        Ok(AgentTask {
+                            id: StoryId::parse(&id).ok_or(StorageError::Operation)?,
+                            project_id: ProjectId::parse(&project_id)
+                                .ok_or(StorageError::Operation)?,
+                            project_name,
+                            title,
+                            state: StoryState::parse(&state).ok_or(StorageError::Operation)?,
+                            priority,
+                            due_date,
+                            assignee: match assignee.as_deref() {
+                                Some(value) => {
+                                    Some(AgentId::parse(value).ok_or(StorageError::Operation)?)
+                                }
+                                None => None,
+                            },
+                            assignee_name,
+                        })
+                    },
+                )
                 .collect()
         })
     }

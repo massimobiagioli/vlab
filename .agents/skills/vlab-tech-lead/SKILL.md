@@ -55,6 +55,14 @@ laboratories staffed by AI agents.
   owns every state transition.
 - **File store:** memories and imported documents are markdown under the data
   directory. SQLite stores relative paths, not content (ADR-0059).
+- **Queue:** intake persists a `TODO` request and returns; one in-process
+  worker drains the active laboratory oldest-first, one request at a time, with
+  no daemon or parallel provider calls (ADR-0061). `--run-queue` is the bounded
+  headless drain.
+- **Floor:** the laboratory floor is a fixed three-room MSX scene (Project Lab,
+  War Room, Lounge) with real task context, deterministic animation, and a
+  bidirectional `f` link to the active project's Kanban (ADR-0062). It is
+  read-only and never calls the provider.
 - **Automation:** recurring schedules create normal bounded requests during
   startup or `--run-schedules`; they do not create a timer or autonomous loop.
 
@@ -231,6 +239,7 @@ Use the specialized skills rather than improvising:
 | Provider, prompt, planning output, budgets, retries | `vlab-ai-provider` |
 | Security-relevant change | `vlab-security-review` |
 | Dashboard, theme, keymap, terminal lifecycle | `vlab-tui` |
+| MSX graphics, sprites, rooms, animation, retro UX | `msx-computer-senior-software-architect` |
 
 Keep each slice independently testable. Do not mix an unrelated refactor, a
 dependency bump, and a new feature in one change.
@@ -272,6 +281,21 @@ State:
 
 Never claim a file was inspected, a command executed, or behavior verified
 without evidence.
+
+### Step 10 — Update this Tech Lead skill
+
+After every implemented feature, update this file in the same change. Add or
+revise:
+
+- the affected project-map entry, invariant, command, or screen;
+- the routing table when a new specialized skill or workflow exists;
+- the review checklist and anti-patterns when the feature reveals a new risk;
+- references to the ADR, feature plan, and key tests;
+- a short lesson only if it changes how the next feature should be approached.
+
+Keep the skill operational, not a changelog. Remove stale guidance instead of
+accumulating history. This maintenance step is mandatory even when the feature
+does not change the skill's main procedure.
 
 ## Plan template
 
@@ -329,6 +353,8 @@ Ask these before approving any VLab change:
 - Are the new events content-free and documented?
 - Do tests prove the boundary before the effect, not just the final error?
 - Are the docs, data-retention notes, ADR registry, and feature plan current?
+- Has this Tech Lead skill been updated with the feature's new invariants,
+  commands, screens, and lessons?
 - Does the diff contain only the intended change?
 
 ## Anti-patterns
@@ -361,5 +387,7 @@ Ask these before approving any VLab change:
 - `.docs/cli-reference.md`
 - `.docs/configuration.md`
 - `.docs/adr/registry.md`
+- `.docs/adr/adr-0061.md`, `.docs/adr/adr-0062.md`, `.docs/adr/adr-0063.md`
+- `.agents/skills/msx-computer-senior-software-architect/SKILL.md`
 - `.project/IMPLEMENTATION-PLAN.md`
 - `.project/features/`

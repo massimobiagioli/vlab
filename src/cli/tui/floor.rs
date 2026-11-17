@@ -1,7 +1,8 @@
-//! Laboratory floor scene and navigation state (ADR-0045).
+//! Fixed three-room MSX laboratory floor (ADR-0062).
 //!
 //! This module is presentation only. It reads an `app::floor::Floor` snapshot
-//! and never writes, calls the provider, or renders model content.
+//! and never writes, calls the provider, or renders model content. The tick is
+//! deterministic and never touches wall-clock time.
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -10,20 +11,22 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::app::floor::{Floor, FloorAgent, FloorPod};
-use crate::domain::ids::AgentId;
+use crate::app::directory::AgentTask;
+use crate::app::floor::{Floor, FloorAgent, FloorRoom};
+use crate::app::kanban::StoryState;
 
 use super::{Theme, action_grid, clean};
 
-const POD_MIN_WIDTH: usize = 22;
-const POD_GAP: usize = 2;
-const CONNECTOR_HEIGHT: usize = 3;
-const LEAD_HEIGHT: usize = 3;
+const LEG_TICKS: u64 = 18;
+const WALK_TICKS: u64 = 6;
+const MAX_TOUR: usize = 4;
 
-const FLOOR_ACTIONS: [(&str, &str); 9] = [
+const FLOOR_ACTIONS: [(&str, &str); 11] = [
     ("[↑/↓]", "Agent"),
-    ("[←/→]", "Pods"),
+    ("[←/→]", "Room"),
     ("[Enter]", "Detail"),
+    ("[t]", "Task"),
+    ("[f]", "Kanban"),
     ("[o]", "Populate"),
     ("[m]", "Memories"),
     ("[r]", "Reload"),
@@ -32,14 +35,12 @@ const FLOOR_ACTIONS: [(&str, &str); 9] = [
     ("[q]", "Quit"),
 ];
 
-/// Navigation state for the floor. Moving never writes.
+/// Navigation and animation state for the floor. Moving never writes.
 #[derive(Debug, Clone)]
 pub(super) struct FloorView {
     pub(super) floor: Floor,
     pub(super) selected: usize,
-    pub(super) pod_page: usize,
-    /// Pods fully visible in the last render; paging uses it.
-    pub(super) visible_pods: usize,
+    pub(super) tick: u64,
 }
 
 impl FloorView {
@@ -47,8 +48,7 @@ impl FloorView {
         let mut view = Self {
             floor,
             selected: 0,
-            pod_page: 0,
-            visible_pods: 1,
+            tick: 0,
         };
         view.clamp();
         view
@@ -56,6 +56,12 @@ impl FloorView {
 
     pub(super) fn selected_agent(&self) -> Option<&FloorAgent> {
         self.floor.selected(self.selected)
+    }
+
+    pub(super) fn selected_task(&self) -> Option<AgentTask> {
+        self.selected_agent()
+            .and_then(FloorAgent::primary_task)
+            .cloned()
     }
 
     pub(super) fn move_selection(&mut self, delta: isize) {
@@ -69,102 +75,61 @@ impl FloorView {
         } else {
             self.selected = (self.selected + 1).min(len - 1);
         }
-        self.follow_selected();
     }
 
     pub(super) fn first_agent(&mut self) {
         self.selected = 0;
-        self.follow_selected();
     }
 
     pub(super) fn last_agent(&mut self) {
         self.selected = self.floor.agents.len().saturating_sub(1);
-        self.follow_selected();
     }
 
-    pub(super) fn page_count(&self) -> usize {
-        if self.floor.pods.is_empty() {
-            return 0;
-        }
-        let per = self.visible_pods.max(1);
-        self.floor.pods.len().saturating_sub(1) / per + 1
-    }
-
+    /// Moves the selection to the next/previous occupied room.
     pub(super) fn change_page(&mut self, delta: isize) {
-        let pages = self.page_count();
-        if pages == 0 {
-            return;
-        }
-        let next = if delta < 0 {
-            self.pod_page.saturating_sub(1)
-        } else {
-            (self.pod_page + 1).min(pages - 1)
-        };
-        if next == self.pod_page {
-            return;
-        }
-        self.pod_page = next;
-        self.select_first_in_page();
-    }
-
-    fn select_first_in_page(&mut self) {
-        let per = self.visible_pods.max(1);
-        let start = self.pod_page * per;
-        let end = (start + per).min(self.floor.pods.len());
-        let ids: Vec<&AgentId> = self.floor.pods[start..end]
-            .iter()
-            .flat_map(|pod| pod.members.iter())
-            .collect();
-        if let Some(index) = self
-            .floor
-            .agents
-            .iter()
-            .position(|agent| ids.contains(&&agent.id))
-        {
-            self.selected = index;
-        }
-    }
-
-    /// Keeps the selected agent's pod on the visible page.
-    fn follow_selected(&mut self) {
-        let Some(agent) = self.selected_agent() else {
+        let Some(current) = self.selected_agent() else {
             return;
         };
-        if self.floor.lead.as_ref() == Some(&agent.id) {
-            return;
-        }
-        let per = self.visible_pods.max(1);
-        if let Some(index) = self
-            .floor
-            .pods
-            .iter()
-            .position(|pod| pod.members.contains(&agent.id))
-        {
-            self.pod_page = index / per;
+        let current = room_index(self.floor.room_for(current));
+        let order = [0usize, 1, 2];
+        let mut index = current as isize;
+        for _ in 0..order.len() {
+            index = (index + delta.signum()).rem_euclid(order.len() as isize);
+            let room = order[index as usize];
+            if let Some(position) = self
+                .floor
+                .agents
+                .iter()
+                .position(|agent| room_index(self.floor.room_for(agent)) == room)
+            {
+                self.selected = position;
+                return;
+            }
         }
     }
 
-    /// Keeps every remembered position valid after a reload and preserves the
-    /// selected agent by identifier.
+    /// Advances one presentation tick. No database or provider access.
+    pub(super) fn advance(&mut self) {
+        self.tick = self.tick.wrapping_add(1);
+    }
+
+    /// Keeps the selected agent by identifier after a reload.
     pub(super) fn replace(&mut self, floor: Floor) {
         let selected_id = self.selected_agent().map(|agent| agent.id.clone());
         self.floor = floor;
         self.selected = selected_id
             .and_then(|id| self.floor.agents.iter().position(|agent| agent.id == id))
             .unwrap_or(0);
-        self.pod_page = 0;
-        self.follow_selected();
         self.clamp();
     }
 
     fn clamp(&mut self) {
         let agents = self.floor.agents.len();
         self.selected = self.selected.min(agents.saturating_sub(1));
-        self.pod_page = self.pod_page.min(self.page_count().saturating_sub(1));
     }
 }
 
-/// Updates `view.visible_pods` while rendering.
+/// Renders the fixed floor and updates no state outside `FloorView`.
 pub(super) fn render(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -176,7 +141,7 @@ pub(super) fn render(
     let mut footer = action_grid(&FLOOR_ACTIONS, theme, footer_width);
     footer.push(status_line(theme, view, status, footer_width));
     footer.push(legend_line(theme, footer_width));
-    let footer_height = u16::try_from(footer.len() + 2).unwrap_or(6).max(4);
+    let footer_height = u16::try_from(footer.len() + 2).unwrap_or(7).max(5);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -186,14 +151,6 @@ pub(super) fn render(
         ])
         .split(area);
 
-    let scene_inner = usize::from(chunks[1].width.saturating_sub(2));
-    view.visible_pods = pod_columns(scene_inner).0;
-    let pages = view.page_count();
-    view.pod_page = if pages == 0 {
-        0
-    } else {
-        view.pod_page.min(pages - 1)
-    };
     let context_width = usize::from(area.width.saturating_sub(21));
     frame.render_widget(
         Paragraph::new(Line::from(vec![
@@ -218,21 +175,25 @@ fn header_context(view: &FloorView) -> String {
     let archived = if view.floor.archived == 0 {
         String::new()
     } else {
-        format!(" · {} archived hidden", view.floor.archived)
+        format!(" · {} archived", view.floor.archived)
     };
-    let pages = view.page_count();
-    let page = if pages > 1 {
-        format!(" · pods {}/{}", view.pod_page + 1, pages)
-    } else {
-        String::new()
-    };
+    let project = view
+        .floor
+        .active_pod()
+        .map(|pod| clean(&pod.name))
+        .unwrap_or_else(|| "no active project".to_owned());
+    let tasks = view
+        .floor
+        .active_pod()
+        .map(|pod| pod.tasks.len())
+        .unwrap_or(0);
     format!(
-        "{} · {} agents · {} projects{} · read-only{}",
+        "{} · {} · {} open · {} agents{} · read-only",
         clean(&view.floor.lab.name),
+        project,
+        tasks,
         view.floor.agents.len(),
-        view.floor.project_pods().count(),
-        archived,
-        page
+        archived
     )
 }
 
@@ -257,25 +218,12 @@ fn status_line(
             theme.muted_style(),
         ));
     };
-    let state = if agent.is_idle() {
-        "idle (zzz)"
-    } else if agent.is_focused() {
-        "focus desk"
-    } else {
-        "in the huddle"
-    };
-    let skills = if agent.skills.is_empty() {
-        "none".to_owned()
-    } else {
-        agent.skills.join(", ")
-    };
-    let details = format!(
-        " · {} · {} project(s) · {} open · {state} · skills: {}",
-        clean(&agent.role),
-        agent.projects.len(),
-        agent.open_stories,
-        clean(&skills)
-    );
+    let room = room_name(view.floor.room_for(agent));
+    let task = agent
+        .primary_task()
+        .map(|task| format!("[{}] {}", task.state.label(), clean(&task.title)))
+        .unwrap_or_else(|| "no open task".to_owned());
+    let details = format!(" · {} · {room} · {task}", clean(&agent.role));
     Line::from(vec![
         Span::styled("Selected: ", theme.key()),
         Span::styled(
@@ -288,9 +236,9 @@ fn status_line(
 
 fn legend_line(theme: Theme, width: usize) -> Line<'static> {
     let legend = if theme.unicode {
-        "(◕‿◕) agent · ★ Tech Lead · (zzz) idle · ( ? ) exchange · (///) focus · read-only"
+        "(◕‿◕) agent · ★ lead · (zzz) idle · ⇅ exchange · ▸ task · [f] board · read-only"
     } else {
-        "(o_o) agent · * Tech Lead · (zzz) idle · ( ? ) exchange · (///) focus · read-only"
+        "(o_o) agent · * lead · (zzz) idle · : exchange · > task · [f] board · read-only"
     };
     Line::from(Span::styled(
         truncate_width(legend, width),
@@ -300,856 +248,864 @@ fn legend_line(theme: Theme, width: usize) -> Line<'static> {
 
 fn render_scene(frame: &mut Frame<'_>, area: Rect, theme: Theme, view: &mut FloorView) {
     let mut canvas = Canvas::new(usize::from(area.width), usize::from(area.height));
-    let (frame_tl, frame_tr, frame_bl, frame_br, frame_h, frame_v) = if theme.unicode {
-        ('╔', '╗', '╚', '╝', '═', '║')
-    } else {
-        ('+', '+', '+', '+', '-', '|')
-    };
     if canvas.width < 4 || canvas.height < 4 {
         frame.render_widget(Paragraph::new("Terminal too small."), area);
         return;
     }
-    canvas.frame(frame_tl, frame_tr, frame_bl, frame_br, frame_h, frame_v);
+    let (tl, tr, bl, br, h, v) = if theme.unicode {
+        ('╔', '╗', '╚', '╝', '═', '║')
+    } else {
+        ('+', '+', '+', '+', '-', '|')
+    };
+    canvas.frame(tl, tr, bl, br, h, v);
     let lab = clean(&view.floor.lab.name);
-    canvas.title(1, 0, &format!("LAB FLOOR · MSX · {lab}"), theme.title());
+    canvas.title(2, 0, &format!("▌ LAB FLOOR · MSX ▌ {lab}"), theme.title());
 
-    let inner_w = canvas.width.saturating_sub(2);
-    let inner_h = canvas.height.saturating_sub(2);
-    for y in 1..canvas.height.saturating_sub(1) {
-        for x in 1..canvas.width.saturating_sub(1) {
-            let tile = if (x + y) % 2 == 0 { '░' } else { '·' };
-            canvas.set(x, y, tile, floor_style(theme));
-        }
-    }
-    if view.floor.agents.is_empty() {
+    let Some((rooms, corridor_y)) = layout(&canvas) else {
         canvas.centered(
             1,
             1,
-            inner_w,
-            inner_h,
+            canvas.width - 2,
+            canvas.height - 2,
+            "Terminal too small.",
+            theme.muted_style(),
+        );
+        finish(frame, area, canvas);
+        return;
+    };
+
+    if view.floor.agents.is_empty() {
+        for (index, room) in rooms.iter().enumerate() {
+            draw_room(&mut canvas, *room, index, &view.floor, theme);
+        }
+        canvas.centered(
+            1,
+            1,
+            canvas.width - 2,
+            canvas.height.saturating_sub(2),
             "No active agents in this laboratory.",
             theme.muted_style(),
         );
-        view.visible_pods = 0;
         finish(frame, area, canvas);
         return;
     }
 
-    let pod_count = view.floor.pods.len();
-    let (columns, pod_width) = pod_columns(inner_w);
-    let pages = pod_count.saturating_sub(1) / columns.max(1) + 1;
-    view.visible_pods = columns;
-    view.pod_page = view.pod_page.min(pages.saturating_sub(1));
-    let start = view.pod_page * columns;
-    let visible = pod_count.saturating_sub(start).min(columns);
-    if visible == 0 {
-        view.visible_pods = 0;
-        canvas.centered(
-            1,
-            1,
-            inner_w,
-            3,
-            "No project pods yet.",
-            theme.muted_style(),
-        );
-        draw_lead(&mut canvas, inner_w, inner_h, 1, 0, view, theme);
-        finish(frame, area, canvas);
-        return;
+    draw_corridor(&mut canvas, &rooms, corridor_y, theme);
+    for (index, room) in rooms.iter().enumerate() {
+        draw_room(&mut canvas, *room, index, &view.floor, theme);
     }
-
-    let lead_room = inner_h >= 9;
-    let reserved = if lead_room {
-        LEAD_HEIGHT + CONNECTOR_HEIGHT
-    } else {
-        0
-    };
-    let pod_area_height = inner_h.saturating_sub(reserved).max(3);
-    let member_capacity = pod_area_height.saturating_sub(2).max(1);
-    let pixel = inner_w >= 78;
-    let plans: Vec<PodPlan> = view.floor.pods[start..start + visible]
-        .iter()
-        .map(|pod| PodPlan::new(&view.floor, pod, member_capacity, pixel, theme))
-        .collect();
-    let content_height = plans
-        .iter()
-        .map(|plan| plan.rows_height(pixel))
-        .max()
-        .unwrap_or(1)
-        .min(member_capacity)
-        .max(1);
-    let pod_height = content_height + 2;
-    let total_width = visible * pod_width + (visible.saturating_sub(1)) * POD_GAP;
-    let start_x = 1 + inner_w.saturating_sub(total_width) / 2;
-    let content_height = pod_height
-        + if lead_room {
-            CONNECTOR_HEIGHT + LEAD_HEIGHT
-        } else {
-            0
-        };
-    let pods_y = 1 + inner_h.saturating_sub(content_height) / 2;
-
-    let mut centers = Vec::with_capacity(visible);
-    for (index, pod) in view.floor.pods[start..start + visible].iter().enumerate() {
-        let x = start_x + index * (pod_width + POD_GAP);
-        centers.push(x + pod_width / 2);
-        let title = if pod.whole_lab {
-            format!("{} · whole lab", clean(&pod.name))
-        } else {
-            clean(&pod.name)
-        };
-        let accent = accent_style(index, theme);
-        canvas.box_frame(
-            x,
-            pods_y,
-            pod_width,
-            pod_height,
-            &title,
-            accent,
-            accent,
-            theme.unicode,
-        );
-        canvas.fill(
-            x + 1,
-            pods_y + 1,
-            pod_width.saturating_sub(2),
-            pod_height.saturating_sub(2),
-            ' ',
-            Style::default(),
-        );
-        plans[index].draw(
-            &mut canvas,
-            &view.floor,
-            x,
-            pods_y,
-            pod_width,
-            view.selected,
-            theme,
-        );
-    }
-
-    let lead_box = if lead_room {
-        let lead_center = draw_lead(
-            &mut canvas,
-            inner_w,
-            inner_h,
-            pods_y,
-            pod_height,
-            view,
-            theme,
-        );
-        Some(lead_center)
-    } else {
-        None
-    };
-    if let Some(lead_center) = lead_box {
-        draw_connectors(
-            &mut canvas,
-            &centers,
-            lead_center,
-            pods_y + pod_height,
-            theme,
-        );
-    } else {
-        draw_compact_lead(
-            &mut canvas,
-            inner_w,
-            inner_h,
-            pods_y,
-            pod_height,
-            view,
-            theme,
-        );
-    }
+    draw_agents(&mut canvas, &view.floor, view, &rooms, corridor_y, theme);
     finish(frame, area, canvas);
-}
-
-fn draw_compact_lead(
-    canvas: &mut Canvas,
-    inner_w: usize,
-    inner_h: usize,
-    pods_y: usize,
-    pod_height: usize,
-    view: &FloorView,
-    theme: Theme,
-) {
-    let y = pods_y + pod_height + 1;
-    if y > inner_h {
-        return;
-    }
-    let lead = view.floor.lead.as_ref().and_then(|id| view.floor.agent(id));
-    let text = match lead {
-        Some(agent) => format!(
-            "TECH LEAD: {} {}",
-            clean(&agent.name),
-            status_bubble(agent, theme)
-        ),
-        None => "TECH LEAD: missing".to_owned(),
-    };
-    let text = truncate_width(&text, inner_w);
-    let x = 1 + inner_w.saturating_sub(text.width()) / 2;
-    let selected =
-        lead.is_some_and(|agent| view.selected_agent().is_some_and(|sel| sel.id == agent.id));
-    let base = if selected {
-        theme.selected()
-    } else {
-        Style::default()
-    };
-    for column in 0..text.width().min(inner_w) {
-        canvas.set(x + column, y, ' ', base);
-    }
-    paint_text(
-        canvas,
-        x,
-        y,
-        inner_w,
-        &text,
-        if selected {
-            base
-        } else {
-            theme.warning_style()
-        },
-    );
 }
 
 fn finish(frame: &mut Frame<'_>, area: Rect, canvas: Canvas) {
     frame.render_widget(Paragraph::new(canvas.into_lines()), area);
 }
 
-fn pod_columns(width: usize) -> (usize, usize) {
-    let mut columns = ((width + POD_GAP) / (POD_MIN_WIDTH + POD_GAP)).clamp(1, 4);
-    loop {
-        let pod_width = width.saturating_sub((columns - 1) * POD_GAP) / columns.max(1);
-        if columns == 1 || pod_width >= 16 {
-            return (columns, pod_width.max(1));
-        }
-        columns -= 1;
+// ---------------------------------------------------------------------------
+// Geometry
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy)]
+struct RoomRect {
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+}
+
+impl RoomRect {
+    fn inner_x(self) -> usize {
+        self.x + 1
+    }
+
+    fn inner_y(self) -> usize {
+        self.y + 1
+    }
+
+    fn inner_w(self) -> usize {
+        self.w.saturating_sub(2)
+    }
+
+    fn inner_h(self) -> usize {
+        self.h.saturating_sub(2)
+    }
+
+    fn door_x(self) -> usize {
+        self.x + self.w / 2
+    }
+
+    fn floor_y(self) -> usize {
+        self.y + self.h.saturating_sub(2)
     }
 }
 
-fn draw_lead(
-    canvas: &mut Canvas,
-    inner_w: usize,
-    inner_h: usize,
-    pods_y: usize,
-    pod_height: usize,
-    view: &FloorView,
-    theme: Theme,
-) -> usize {
-    let y = pods_y + pod_height + CONNECTOR_HEIGHT;
-    if y + LEAD_HEIGHT > 1 + inner_h {
-        return inner_w / 2 + 1;
+fn layout(canvas: &Canvas) -> Option<([RoomRect; 3], usize)> {
+    let inner_w = canvas.width.saturating_sub(2);
+    let inner_h = canvas.height.saturating_sub(2);
+    if inner_w < 30 || inner_h < 6 {
+        return None;
     }
-    let lead = view.floor.lead.as_ref().and_then(|id| view.floor.agent(id));
-    let name = lead
-        .map(|agent| clean(&agent.name))
-        .unwrap_or_else(|| "no Tech Lead".to_owned());
-    let bubble = lead.map(|agent| status_bubble(agent, theme)).unwrap_or("");
-    let width = (name.width() + bubble.width() + 22).max(26).min(inner_w);
-    let x = 1 + inner_w.saturating_sub(width) / 2;
+    let gap = if inner_w >= 66 { 1 } else { 0 };
+    let total_gap = gap * 2;
+    let room_w = (inner_w.saturating_sub(total_gap)) / 3;
+    if room_w < 9 {
+        return None;
+    }
+    let corridor_h = if inner_h >= 15 { 2 } else { 1 };
+    let room_h = inner_h.saturating_sub(corridor_h);
+    if room_h < 4 {
+        return None;
+    }
+    let y = 1;
+    let first_x = 1;
+    let second_x = first_x + room_w + gap;
+    let third_x = second_x + room_w + gap;
+    let third_w = 1 + inner_w - third_x;
+    let rooms = [
+        RoomRect {
+            x: first_x,
+            y,
+            w: room_w,
+            h: room_h,
+        },
+        RoomRect {
+            x: second_x,
+            y,
+            w: room_w,
+            h: room_h,
+        },
+        RoomRect {
+            x: third_x,
+            y,
+            w: third_w.max(room_w),
+            h: room_h,
+        },
+    ];
+    Some((rooms, 1 + room_h))
+}
+
+fn room_index(room: FloorRoom) -> usize {
+    match room {
+        FloorRoom::ProjectLab => 0,
+        FloorRoom::WarRoom => 1,
+        FloorRoom::Lounge => 2,
+    }
+}
+
+fn room_name(room: FloorRoom) -> &'static str {
+    match room {
+        FloorRoom::ProjectLab => "Project Lab",
+        FloorRoom::WarRoom => "War Room",
+        FloorRoom::Lounge => "Lounge",
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Rooms and furniture
+// ---------------------------------------------------------------------------
+
+fn draw_room(canvas: &mut Canvas, room: RoomRect, index: usize, floor: &Floor, theme: Theme) {
+    draw_room_shell(canvas, room, index, theme);
+    match index {
+        0 => draw_project_lab(canvas, room, floor, theme),
+        1 => draw_war_room(canvas, room, floor, theme),
+        _ => draw_lounge(canvas, room, floor, theme),
+    }
+}
+
+fn draw_room_shell(canvas: &mut Canvas, room: RoomRect, index: usize, theme: Theme) {
+    let title = match index {
+        0 => "PROJECT LAB",
+        1 => "WAR ROOM",
+        _ => "LOUNGE",
+    };
+    let accent = room_accent(index, theme);
     canvas.box_frame(
-        x,
+        room.x,
+        room.y,
+        room.w,
+        room.h,
+        title,
+        accent,
+        accent,
+        theme.unicode,
+    );
+    fill_floor(canvas, room, theme);
+    // The corners carry a tiny decor marker so even an empty room reads as a
+    // room rather than a blank box.
+    let star = if theme.unicode { '✦' } else { '*' };
+    canvas.set(room.inner_x(), room.inner_y(), star, accent);
+    canvas.set(
+        room.x + room.w.saturating_sub(2),
+        room.inner_y(),
+        star,
+        accent,
+    );
+}
+
+fn fill_floor(canvas: &mut Canvas, room: RoomRect, theme: Theme) {
+    let style = floor_style(theme);
+    for y in room.inner_y()..room.y + room.h.saturating_sub(1) {
+        for x in room.inner_x()..room.x + room.w.saturating_sub(1) {
+            let tile = if (x + y) % 2 == 0 {
+                if theme.unicode { '░' } else { '.' }
+            } else if theme.unicode {
+                '·'
+            } else {
+                ' '
+            };
+            canvas.set(x, y, tile, style);
+        }
+    }
+}
+
+fn draw_project_lab(canvas: &mut Canvas, room: RoomRect, floor: &Floor, theme: Theme) {
+    let accent = room_accent(0, theme);
+    let inner_x = room.inner_x();
+    let inner_w = room.inner_w();
+    let y = room.inner_y();
+    let pod = floor.active_pod();
+    let subtitle = pod
+        .map(|pod| {
+            let suffix = if pod.whole_lab { " · whole lab" } else { "" };
+            format!("{}{}", clean(&pod.name), suffix)
+        })
+        .unwrap_or_else(|| "NO ACTIVE PROJECT".to_owned());
+    paint_text(
+        canvas,
+        inner_x,
         y,
-        width,
-        LEAD_HEIGHT,
-        "TECH LEAD",
-        if lead.is_some() {
-            theme.border_style()
+        inner_w,
+        &subtitle,
+        if pod.is_some() {
+            accent
         } else {
             theme.warning_style()
         },
-        theme.warning_style(),
-        theme.unicode,
     );
-    if let Some(agent) = lead {
-        paint_agent_row(
+    let board_y = y + 1;
+    let task_rows = room.inner_h().saturating_sub(4).max(1);
+    let Some(pod) = pod else {
+        paint_text(
             canvas,
-            x,
-            y + 1,
-            width,
-            &view.floor,
-            agent,
-            bubble,
-            view.selected_agent()
-                .is_some_and(|selected| selected.id == agent.id),
-            theme,
+            inner_x,
+            board_y,
+            inner_w,
+            "Open a project from Projects.",
+            theme.muted_style(),
         );
-        if bubble.is_empty() && !agent.projects.is_empty() {
+        draw_desk(canvas, room, theme);
+        return;
+    };
+    if pod.tasks.is_empty() {
+        paint_text(
+            canvas,
+            inner_x,
+            board_y,
+            inner_w,
+            "No open tasks.",
+            theme.muted_style(),
+        );
+    } else {
+        for (row, task) in pod.tasks.iter().take(task_rows).enumerate() {
+            let line = format!("{} {}", state_glyph(task.state, theme), clean(&task.title));
             paint_text(
                 canvas,
-                x + 2,
-                y + 1,
-                width.saturating_sub(4),
-                &format!("coordinating {} project(s)", agent.projects.len()),
+                inner_x,
+                board_y + row,
+                inner_w,
+                &line,
+                task_style(task.state, theme),
+            );
+        }
+        if pod.tasks.len() > task_rows {
+            paint_text(
+                canvas,
+                inner_x,
+                board_y + task_rows,
+                inner_w,
+                &format!("+{} more", pod.tasks.len() - task_rows),
                 theme.muted_style(),
             );
         }
+    }
+    draw_desk(canvas, room, theme);
+}
+
+fn draw_war_room(canvas: &mut Canvas, room: RoomRect, floor: &Floor, theme: Theme) {
+    let accent = room_accent(1, theme);
+    let inner_x = room.inner_x();
+    let inner_w = room.inner_w();
+    let y = room.inner_y();
+    let lead = floor.lead.as_ref().and_then(|id| floor.agent(id));
+    let lead_text = lead
+        .map(|agent| format!("★ TECH LEAD: {}", clean(&agent.name)))
+        .unwrap_or_else(|| "NO TECH LEAD · run check-lab".to_owned());
+    paint_text(
+        canvas,
+        inner_x,
+        y,
+        inner_w,
+        &lead_text,
+        theme.warning_style(),
+    );
+    let focused = floor
+        .focused_agents()
+        .filter(|agent| floor.room_for(agent) == FloorRoom::WarRoom)
+        .count();
+    paint_text(
+        canvas,
+        inner_x,
+        y + 1,
+        inner_w,
+        &format!("focus desks: {focused}"),
+        theme.muted_style(),
+    );
+    let board = if theme.unicode {
+        "[▤] WHITEBOARD"
     } else {
+        "[#] WHITEBOARD"
+    };
+    paint_text(canvas, inner_x, y + 2, inner_w, board, accent);
+    if room.inner_h() >= 7 {
         paint_text(
             canvas,
-            x + 2,
-            y + 1,
-            width.saturating_sub(4),
-            "Run check-lab and add a lead.",
-            theme.warning_style(),
+            inner_x,
+            y + 3,
+            inner_w,
+            "coordinate · decide · unblock",
+            theme.muted_style(),
         );
     }
-    x + width / 2
+    draw_desk(canvas, room, theme);
 }
 
-fn draw_connectors(
-    canvas: &mut Canvas,
-    centers: &[usize],
-    lead_center: usize,
-    start_y: usize,
-    theme: Theme,
-) {
-    if centers.is_empty() || start_y + CONNECTOR_HEIGHT > canvas.height {
-        return;
-    }
-    let (v, h, up, down, cross) = if theme.unicode {
-        ('│', '─', '┴', '┬', '┼')
-    } else {
-        ('|', '-', '+', '+', '+')
-    };
-    for center in centers {
-        canvas.set(*center, start_y, v, theme.border_style());
-    }
-    let min = centers
-        .iter()
-        .copied()
-        .chain(std::iter::once(lead_center))
-        .min()
-        .unwrap_or(0);
-    let max = centers
-        .iter()
-        .copied()
-        .chain(std::iter::once(lead_center))
-        .max()
-        .unwrap_or(0);
-    if min == max {
-        for row in 0..CONNECTOR_HEIGHT {
-            canvas.set(min, start_y + row, v, theme.border_style());
-        }
-        return;
-    }
-    for x in min..=max {
-        canvas.set(x, start_y + 1, h, theme.border_style());
-    }
-    for center in centers {
-        let symbol = if *center == lead_center { cross } else { up };
-        canvas.set(*center, start_y + 1, symbol, theme.border_style());
-    }
-    canvas.set(
-        lead_center,
-        start_y + 1,
-        if centers.contains(&lead_center) {
-            cross
-        } else {
-            down
-        },
-        theme.border_style(),
-    );
-    for row in 2..CONNECTOR_HEIGHT {
-        canvas.set(lead_center, start_y + row, v, theme.border_style());
-    }
-}
-
-fn status_bubble(agent: &FloorAgent, _theme: Theme) -> &'static str {
-    if agent.is_idle() {
-        "(zzz)"
-    } else if agent.is_focused() {
-        "(///)"
-    } else {
-        "( ... )"
-    }
-}
-
-fn sprite<'a>(agent: &'a FloorAgent, floor: &'a Floor, theme: Theme) -> &'a str {
-    let lead = floor.lead.as_ref() == Some(&agent.id);
-    match (theme.unicode, lead) {
-        (true, true) => "★(◕‿◕)",
-        (true, false) => "(◕‿◕)",
-        (false, true) => "*(o_o)",
-        (false, false) => "(o_o)",
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn paint_agent(
-    canvas: &mut Canvas,
-    x: usize,
-    y: usize,
-    width: usize,
-    floor: &Floor,
-    agent: &FloorAgent,
-    bubble: &str,
-    selected: bool,
-    pixel: bool,
-    theme: Theme,
-) {
-    if pixel {
-        paint_agent_pixel(canvas, x, y, width, floor, agent, bubble, selected, theme);
-    } else {
-        paint_agent_row(canvas, x, y, width, floor, agent, bubble, selected, theme);
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn paint_agent_pixel(
-    canvas: &mut Canvas,
-    x: usize,
-    y: usize,
-    width: usize,
-    floor: &Floor,
-    agent: &FloorAgent,
-    bubble: &str,
-    selected: bool,
-    theme: Theme,
-) {
-    let base = if selected {
-        theme.selected()
-    } else {
-        Style::default()
-    };
-    let prefix = if selected {
-        if theme.unicode { "▶ " } else { "> " }
-    } else {
-        "  "
-    };
-    let lead = floor.lead.as_ref() == Some(&agent.id);
-    let (sprite_top, sprite_bottom) = match (theme.unicode, lead) {
-        (true, true) => ("▗▄▖", "█★█"),
-        (true, false) => ("▗▄▖", "█◕█"),
-        (false, true) => (".-.", "|*|"),
-        (false, false) => (".-.", "|o|"),
-    };
-    let inner_x = x + 1;
-    let inner_w = width.saturating_sub(2);
-    for row in 0..2 {
-        for column in 0..inner_w {
-            canvas.set(inner_x + column, y + row, ' ', base);
-        }
-    }
-    for (row, sprite) in [sprite_top, sprite_bottom].iter().enumerate() {
-        paint_text(
-            canvas,
-            inner_x + prefix.width(),
-            y + row,
-            inner_w.saturating_sub(prefix.width()),
-            sprite,
-            if selected {
-                base
-            } else if lead {
-                theme.warning_style()
-            } else {
-                Style::default()
-            },
-        );
-    }
-    paint_text(canvas, inner_x, y, inner_w, prefix, base);
-    let name_x = inner_x + prefix.width() + 4;
-    let name_width = (inner_x + inner_w).saturating_sub(name_x + 1);
-    paint_text(
-        canvas,
-        name_x,
-        y,
-        name_width,
-        &clean(&agent.name),
-        if selected { base } else { Style::default() },
-    );
-    let bubble_w = bubble.width();
-    if bubble_w > 0 {
-        let bubble_x = (inner_x + inner_w).saturating_sub(bubble_w + 1);
-        let bubble_style = if selected {
-            base
-        } else if bubble == "(zzz)" {
-            theme.muted_style()
-        } else if bubble.contains("///") {
-            theme.warning_style()
-        } else {
-            theme.title()
-        };
-        paint_text(canvas, bubble_x, y + 1, bubble_w, bubble, bubble_style);
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn paint_agent_row(
-    canvas: &mut Canvas,
-    x: usize,
-    y: usize,
-    width: usize,
-    floor: &Floor,
-    agent: &FloorAgent,
-    bubble: &str,
-    selected: bool,
-    theme: Theme,
-) {
-    let base = if selected {
-        theme.selected()
-    } else {
-        Style::default()
-    };
-    let prefix = if selected {
-        if theme.unicode { "▶ " } else { "> " }
-    } else {
-        "  "
-    };
-    let sprite = sprite(agent, floor, theme);
-    let inner_x = x + 1;
-    let inner_w = width.saturating_sub(2);
-    for column in 0..inner_w {
-        canvas.set(inner_x + column, y, ' ', base);
-    }
-    paint_text(canvas, inner_x, y, inner_w, prefix, base);
-    paint_text(
-        canvas,
-        inner_x + prefix.width(),
-        y,
-        inner_w.saturating_sub(prefix.width()),
-        sprite,
-        if selected {
-            base
-        } else if floor.lead.as_ref() == Some(&agent.id) {
-            theme.warning_style()
-        } else {
-            Style::default()
-        },
-    );
-    let name_x = inner_x + prefix.width() + sprite.width() + 1;
-    let bubble_w = bubble.width();
-    let bubble_x = (inner_x + inner_w).saturating_sub(bubble_w + 1);
-    let available = bubble_x.saturating_sub(name_x);
-    let name_width = if available > 3 {
-        available - 1
-    } else {
-        available
-    };
-    paint_text(
-        canvas,
-        name_x,
-        y,
-        name_width,
-        &clean(&agent.name),
-        if selected { base } else { Style::default() },
-    );
-    if bubble_w > 0 && bubble_x >= inner_x {
-        let bubble_style = if selected {
-            base
-        } else if bubble == "(zzz)" {
-            theme.muted_style()
-        } else if bubble.contains("///") {
-            theme.warning_style()
-        } else {
-            theme.title()
-        };
-        paint_text(canvas, bubble_x, y, bubble_w, bubble, bubble_style);
-    }
-}
-
-fn paint_text(canvas: &mut Canvas, x: usize, y: usize, max_width: usize, text: &str, style: Style) {
-    let mut used = 0;
-    if y >= canvas.height {
-        return;
-    }
-    for ch in text.chars() {
-        let width = ch.width().unwrap_or(1);
-        if used + width > max_width {
-            if max_width > used {
-                canvas.set(x + used, y, '…', style);
-            }
-            return;
-        }
-        canvas.set(x + used, y, ch, style);
-        used += width;
-    }
-}
-
-#[derive(Debug, Clone)]
-enum RowPlan {
-    Pair { first: AgentId, second: AgentId },
-    Agent(AgentId),
-    Focus(Vec<AgentId>),
-    More(usize),
-}
-
-impl RowPlan {
-    fn height(&self, pixel: bool) -> usize {
-        match self {
-            Self::Pair { .. } => {
-                if pixel {
-                    5
-                } else {
-                    3
-                }
-            }
-            Self::Agent(_) => {
-                if pixel {
-                    2
-                } else {
-                    1
-                }
-            }
-            Self::More(_) => 1,
-            Self::Focus(agents) => {
-                let rows = if pixel { 2 } else { 1 };
-                agents.len() * rows + 2
-            }
-        }
-    }
-}
-
-struct PodPlan {
-    rows: Vec<RowPlan>,
-    empty: bool,
-    pixel: bool,
-}
-
-impl PodPlan {
-    fn new(floor: &Floor, pod: &FloorPod, capacity: usize, pixel: bool, _theme: Theme) -> Self {
-        let lead = floor.lead.as_ref();
-        let pairs = floor.exchange_pairs(pod);
-        let paired: Vec<&AgentId> = pairs
-            .iter()
-            .flat_map(|pair| [&pair.first, &pair.second])
-            .collect();
-        let singles: Vec<AgentId> = pod
-            .members
-            .iter()
-            .filter(|id| Some(*id) != lead)
-            .filter(|id| !paired.contains(id))
-            .filter_map(|id| floor.agent(id))
-            .filter(|agent| !agent.is_focused())
-            .map(|agent| agent.id.clone())
-            .collect();
-        let focused: Vec<AgentId> = pod
-            .members
-            .iter()
-            .filter(|id| Some(*id) != lead)
-            .filter_map(|id| floor.agent(id))
-            .filter(|agent| agent.is_focused())
-            .map(|agent| agent.id.clone())
-            .collect();
-
-        let pair_h = if pixel { 5 } else { 3 };
-        let single_h = if pixel { 2 } else { 1 };
-        let focus_h = if pixel { 2 } else { 1 };
-        let mut rows = Vec::new();
-        let mut used = 0;
-        let mut hidden = 0;
-        for pair in pairs {
-            if used + pair_h <= capacity {
-                rows.push(RowPlan::Pair {
-                    first: pair.first,
-                    second: pair.second,
-                });
-                used += pair_h;
-            } else {
-                hidden += 2;
-            }
-        }
-        for id in singles {
-            if used + single_h <= capacity {
-                rows.push(RowPlan::Agent(id));
-                used += single_h;
-            } else {
-                hidden += 1;
-            }
-        }
-        if !focused.is_empty() {
-            let available = capacity.saturating_sub(used);
-            if available >= 2 + focus_h {
-                let fit = ((available - 2) / focus_h).min(focused.len());
-                rows.push(RowPlan::Focus(focused[..fit].to_vec()));
-                used += 2 + fit * focus_h;
-                hidden += focused.len() - fit;
-            } else {
-                hidden += focused.len();
-            }
-        }
-        if hidden > 0 {
-            if used >= capacity {
-                match rows.pop() {
-                    Some(RowPlan::Agent(_)) => {
-                        hidden += 1;
-                    }
-                    Some(RowPlan::Pair { .. }) => {
-                        hidden += 2;
-                    }
-                    Some(RowPlan::Focus(agents)) => {
-                        hidden += agents.len();
-                    }
-                    Some(RowPlan::More(_)) | None => {}
-                }
-            }
-            rows.push(RowPlan::More(hidden));
-        }
-        let empty = rows.is_empty();
-        if empty {
-            rows.push(RowPlan::More(0));
-        }
-        Self { rows, empty, pixel }
-    }
-
-    fn rows_height(&self, pixel: bool) -> usize {
-        self.rows.iter().map(|row| row.height(pixel)).sum()
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn draw(
-        &self,
-        canvas: &mut Canvas,
-        floor: &Floor,
-        x: usize,
-        y: usize,
-        width: usize,
-        selected: usize,
-        theme: Theme,
-    ) {
-        let inner_x = x + 1;
-        let inner_w = width.saturating_sub(2);
-        let pair_h = if self.pixel { 5 } else { 3 };
-        let single_h = if self.pixel { 2 } else { 1 };
-        let focus_h = if self.pixel { 2 } else { 1 };
-        let mut row_y = y + 1;
-        let mut pair_index = 0;
-        let mut focus_index = 0;
-        for row in &self.rows {
-            match row {
-                RowPlan::Pair { first, second } => {
-                    let (first_bubble, second_bubble) = if pair_index % 2 == 0 {
-                        ("( ? )", "( ! )")
-                    } else {
-                        ("( ! )", "( ? )")
-                    };
-                    if let Some(agent) = floor.agent(first) {
-                        paint_agent(
-                            canvas,
-                            x,
-                            row_y,
-                            width,
-                            floor,
-                            agent,
-                            first_bubble,
-                            selected == selected_index(floor, &agent.id),
-                            self.pixel,
-                            theme,
-                        );
-                    }
-                    let link_y = row_y + if self.pixel { 2 } else { 1 };
-                    if theme.unicode {
-                        canvas.set(inner_x + 2, link_y, '⇅', theme.muted_style());
-                    } else {
-                        canvas.set(inner_x + 2, link_y, ':', theme.muted_style());
-                    }
-                    if let Some(agent) = floor.agent(second) {
-                        paint_agent(
-                            canvas,
-                            x,
-                            row_y + pair_h - single_h,
-                            width,
-                            floor,
-                            agent,
-                            second_bubble,
-                            selected == selected_index(floor, &agent.id),
-                            self.pixel,
-                            theme,
-                        );
-                    }
-                    row_y += pair_h;
-                    pair_index += 1;
-                }
-                RowPlan::Agent(id) => {
-                    if let Some(agent) = floor.agent(id) {
-                        paint_agent(
-                            canvas,
-                            x,
-                            row_y,
-                            width,
-                            floor,
-                            agent,
-                            status_bubble(agent, theme),
-                            selected == selected_index(floor, &agent.id),
-                            self.pixel,
-                            theme,
-                        );
-                    }
-                    row_y += single_h;
-                }
-                RowPlan::Focus(agents) => {
-                    let box_height = agents.len() * focus_h + 2;
-                    let (focus_x, focus_w) = if inner_w >= 16 {
-                        (inner_x + 1, inner_w - 2)
-                    } else {
-                        (inner_x, inner_w)
-                    };
-                    canvas.box_frame(
-                        focus_x,
-                        row_y,
-                        focus_w,
-                        box_height,
-                        "focus desk",
-                        theme.border_style(),
-                        theme.warning_style(),
-                        theme.unicode,
-                    );
-                    for (index, id) in agents.iter().enumerate() {
-                        if let Some(agent) = floor.agent(id) {
-                            let bubble = if (focus_index + index) % 2 == 0 {
-                                "(///)"
-                            } else {
-                                "(</>)"
-                            };
-                            paint_agent(
-                                canvas,
-                                focus_x,
-                                row_y + 1 + index * focus_h,
-                                focus_w,
-                                floor,
-                                agent,
-                                bubble,
-                                selected == selected_index(floor, &agent.id),
-                                self.pixel,
-                                theme,
-                            );
-                        }
-                    }
-                    focus_index += agents.len();
-                    row_y += box_height;
-                }
-                RowPlan::More(hidden) => {
-                    if *hidden > 0 {
-                        paint_text(
-                            canvas,
-                            inner_x,
-                            row_y,
-                            inner_w,
-                            &format!("+{hidden} more"),
-                            theme.muted_style(),
-                        );
-                    } else if self.empty {
-                        paint_text(
-                            canvas,
-                            inner_x,
-                            row_y,
-                            inner_w,
-                            "(lead at desk)",
-                            theme.muted_style(),
-                        );
-                    }
-                    row_y += 1;
-                }
-            }
-        }
-    }
-}
-
-fn selected_index(floor: &Floor, id: &AgentId) -> usize {
-    floor
+fn draw_lounge(canvas: &mut Canvas, room: RoomRect, floor: &Floor, theme: Theme) {
+    let accent = room_accent(2, theme);
+    let inner_x = room.inner_x();
+    let inner_w = room.inner_w();
+    let y = room.inner_y();
+    let idle = floor
         .agents
         .iter()
-        .position(|agent| &agent.id == id)
-        .unwrap_or(usize::MAX)
+        .filter(|agent| floor.room_for(agent) == FloorRoom::Lounge)
+        .count();
+    let couch = if theme.unicode {
+        "╰──╯"
+    } else {
+        "[__]"
+    };
+    let coffee = if theme.unicode { "[☕]" } else { "[c]" };
+    let plant = if theme.unicode { "♣" } else { "*" };
+    paint_text(
+        canvas,
+        inner_x,
+        y,
+        inner_w,
+        &format!("{couch}  {coffee}  {plant}"),
+        accent,
+    );
+    paint_text(
+        canvas,
+        inner_x,
+        y + 1,
+        inner_w,
+        &format!("{idle} idle agent(s)"),
+        theme.muted_style(),
+    );
+    if room.inner_h() >= 7 {
+        paint_text(
+            canvas,
+            inner_x,
+            y + 2,
+            inner_w,
+            "coffee · rest · recharge",
+            theme.muted_style(),
+        );
+    }
+    if idle == 0 {
+        paint_text(
+            canvas,
+            inner_x,
+            room.y + room.h.saturating_sub(2),
+            inner_w,
+            "Everyone is busy.",
+            theme.muted_style(),
+        );
+    }
+    draw_couch(canvas, room, theme);
+}
+
+fn draw_desk(canvas: &mut Canvas, room: RoomRect, theme: Theme) {
+    let y = room.floor_y();
+    let desks = if room.inner_w() >= 24 { 2 } else { 1 };
+    let desk = if theme.unicode {
+        "▄▄▄▄▄"
+    } else {
+        "_____"
+    };
+    for index in 0..desks {
+        let x = room.inner_x() + 1 + index * 7;
+        paint_text(canvas, x, y, 5, desk, theme.border_style());
+    }
+    let terminal = if theme.unicode { "[▥]" } else { "[#]" };
+    paint_text(
+        canvas,
+        room.x + room.w.saturating_sub(5),
+        y,
+        4,
+        terminal,
+        theme.title(),
+    );
+}
+
+fn draw_couch(canvas: &mut Canvas, room: RoomRect, theme: Theme) {
+    let y = room.floor_y();
+    let couch = if theme.unicode {
+        "╰──╯"
+    } else {
+        "[__]"
+    };
+    paint_text(
+        canvas,
+        room.inner_x() + 1,
+        y,
+        room.inner_w().saturating_sub(2),
+        couch,
+        theme.border_style(),
+    );
+}
+
+fn draw_corridor(canvas: &mut Canvas, rooms: &[RoomRect; 3], corridor_y: usize, theme: Theme) {
+    let y = corridor_y;
+    if y >= canvas.height.saturating_sub(1) {
+        return;
+    }
+    let (h, door) = if theme.unicode {
+        ('─', '╥')
+    } else {
+        ('-', '+')
+    };
+    for x in 1..canvas.width.saturating_sub(1) {
+        canvas.set(x, y, h, theme.border_style());
+    }
+    for room in rooms {
+        let door_x = room.door_x();
+        canvas.set(door_x, y, door, theme.title());
+        canvas.set(door_x, y.saturating_sub(1), door, theme.title());
+    }
+    let label = "VLAB · MSX · CORRIDOR";
+    let label = if theme.unicode {
+        label
+    } else {
+        "VLAB - MSX - CORRIDOR"
+    };
+    let label_x = 1 + canvas.width.saturating_sub(2 + label.width()) / 2;
+    paint_text(
+        canvas,
+        label_x,
+        y,
+        canvas.width.saturating_sub(label_x + 1),
+        label,
+        theme.muted_style(),
+    );
+    // A couple of direction markers keep the corridor from reading as a rule.
+    canvas.set(
+        2,
+        y,
+        if theme.unicode { '▶' } else { '>' },
+        theme.muted_style(),
+    );
+    canvas.set(
+        canvas.width.saturating_sub(3),
+        y,
+        if theme.unicode { '◀' } else { '<' },
+        theme.muted_style(),
+    );
+    let link_width = rooms[0].door_x().saturating_sub(4);
+    let link = if link_width >= "[f] KANBAN".width() {
+        "[f] KANBAN"
+    } else {
+        "[f]"
+    };
+    paint_text(canvas, 3, y, link_width, link, theme.key());
+}
+
+fn room_accent(index: usize, theme: Theme) -> Style {
+    if !theme.color {
+        return theme.title();
+    }
+    let color = match index {
+        0 => Color::Rgb(36, 219, 219),
+        1 => Color::Rgb(255, 255, 36),
+        _ => Color::Rgb(36, 219, 36),
+    };
+    Style::default().fg(color).add_modifier(Modifier::BOLD)
+}
+
+fn floor_style(theme: Theme) -> Style {
+    if theme.color {
+        Style::default().fg(Color::Rgb(38, 38, 58))
+    } else {
+        Style::default()
+    }
+}
+
+fn task_style(state: StoryState, theme: Theme) -> Style {
+    if !theme.color {
+        return Style::default().add_modifier(Modifier::BOLD);
+    }
+    let color = match state {
+        StoryState::Todo => Color::Rgb(255, 255, 36),
+        StoryState::InProgress => Color::Rgb(36, 219, 36),
+        StoryState::InReview => Color::Rgb(36, 219, 219),
+        StoryState::Blocked => Color::Rgb(219, 36, 36),
+        StoryState::Done => Color::DarkGray,
+    };
+    Style::default().fg(color).add_modifier(Modifier::BOLD)
+}
+
+fn state_glyph(state: StoryState, theme: Theme) -> &'static str {
+    match (state, theme.unicode) {
+        (StoryState::Todo, true) => "◇",
+        (StoryState::Todo, false) => "-",
+        (StoryState::InProgress, true) => "▶",
+        (StoryState::InProgress, false) => ">",
+        (StoryState::InReview, true) => "◉",
+        (StoryState::InReview, false) => "o",
+        (StoryState::Blocked, true) => "!",
+        (StoryState::Blocked, false) => "!",
+        (StoryState::Done, true) => "✓",
+        (StoryState::Done, false) => "x",
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Agents and movement
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy)]
+struct Spot {
+    room: usize,
+    x: usize,
+    y: usize,
+}
+
+fn draw_agents(
+    canvas: &mut Canvas,
+    floor: &Floor,
+    view: &FloorView,
+    rooms: &[RoomRect; 3],
+    corridor_y: usize,
+    theme: Theme,
+) {
+    let mut by_room: [Vec<&FloorAgent>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+    for agent in &floor.agents {
+        let room = room_index(floor.room_for(agent));
+        by_room[room].push(agent);
+    }
+
+    let pixel = canvas.width >= 76 && rooms[0].inner_w() >= 22;
+    let mut drawn: Vec<DrawnAgent> = Vec::with_capacity(floor.agents.len());
+    for (room_index_value, agents) in by_room.iter().enumerate() {
+        let room = rooms[room_index_value];
+        let count = agents.len().max(1);
+        for (slot, agent) in agents.iter().enumerate() {
+            let spots = tour_for(floor, agent, room_index_value, room, slot, count, rooms);
+            let (x, y, walking) = position_at(agent, &spots, view.tick, rooms, corridor_y);
+            let selected = view.selected_agent().is_some_and(|sel| sel.id == agent.id);
+            draw_agent(canvas, floor, agent, x, y, walking, selected, pixel, theme);
+            drawn.push(DrawnAgent {
+                room: room_index_value,
+                x,
+                y,
+                walking,
+                role: agent.role.clone(),
+            });
+        }
+    }
+    draw_exchanges(canvas, &drawn, rooms, theme);
+}
+
+fn tour_for(
+    floor: &Floor,
+    agent: &FloorAgent,
+    room: usize,
+    rect: RoomRect,
+    slot: usize,
+    count: usize,
+    rooms: &[RoomRect; 3],
+) -> Vec<Spot> {
+    let mut spots = room_spots(rect, room, slot, count);
+    // A worker may walk to the War Room to coordinate with the lead. This is
+    // the only cross-room tour and is grounded in stored assignments.
+    if room == 0 && floor.lead.is_some() && agent.is_working() {
+        let war = rooms[1];
+        spots.push(Spot {
+            room: 1,
+            x: war.inner_x() + war.inner_w().saturating_sub(3),
+            y: war.floor_y().saturating_sub(1),
+        });
+    }
+    spots.truncate(MAX_TOUR);
+    spots
+}
+
+fn room_spots(rect: RoomRect, room: usize, slot: usize, count: usize) -> Vec<Spot> {
+    let usable = rect.inner_w().saturating_sub(2).max(1);
+    let step = (usable / count.max(1)).max(3);
+    let base = rect.inner_x() + 1 + (slot * step) % usable;
+    let y = rect.floor_y();
+    let second = (base + step.min(4)).min(rect.x + rect.w.saturating_sub(3));
+    let third = (second + step.min(4)).min(rect.x + rect.w.saturating_sub(3));
+    match room {
+        0 | 1 => vec![Spot { room, x: base, y }, Spot { room, x: second, y }],
+        _ => vec![
+            Spot { room, x: base, y },
+            Spot { room, x: second, y },
+            Spot { room, x: third, y },
+        ],
+    }
+}
+
+fn position_at(
+    agent: &FloorAgent,
+    spots: &[Spot],
+    tick: u64,
+    rooms: &[RoomRect; 3],
+    corridor_y: usize,
+) -> (usize, usize, bool) {
+    if spots.is_empty() {
+        return (1, 1, false);
+    }
+    let offset = stable_hash(agent.id.as_str()) % LEG_TICKS;
+    let phase = tick.wrapping_add(offset) % (LEG_TICKS * spots.len() as u64);
+    let leg = (phase / LEG_TICKS) as usize;
+    let within = phase % LEG_TICKS;
+    let from = spots[leg];
+    let to = spots[(leg + 1) % spots.len()];
+    if within < WALK_TICKS && spots.len() > 1 {
+        let (x, y) = path_point(from, to, within, WALK_TICKS, rooms, corridor_y);
+        (x, y, true)
+    } else {
+        (from.x, from.y, false)
+    }
+}
+
+fn path_point(
+    from: Spot,
+    to: Spot,
+    step: u64,
+    steps: u64,
+    rooms: &[RoomRect; 3],
+    corridor_y: usize,
+) -> (usize, usize) {
+    if from.room == to.room {
+        return interpolate(from.x, from.y, to.x, to.y, step, steps);
+    }
+    let from_room = rooms[from.room];
+    let to_room = rooms[to.room];
+    let points = [
+        (from.x, from.y),
+        (
+            from_room.door_x(),
+            from_room.y + from_room.h.saturating_sub(1),
+        ),
+        (from_room.door_x(), corridor_y),
+        (to_room.door_x(), corridor_y),
+        (to_room.door_x(), to_room.y + to_room.h.saturating_sub(1)),
+        (to.x, to.y),
+    ];
+    let lengths: Vec<usize> = points
+        .windows(2)
+        .map(|pair| pair[0].0.abs_diff(pair[1].0) + pair[0].1.abs_diff(pair[1].1))
+        .collect();
+    let total: usize = lengths.iter().sum();
+    if total == 0 {
+        return (from.x, from.y);
+    }
+    let target = (total as u64 * step / steps.max(1)) as usize;
+    let mut travelled = 0;
+    for (index, length) in lengths.iter().enumerate() {
+        if travelled + length >= target || index + 1 == lengths.len() {
+            let local = target.saturating_sub(travelled);
+            let (x1, y1) = points[index];
+            let (x2, y2) = points[index + 1];
+            let denominator = (*length).max(1) as u64;
+            return interpolate(x1, y1, x2, y2, local as u64, denominator);
+        }
+        travelled += length;
+    }
+    (to.x, to.y)
+}
+
+fn interpolate(
+    x1: usize,
+    y1: usize,
+    x2: usize,
+    y2: usize,
+    step: u64,
+    steps: u64,
+) -> (usize, usize) {
+    let steps = steps.max(1) as i64;
+    let step = step.min(steps as u64) as i64;
+    let x = x1 as i64 + (x2 as i64 - x1 as i64) * step / steps;
+    let y = y1 as i64 + (y2 as i64 - y1 as i64) * step / steps;
+    (x.max(0) as usize, y.max(0) as usize)
+}
+
+fn stable_hash(value: &str) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for byte in value.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+#[derive(Debug)]
+struct DrawnAgent {
+    room: usize,
+    x: usize,
+    y: usize,
+    walking: bool,
+    role: String,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_agent(
+    canvas: &mut Canvas,
+    floor: &Floor,
+    agent: &FloorAgent,
+    x: usize,
+    y: usize,
+    walking: bool,
+    selected: bool,
+    pixel: bool,
+    theme: Theme,
+) {
+    let lead = floor.lead.as_ref() == Some(&agent.id);
+    let base = if selected {
+        theme.selected()
+    } else {
+        Style::default()
+    };
+    let prefix = if selected {
+        if theme.unicode { "▶" } else { ">" }
+    } else {
+        ""
+    };
+    let bubble = if agent.is_idle() {
+        "(zzz)"
+    } else if walking {
+        if theme.unicode { "(→)" } else { "(>)" }
+    } else if agent.is_focused() {
+        "(///)"
+    } else if lead {
+        "(★)"
+    } else {
+        "( ... )"
+    };
+    if pixel {
+        let (top, bottom) = if walking {
+            if theme.unicode {
+                ("▝▄▘", "█>█")
+            } else {
+                (".-.", "|>|")
+            }
+        } else if lead {
+            if theme.unicode {
+                ("▗▄▖", "█★█")
+            } else {
+                (".-.", "|*|")
+            }
+        } else {
+            if theme.unicode {
+                ("▗▄▖", "█◕█")
+            } else {
+                (".-.", "|o|")
+            }
+        };
+        paint_text(canvas, x, y.saturating_sub(1), 4, top, base);
+        paint_text(canvas, x, y, 4, bottom, base);
+        let name_x = x + 4;
+        let name_w = canvas.width.saturating_sub(name_x + 1);
+        paint_text(canvas, name_x, y, name_w, &clean(&agent.name), base);
+        let bubble_x = name_x + name_w.saturating_sub(bubble.width() + 1);
+        paint_text(
+            canvas,
+            bubble_x,
+            y,
+            bubble.width(),
+            bubble,
+            if selected { base } else { theme.muted_style() },
+        );
+        if !prefix.is_empty() {
+            paint_text(canvas, x, y.saturating_sub(1), 1, prefix, base);
+        }
+    } else {
+        let sprite = if walking {
+            "(>_>)"
+        } else if lead {
+            if theme.unicode {
+                "★(◕‿◕)"
+            } else {
+                "*(o_o)"
+            }
+        } else {
+            if theme.unicode {
+                "(◕‿◕)"
+            } else {
+                "(o_o)"
+            }
+        };
+        let line = if prefix.is_empty() {
+            format!("{sprite} {bubble}")
+        } else {
+            format!("{prefix}{sprite} {bubble}")
+        };
+        let available = canvas.width.saturating_sub(x + 1);
+        paint_text(canvas, x, y, available, &line, base);
+        let name_x = x + line.width() + 1;
+        if name_x < canvas.width.saturating_sub(1) {
+            paint_text(
+                canvas,
+                name_x,
+                y,
+                canvas.width.saturating_sub(name_x + 1),
+                &clean(&agent.name),
+                if selected { base } else { theme.muted_style() },
+            );
+        }
+    }
+}
+
+fn draw_exchanges(canvas: &mut Canvas, drawn: &[DrawnAgent], rooms: &[RoomRect; 3], theme: Theme) {
+    for (room, rect) in rooms.iter().enumerate() {
+        let agents: Vec<&DrawnAgent> = drawn
+            .iter()
+            .filter(|agent| agent.room == room && !agent.walking)
+            .collect();
+        if room == 2 || agents.len() < 2 {
+            continue;
+        }
+        let first = agents[0];
+        let second = agents.iter().skip(1).find(|agent| agent.role != first.role);
+        let Some(second) = second else {
+            continue;
+        };
+        let x = (first.x + second.x) / 2;
+        let y = first.y.saturating_sub(1).max(rect.inner_y());
+        if x < canvas.width && y < canvas.height {
+            canvas.set(
+                x,
+                y,
+                if theme.unicode { '⇅' } else { ':' },
+                theme.warning_style(),
+            );
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1185,22 +1141,6 @@ impl Canvas {
             width,
             height,
             cells: vec![Cell::default(); width * height],
-        }
-    }
-
-    fn fill(
-        &mut self,
-        x: usize,
-        y: usize,
-        width: usize,
-        height: usize,
-        symbol: char,
-        style: Style,
-    ) {
-        for row in 0..height {
-            for column in 0..width {
-                self.set(x + column, y + row, symbol, style);
-            }
         }
     }
 
@@ -1329,25 +1269,22 @@ impl Canvas {
     }
 }
 
-fn floor_style(theme: Theme) -> Style {
-    if theme.color {
-        Style::default().fg(Color::Rgb(38, 38, 58))
-    } else {
-        Style::default()
+fn paint_text(canvas: &mut Canvas, x: usize, y: usize, max_width: usize, text: &str, style: Style) {
+    let mut used = 0;
+    if y >= canvas.height {
+        return;
     }
-}
-
-fn accent_style(index: usize, theme: Theme) -> Style {
-    if !theme.color {
-        return theme.title();
+    for ch in text.chars() {
+        let width = ch.width().unwrap_or(1);
+        if used + width > max_width {
+            if max_width > used {
+                canvas.set(x + used, y, '…', style);
+            }
+            return;
+        }
+        canvas.set(x + used, y, ch, style);
+        used += width;
     }
-    let color = match index % 4 {
-        0 => Color::Cyan,
-        1 => Color::Magenta,
-        2 => Color::Green,
-        _ => Color::Yellow,
-    };
-    Style::default().fg(color).add_modifier(Modifier::BOLD)
 }
 
 fn truncate_width(value: &str, width: usize) -> String {
@@ -1376,8 +1313,7 @@ mod tests {
     use super::*;
     use crate::app::directory::LabOverview;
     use crate::app::floor::{Floor, FloorAgent, FloorPod};
-    use crate::domain::agent::Role;
-    use crate::domain::ids::{LabId, ProjectId};
+    use crate::domain::ids::{AgentId, LabId, ProjectId, StoryId};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
@@ -1396,12 +1332,47 @@ mod tests {
                 .iter()
                 .map(|value| ProjectId::parse(value).unwrap())
                 .collect(),
+            tasks: Vec::new(),
+        }
+    }
+
+    fn task(id: &str, project: &str, title: &str, state: StoryState) -> AgentTask {
+        AgentTask {
+            id: StoryId::parse(id).unwrap(),
+            project_id: ProjectId::parse(project).unwrap(),
+            project_name: "Portal".to_owned(),
+            title: title.to_owned(),
+            state,
+            priority: "high".to_owned(),
+            due_date: "2026-01-03".to_owned(),
+            assignee: None,
+            assignee_name: Some("Bea".to_owned()),
         }
     }
 
     fn floor() -> Floor {
         let portal = ProjectId::parse("20000001").unwrap();
         let mobile = ProjectId::parse("20000002").unwrap();
+        let reset = task(
+            "30000001",
+            "20000001",
+            "Reset password",
+            StoryState::InProgress,
+        );
+        let audit = task("30000002", "20000001", "Audit log", StoryState::Todo);
+        let mut ada = agent("10000001", "Ada", "lead", 0, &["20000001"]);
+        ada.tasks.clear();
+        let mut bea = agent("10000002", "Bea", "dev", 1, &["20000001"]);
+        bea.tasks.push(reset.clone());
+        let mut cid = agent("10000003", "Cid", "qa", 1, &["20000001"]);
+        cid.tasks.push(audit.clone());
+        let mut dee = agent("10000004", "Dee", "analyst", 2, &["20000002"]);
+        dee.tasks.push(task(
+            "30000003",
+            "20000002",
+            "Dependency review",
+            StoryState::InProgress,
+        ));
         Floor {
             lab: LabOverview {
                 id: LabId::parse("a3f91c07").unwrap(),
@@ -1411,12 +1382,8 @@ mod tests {
                 project_count: 2,
             },
             lead: Some(agent_id("10000001")),
-            agents: vec![
-                agent("10000001", "Ada", "lead", 0, &["20000001"]),
-                agent("10000002", "Bea", "dev", 1, &["20000001"]),
-                agent("10000003", "Cid", "qa", 1, &["20000001"]),
-                agent("10000004", "Dee", "analyst", 2, &["20000002"]),
-            ],
+            active_project: Some(portal.clone()),
+            agents: vec![ada, bea, cid, dee],
             pods: vec![
                 FloorPod {
                     project_id: Some(portal),
@@ -1427,12 +1394,14 @@ mod tests {
                         agent_id("10000003"),
                     ],
                     whole_lab: false,
+                    tasks: vec![reset, audit],
                 },
                 FloorPod {
                     project_id: Some(mobile),
                     name: "Mobile".to_owned(),
                     members: vec![agent_id("10000004")],
                     whole_lab: false,
+                    tasks: Vec::new(),
                 },
             ],
             archived: 0,
@@ -1462,141 +1431,170 @@ mod tests {
     }
 
     #[test]
-    fn the_scene_shows_pods_the_lead_and_the_idle_bubble() {
+    fn the_fixed_floor_shows_three_rooms_tasks_and_decorations() {
         let mut view = FloorView::new(floor());
         let screen = scene(&mut view, 100, 30, theme(true));
         for text in [
             "LAB FLOOR",
-            "Demo Lab",
+            "PROJECT LAB",
+            "WAR ROOM",
+            "LOUNGE",
+            "CORRIDOR",
             "Portal",
-            "Mobile",
+            "Reset password",
+            "Audit log",
             "TECH LEAD",
-            "Ada",
-            "(zzz)",
-            "( ? )",
-            "( ! )",
-            "focus desk",
-            "(///)",
+            "focus desks",
+            "WHITEBOARD",
+            "idle agent",
+            "[f] KANBAN",
             "Selected:",
-            "[Enter]",
             "read-only",
         ] {
             assert!(screen.contains(text), "{text}: {screen}");
         }
-        assert!(!screen.contains("10000001"), "{screen}");
         assert!(screen.contains("▗▄▖"), "{screen}");
         assert!(screen.contains("░"), "{screen}");
+        assert!(screen.contains("☕"), "{screen}");
+        assert!(screen.contains("♣"), "{screen}");
     }
 
     #[test]
-    fn the_scene_works_at_the_minimum_size() {
-        let mut view = FloorView::new(floor());
-        let screen = scene(&mut view, 60, 20, theme(true));
-        assert!(screen.contains("LAB FLOOR"), "{screen}");
-        assert!(screen.contains("Portal"), "{screen}");
-        assert!(screen.contains("TECH LEAD"), "{screen}");
-        assert!(screen.contains("(zzz)"), "{screen}");
-    }
-
-    #[test]
-    fn ascii_fallback_uses_plain_sprite_and_borders() {
-        let mut view = FloorView::new(floor());
-        let screen = scene(&mut view, 80, 24, theme(false));
-        assert!(screen.contains(".-."), "{screen}");
-        assert!(screen.contains("|o|"), "{screen}");
-        assert!(screen.contains("TECH LEAD"), "{screen}");
-        assert!(!screen.contains("(◕‿◕)"), "{screen}");
+    fn the_floor_works_at_the_minimum_size_and_without_unicode() {
+        for (width, height) in [(60, 20), (80, 24), (100, 30)] {
+            let mut view = FloorView::new(floor());
+            let screen = scene(&mut view, width, height, theme(true));
+            for text in [
+                "PROJECT LAB",
+                "WAR ROOM",
+                "LOUNGE",
+                "Portal",
+                "Reset password",
+            ] {
+                assert!(screen.contains(text), "{width}x{height} {text}: {screen}");
+            }
+        }
+        let mut ascii = FloorView::new(floor());
+        let screen = scene(&mut ascii, 60, 20, theme(false));
+        assert!(screen.contains("PROJECT LAB"), "{screen}");
+        assert!(screen.contains("[f]"), "{screen}");
+        assert!(screen.contains("Kanban"), "{screen}");
         assert!(!screen.contains('╔'), "{screen}");
+        assert!(!screen.contains("◕"), "{screen}");
     }
 
     #[test]
-    fn the_compact_fallback_stays_on_one_line() {
+    fn selection_moves_between_agents_and_rooms() {
         let mut view = FloorView::new(floor());
-        let screen = scene(&mut view, 60, 20, theme(true));
-        assert!(screen.contains("(◕‿◕)"), "{screen}");
-        assert!(!screen.contains("▗▄▖"), "{screen}");
-    }
-
-    #[test]
-    fn selection_moves_and_follows_the_agent_pod() {
-        let mut view = FloorView::new(floor());
-        scene(&mut view, 80, 24, theme(true));
-        // Force one pod per page so the second pod is a different page.
-        view.visible_pods = 1;
+        assert_eq!(view.selected_agent().unwrap().name, "Ada");
         view.move_selection(1);
         assert_eq!(view.selected_agent().unwrap().name, "Bea");
-        assert_eq!(view.pod_page, 0);
-        view.move_selection(1);
-        assert_eq!(view.selected_agent().unwrap().name, "Cid");
-        view.move_selection(1);
-        assert_eq!(view.selected_agent().unwrap().name, "Dee");
-        assert_eq!(view.pod_page, 1);
+        view.change_page(1);
+        assert_ne!(
+            view.floor.room_for(view.selected_agent().unwrap()),
+            FloorRoom::ProjectLab
+        );
         view.first_agent();
         assert_eq!(view.selected_agent().unwrap().name, "Ada");
-        // The lead desk is visible on every page, so its page is unchanged.
-        assert_eq!(view.pod_page, 1);
+        view.last_agent();
+        assert_eq!(view.selected_agent().unwrap().name, "Dee");
     }
 
     #[test]
-    fn pages_are_clamped_and_select_an_agent_in_the_page() {
-        let mut view = FloorView::new(floor());
-        scene(&mut view, 60, 20, theme(true));
-        let per = view.visible_pods;
-        assert!(per >= 1);
-        if per < view.floor.pods.len() {
-            view.change_page(1);
-            assert_eq!(view.pod_page, 1);
-            assert!(view.selected_agent().is_some());
-            view.change_page(1);
-            assert_eq!(view.pod_page, view.page_count() - 1);
+    fn movement_is_deterministic_and_changes_position() {
+        let model = floor();
+        let agent = model.agent(&agent_id("10000002")).unwrap();
+        let canvas = Canvas::new(100, 30);
+        let (rooms, corridor_y) = layout(&canvas).expect("layout");
+        let spots = vec![
+            Spot {
+                room: 0,
+                x: 8,
+                y: rooms[0].floor_y(),
+            },
+            Spot {
+                room: 0,
+                x: 18,
+                y: rooms[0].floor_y(),
+            },
+            Spot {
+                room: 1,
+                x: rooms[1].inner_x() + 4,
+                y: rooms[1].floor_y(),
+            },
+        ];
+        let first = position_at(agent, &spots, 0, &rooms, corridor_y);
+        let same = position_at(agent, &spots, 0, &rooms, corridor_y);
+        let later = position_at(agent, &spots, 6, &rooms, corridor_y);
+        assert_eq!(first, same);
+        assert_ne!(first, later);
+        // The path through the corridor never leaves the canvas.
+        for tick in 0..60 {
+            let (x, y, _) = position_at(agent, &spots, tick, &rooms, corridor_y);
+            assert!(x < canvas.width && y < canvas.height, "{tick}: {x},{y}");
         }
     }
 
     #[test]
-    fn replace_keeps_the_selected_agent_by_id() {
+    fn exchanges_are_drawn_for_two_different_roles_in_a_room() {
+        let mut canvas = Canvas::new(60, 24);
+        let (rooms, _) = layout(&canvas).expect("layout");
+        let drawn = vec![
+            DrawnAgent {
+                room: 0,
+                x: 6,
+                y: rooms[0].floor_y(),
+                walking: false,
+                role: "dev".to_owned(),
+            },
+            DrawnAgent {
+                room: 0,
+                x: 14,
+                y: rooms[0].floor_y(),
+                walking: false,
+                role: "qa".to_owned(),
+            },
+        ];
+        draw_exchanges(&mut canvas, &drawn, &rooms, theme(true));
+        let screen: String = canvas
+            .into_lines()
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect();
+        assert!(screen.contains('⇅'), "{screen}");
+    }
+
+    #[test]
+    fn the_selected_task_and_empty_states_are_explicit() {
+        let mut view = FloorView::new(floor());
+        view.move_selection(1);
+        assert_eq!(view.selected_task().unwrap().title, "Reset password");
+        let mut empty = floor();
+        empty.agents.clear();
+        empty.pods.clear();
+        empty.lead = None;
+        empty.active_project = None;
+        let mut view = FloorView::new(empty);
+        let screen = scene(&mut view, 80, 24, theme(true));
+        assert!(screen.contains("No active agents"), "{screen}");
+        assert!(screen.contains("PROJECT LAB"), "{screen}");
+        assert!(screen.contains("NO ACTIVE PROJECT"), "{screen}");
+    }
+
+    #[test]
+    fn replace_keeps_the_selected_agent_and_advance_changes_the_tick() {
         let mut view = FloorView::new(floor());
         view.move_selection(2);
         let id = view.selected_agent().unwrap().id.clone();
         view.replace(floor());
         assert_eq!(view.selected_agent().unwrap().id, id);
-    }
-
-    #[test]
-    fn many_members_show_a_more_row() {
-        let mut many = floor();
-        let pod = &mut many.pods[0];
-        for index in 0..20 {
-            pod.members
-                .push(agent_id(&format!("{:08x}", 0x3000_0000 + index)));
-            many.agents.push(agent(
-                &format!("{:08x}", 0x3000_0000 + index),
-                &format!("Agent {index}"),
-                "dev",
-                1,
-                &["20000001"],
-            ));
-        }
-        let mut view = FloorView::new(many);
-        let screen = scene(&mut view, 100, 30, theme(true));
-        assert!(screen.contains("more"), "{screen}");
-    }
-
-    #[test]
-    fn a_lead_only_laboratory_shows_an_empty_state_and_the_desk() {
-        let mut model = floor();
-        model.agents.truncate(1);
-        model.pods.clear();
-        let mut view = FloorView::new(model);
-        let screen = scene(&mut view, 80, 24, theme(true));
-        assert!(screen.contains("No project pods yet."), "{screen}");
-        assert!(screen.contains("TECH LEAD"), "{screen}");
-        assert!(screen.contains("Ada"), "{screen}");
-    }
-
-    #[test]
-    fn role_parsing_matches_the_exchange_rule() {
-        for role in ["lead", "dev", "analyst", "qa"] {
-            assert!(Role::parse(role).is_ok());
-        }
+        let tick = view.tick;
+        view.advance();
+        assert_eq!(view.tick, tick + 1);
     }
 }
