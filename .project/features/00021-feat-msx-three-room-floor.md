@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00021` |
 | Branch | `feat/msx-three-room-floor` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-17 |
 | Related ADRs | ADR-0062 (floor), ADR-0045 (superseded), ADR-0038 (dashboards), ADR-0043 (Kanban) |
 | Scope | Fixed Project Lab, War Room, and Lounge; task context; deterministic movement; bidirectional Kanban link |
@@ -75,8 +75,7 @@ context, and a two-way link with the active project's Kanban board.
   story.
 - `AGENTS.md`, `vlab-tech-lead`, and ADR-0063 record the mandatory post-feature
   skill update.
-- Hosted CI has not been run in this session; the plan stays `In progress`
-  until it is green.
+- Hosted CI is green on commit `3e36e26`.
 
 ## Task checklist
 
@@ -96,5 +95,5 @@ context, and a two-way link with the active project's Kanban board.
   observability/security notes, and help.
 - [x] **F06-01** Add read-model, database, renderer, movement, and TUI tests.
 - [x] **F07-01** Run `make check` and fix every failure.
-- [ ] **F07-02** Push the branch, confirm hosted CI is green, and set the
+- [x] **F07-02** Push the branch, confirm hosted CI is green, and set the
   status to `Done`.

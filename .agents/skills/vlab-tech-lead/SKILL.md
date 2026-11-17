@@ -350,6 +350,8 @@ Ask these before approving any VLab change:
 - Is every multi-entity write transactional, with a no-write failure path?
 - Does the migration preserve or materialize legacy data and remain retryable?
 - Does the UI still work in plain, narrow, no-color, and non-TTY modes?
+- Does every screen-to-screen link preserve one return path without a toggle
+  loop, and is that path tested?
 - Are the new events content-free and documented?
 - Do tests prove the boundary before the effect, not just the final error?
 - Are the docs, data-retention notes, ADR registry, and feature plan current?
