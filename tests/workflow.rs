@@ -7,6 +7,7 @@ use std::process::Command;
 use vlab::app::context::{save_active_lab, save_active_project};
 use vlab::app::directory::Directory;
 use vlab::app::kanban;
+use vlab::app::memories::MemoryStore;
 use vlab::app::projects::ProjectStore;
 use vlab::app::workflow;
 use vlab::domain::agent::{AgentProfile, Description, Role};
@@ -14,6 +15,7 @@ use vlab::domain::budget::{CancelToken, ExecutionLimits};
 use vlab::domain::clock::TestClock;
 use vlab::domain::ids::{AgentId, LabId, ProjectId};
 use vlab::domain::lab::Lab;
+use vlab::domain::memory::MemoryScope;
 use vlab::domain::name::Name;
 use vlab::domain::project::Project;
 use vlab::domain::provider::{ProviderError, ProviderResponse};
@@ -190,7 +192,8 @@ fn the_agent_writes_a_file_commits_it_and_stores_the_outcome() {
             completed: 1,
             failed: 0,
             remaining: 0,
-            remediated: 0
+            remediated: 0,
+            debt: 0
         }
     );
     let detail = story(&fixture);
@@ -205,6 +208,20 @@ fn the_agent_writes_a_file_commits_it_and_stores_the_outcome() {
         Some(".worktrees/5a617283")
     );
     assert!(outcome.commit_sha.as_deref().unwrap().len() >= 7);
+    let agent = AgentId::parse("2d3e4f50").unwrap();
+    let memories = fixture.db.memories(&MemoryScope::Agent(agent)).unwrap();
+    assert_eq!(memories.len(), 1);
+    let recap =
+        std::fs::read_to_string(fixture.db.files().base().join(fixture.db.block_on(async {
+            sqlx::query_scalar::<_, String>("SELECT path FROM memories LIMIT 1")
+                .fetch_one(fixture.db.pool())
+                .await
+                .unwrap()
+        })))
+        .unwrap();
+    assert!(recap.starts_with("# Card completed"), "{recap}");
+    assert!(recap.contains("## Work"), "{recap}");
+    assert!(recap.contains("## Review"), "{recap}");
     let worktree = fixture
         .dir
         .path()
@@ -343,6 +360,88 @@ fn a_rejected_review_is_remediated_and_the_story_finishes() {
     let outcome = detail.outcome.unwrap();
     assert!(outcome.accepted);
     assert!(outcome.commit_sha.is_some());
+}
+
+#[test]
+fn an_exhausted_remediation_closes_the_card_with_technical_debt() {
+    let fixture = fixture(true);
+    fixture
+        .db
+        .execute(
+            "UPDATE stories SET execution_attempts = 3, remediation_attempts = 3 \
+             WHERE id = '5a617283'",
+        )
+        .unwrap();
+    fixture
+        .db
+        .execute(
+            "INSERT INTO story_outcomes (story_id, work_outcome, review_outcome, \
+             reviewer_agent_id, review_accepted, branch, worktree_path, commit_sha, completed_at) \
+             VALUES ('5a617283', 'Added the reset endpoint.', 'The audit log is missing.', \
+             '3e4f5061', 0, 'vlab/5a617283', '.worktrees/5a617283', 'abc1234', \
+             '2026-01-02T00:00:00Z')",
+        )
+        .unwrap();
+    let provider = ScriptedProvider::new(vec![Ok(response(
+        r#"{"decision":"Accept the reset endpoint and ship it without the audit log.","debt_context":"Add the missing audit log and its integration test in a follow-up card."}"#,
+    ))]);
+    let report = run(&fixture, &provider);
+    assert_eq!(report.failed, 0);
+    assert_eq!(report.remediated, 1);
+    assert_eq!(report.debt, 1);
+    assert_eq!(report.remaining, 0);
+    let detail = story(&fixture);
+    assert_eq!(detail.state, kanban::StoryState::Done);
+    let outcome = detail.outcome.unwrap();
+    assert!(outcome.accepted);
+    assert!(
+        outcome.review.contains("Tech Lead compromise"),
+        "{}",
+        outcome.review
+    );
+    assert!(outcome.review.contains("without the audit log"));
+    assert_eq!(outcome.reviewer, "Grace");
+    assert_eq!(outcome.branch.as_deref(), Some("vlab/5a617283"));
+    let debt: Vec<(String, String, String, Option<String>, String)> = fixture.db.block_on(async {
+        sqlx::query_as(
+            "SELECT id, title, state, assigned_agent_id, debt_of_story_id FROM stories \
+             WHERE debt_of_story_id = '5a617283'",
+        )
+        .fetch_all(fixture.db.pool())
+        .await
+        .unwrap()
+    });
+    assert_eq!(debt.len(), 1);
+    let (debt_id, debt_title, debt_state, assignee, parent) = &debt[0];
+    assert!(debt_title.starts_with("Technical debt:"), "{debt_title}");
+    assert_eq!(debt_state, "TODO");
+    assert!(assignee.is_none(), "a debt card waits for triage");
+    assert_eq!(parent.as_str(), "5a617283");
+    let blocked: i64 = fixture.db.block_on(async {
+        sqlx::query_scalar("SELECT COUNT(*) FROM stories WHERE state = 'BLOCKED'")
+            .fetch_one(fixture.db.pool())
+            .await
+            .unwrap()
+    });
+    assert_eq!(blocked, 0, "automatic remediation never parks a card");
+    let lead = AgentId::parse("1c2d3e4f").unwrap();
+    let memories = fixture.db.memories(&MemoryScope::Agent(lead)).unwrap();
+    assert_eq!(memories.len(), 1);
+    let path: String = fixture.db.block_on(async {
+        sqlx::query_scalar("SELECT path FROM memories WHERE id = ?1")
+            .bind(memories[0].memory.id.as_str())
+            .fetch_one(fixture.db.pool())
+            .await
+            .unwrap()
+    });
+    let recap = std::fs::read_to_string(fixture.db.files().base().join(path)).unwrap();
+    assert!(
+        recap.starts_with("# Card closed with technical debt"),
+        "{recap}"
+    );
+    assert!(recap.contains(debt_id), "{recap}");
+    assert_eq!(provider.requests().len(), 1);
+    let _ = fixture.dir;
 }
 
 #[test]

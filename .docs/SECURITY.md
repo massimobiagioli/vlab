@@ -76,7 +76,7 @@ Prompts are behavioral guidance, not security boundaries.
 | Queue → worker | Intake only writes a `TODO` request. One in-process worker reads the oldest request, uses its own database connection, runs one bounded planning/workflow at a time, never touches the terminal, and stops on cancellation. No model-chosen order, no parallel provider call, no daemon. |
 | File store → local disk | Reject absolute paths, `..`, symlinks, and paths outside the data directory; bound markdown files; write with private permissions; never execute imported content. |
 | Floor → terminal | The floor is read-only: it renders sanitized stored names, task titles, and states, never prompts, responses, CVs, or credentials; animation is presentation state only and never calls the provider or writes. |
-| Blocked story → remediation | Model-chosen state, invalid assignee, secret or hostile context, unbounded retries | Strict bounded JSON, local roster validation, escaped/delimited context, application-owned `IN_PROGRESS` transition, three remediation cycles, no permissions or tools | `src/app/workflow.rs`, `src/infra/db/workflow.rs`, `tests/workflow.rs` |
+| Exhausted story → closure | Model-chosen state, invalid assignee, secret or hostile context, unbounded retries, fabricated completion | Strict bounded JSON, local roster validation, escaped/delimited context, application-owned transitions, three remediation cycles, recorded work and closing review, one unassigned debt card, no permissions or tools | `src/app/workflow.rs`, `src/infra/db/workflow.rs`, `tests/workflow.rs` |
 | Model → orchestrator | Validate responses; never interpret proposals as authorization. |
 | Workflow output → story state | Accept only strict action/review JSON; the application validates and executes actions, owns `IN_REVIEW`/`DONE`, and the model cannot choose a transition. |
 | Orchestrator → worktree | Resolve every path inside the story worktree; reject absolute paths, `..`, and symlink escapes; bound file size, command time, and output. |
@@ -123,10 +123,12 @@ before exposure.
 - Bound real execution to 24 work rounds, four actions per round, one
   empty-output retry, a 120-second call timeout, 8,192 output tokens, a
   15-minute work deadline, a 60-second command timeout, 64 KiB captured output,
-  and three attempts per story. A story that exceeds three attempts becomes
-  `BLOCKED`. The Tech Lead may remediate it with a bounded decision/context and
-  active assignee for at most three remediation cycles; the application owns
-  the state transition and never marks `DONE` without a reviewed commit.
+  and three attempts per cycle. A story that exhausts attempts or review is
+  remediated with a bounded decision/context and active assignee for at most
+  three cycles. The workflow never sets `BLOCKED`; the Tech Lead then closes the
+  story `DONE` with a bounded compromise and one linked technical-debt card. The
+  application owns every transition and never marks `DONE` without recorded
+  work and review.
 - Run every command with the worktree as working directory, a cleared
   environment, a private `HOME`, no inherited credentials, and no privilege
   escalation. Do not claim OS-level isolation; none exists.

@@ -3,15 +3,16 @@
 use sqlx::SqliteConnection;
 
 use crate::app::storage::StorageError;
-use crate::app::workflow::{StoryOutcome, WorkflowStore, WorkflowStory};
-use crate::domain::ids::{AgentId, ProjectId, StoryId};
+use crate::app::workflow::{DebtStory, StoryOutcome, WorkflowStore, WorkflowStory};
+use crate::domain::ids::{AgentId, ProjectId, RequestId, StoryId};
 use crate::infra::db::{Database, map_sqlx_error};
 
 const SELECT_PENDING: &str = "\
-SELECT s.id, s.title, s.description, s.acceptance_criteria_json, s.priority, \
-       s.complexity, p.name AS project_name, s.assigned_agent_id AS assignee, \
-       r.content AS request_text, s.execution_attempts, s.remediation_attempts, \
-       s.tech_lead_context, o.work_outcome, o.review_outcome, \
+SELECT s.id, s.request_id, s.project_id, s.title, s.description, \
+       s.acceptance_criteria_json, s.priority, s.complexity, p.name AS project_name, \
+       s.assigned_agent_id AS assignee, r.content AS request_text, s.due_date, \
+       s.execution_attempts, s.remediation_attempts, s.tech_lead_context, \
+       s.debt_of_story_id, o.work_outcome, o.review_outcome, \
        o.reviewer_agent_id, o.review_accepted, o.branch, o.worktree_path, o.commit_sha \
 FROM stories s \
 JOIN projects p ON p.id = s.project_id \
@@ -19,19 +20,25 @@ JOIN requests r ON r.id = s.request_id \
 LEFT JOIN story_outcomes o ON o.story_id = s.id \
 WHERE s.project_id = ?1 AND s.state IN ('TODO', 'IN_PROGRESS', 'IN_REVIEW') \
   AND s.assigned_agent_id IS NOT NULL \
+  AND NOT (s.state = 'IN_PROGRESS' AND s.execution_attempts >= 3 \
+           AND s.remediation_attempts < 3) \
+  AND NOT (COALESCE(o.review_accepted, 1) = 0 AND s.remediation_attempts < 3) \
 ORDER BY s.created_at, s.id";
 
 const SELECT_BLOCKED: &str = "\
-SELECT s.id, s.title, s.description, s.acceptance_criteria_json, s.priority, \
-       s.complexity, p.name AS project_name, s.assigned_agent_id AS assignee, \
-       r.content AS request_text, s.execution_attempts, s.remediation_attempts, \
-       s.tech_lead_context, o.work_outcome, o.review_outcome, \
+SELECT s.id, s.request_id, s.project_id, s.title, s.description, \
+       s.acceptance_criteria_json, s.priority, s.complexity, p.name AS project_name, \
+       s.assigned_agent_id AS assignee, r.content AS request_text, s.due_date, \
+       s.execution_attempts, s.remediation_attempts, s.tech_lead_context, \
+       s.debt_of_story_id, o.work_outcome, o.review_outcome, \
        o.reviewer_agent_id, o.review_accepted, o.branch, o.worktree_path, o.commit_sha \
 FROM stories s \
 JOIN projects p ON p.id = s.project_id \
 JOIN requests r ON r.id = s.request_id \
 LEFT JOIN story_outcomes o ON o.story_id = s.id \
-WHERE s.project_id = ?1 AND s.state = 'BLOCKED' AND s.assigned_agent_id IS NOT NULL \
+WHERE s.project_id = ?1 AND s.assigned_agent_id IS NOT NULL \
+  AND (s.state = 'BLOCKED' OR (s.state = 'IN_PROGRESS' AND \
+       (s.execution_attempts >= 3 OR COALESCE(o.review_accepted, 1) = 0))) \
 ORDER BY s.created_at, s.id";
 
 const SET_STATE: &str = "\
@@ -48,6 +55,19 @@ UPDATE stories SET assigned_agent_id = ?2, state = 'IN_PROGRESS', \
   execution_attempts = 0, remediation_attempts = remediation_attempts + 1, \
   tech_lead_context = ?3, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
 WHERE id = ?1";
+
+const CLOSE_STORY: &str = "\
+UPDATE stories SET state = 'DONE', tech_lead_context = ?2, \
+  updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+WHERE id = ?1";
+
+const INSERT_DEBT: &str = "\
+INSERT INTO stories (id, project_id, request_id, title, description, \
+  acceptance_criteria_json, priority, complexity, required_skills_json, \
+  assigned_agent_id, assignment_rationale, state, due_date, created_at, updated_at, \
+  debt_of_story_id) \
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, '[]', NULL, ?9, 'TODO', ?10, \
+  strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?11)";
 
 const UPSERT_OUTCOME: &str = "\
 INSERT INTO story_outcomes (story_id, work_outcome, review_outcome, reviewer_agent_id, \
@@ -66,6 +86,8 @@ ON CONFLICT (story_id) DO UPDATE SET \
 #[derive(sqlx::FromRow)]
 struct Row {
     id: String,
+    request_id: String,
+    project_id: String,
     title: String,
     description: String,
     acceptance_criteria_json: String,
@@ -74,9 +96,11 @@ struct Row {
     project_name: String,
     assignee: String,
     request_text: String,
+    due_date: String,
     execution_attempts: i64,
     remediation_attempts: i64,
     tech_lead_context: Option<String>,
+    debt_of_story_id: Option<String>,
     work_outcome: Option<String>,
     review_outcome: Option<String>,
     reviewer_agent_id: Option<String>,
@@ -118,6 +142,66 @@ impl WorkflowStore for Database {
                     .execute(&mut *connection)
                     .await
                     .map_err(|_| StorageError::Operation)?;
+                Ok(())
+            })
+        })
+    }
+
+    fn close_with_debt(
+        &self,
+        story: &WorkflowStory,
+        outcome: &StoryOutcome,
+        decision: &str,
+        debt: Option<&DebtStory>,
+    ) -> Result<(), StorageError> {
+        let story_id = story.id.clone();
+        let project_id = story.project_id.clone();
+        let request_id = story.request_id.clone();
+        let priority = story.priority.clone();
+        let complexity = story.complexity.clone();
+        let outcome = outcome.clone();
+        let decision = decision.to_owned();
+        let debt = debt.cloned();
+        self.transaction(move |connection| {
+            Box::pin(async move {
+                sqlx::query(UPSERT_OUTCOME)
+                    .bind(story_id.as_str())
+                    .bind(&outcome.work_outcome)
+                    .bind(&outcome.review_outcome)
+                    .bind(outcome.reviewer_agent_id.as_str())
+                    .bind(outcome.accepted)
+                    .bind(&outcome.branch)
+                    .bind(&outcome.worktree_path)
+                    .bind(&outcome.commit_sha)
+                    .execute(&mut *connection)
+                    .await
+                    .map_err(|_| StorageError::Operation)?;
+                sqlx::query(CLOSE_STORY)
+                    .bind(story_id.as_str())
+                    .bind(&decision)
+                    .execute(&mut *connection)
+                    .await
+                    .map_err(|_| StorageError::Operation)?;
+                if let Some(debt) = debt {
+                    let criteria = serde_json::to_string(&debt.acceptance_criteria)
+                        .map_err(|_| StorageError::Operation)?;
+                    let rationale = format!("Technical debt from {}.", story_id);
+                    sqlx::query(INSERT_DEBT)
+                        .bind(debt.id.as_str())
+                        .bind(project_id.as_str())
+                        .bind(request_id.as_str())
+                        .bind(&debt.title)
+                        .bind(&debt.description)
+                        .bind(&criteria)
+                        .bind(&priority)
+                        .bind(&complexity)
+                        .bind(&rationale)
+                        .bind(&debt.due_date)
+                        .bind(story_id.as_str())
+                        .execute(&mut *connection)
+                        .await
+                        .map_err(|_| StorageError::Operation)?;
+                }
                 Ok(())
             })
         })
@@ -238,6 +322,8 @@ fn map_row(row: Row) -> Option<WorkflowStory> {
     };
     Some(WorkflowStory {
         id: StoryId::parse(&row.id)?,
+        request_id: RequestId::parse(&row.request_id)?,
+        project_id: ProjectId::parse(&row.project_id)?,
         title: row.title,
         description: row.description,
         acceptance_criteria: serde_json::from_str(&row.acceptance_criteria_json).ok()?,
@@ -246,9 +332,11 @@ fn map_row(row: Row) -> Option<WorkflowStory> {
         project_name: row.project_name,
         assignee: AgentId::parse(&row.assignee)?,
         request_text: row.request_text,
+        due_date: row.due_date,
         execution_attempts: u32::try_from(row.execution_attempts).ok()?,
         remediation_attempts: u32::try_from(row.remediation_attempts).ok()?,
         tech_lead_context: row.tech_lead_context,
+        debt_of_story_id: row.debt_of_story_id.as_deref().and_then(StoryId::parse),
         last_outcome,
     })
 }

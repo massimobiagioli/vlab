@@ -251,8 +251,10 @@ manual state transitions.
 
 Memories are application-managed. Creating a laboratory, an agent, or a
 project writes a short deterministic memory; a successful planning run stores
-one bounded model-generated summary. Laboratory and project memories can also
-be viewed, created, edited, and deleted from the Lab floor; agent memories do
+a bounded markdown planning recap, and an accepted card stores a markdown
+completion recap in the assignee's agent memory. Laboratory and project
+memories can also be viewed, created, edited, and deleted from the Lab floor;
+agent memories do
 not have a manual surface. They are limited to 2,000 characters and 20 per
 scope, treated as untrusted context, and included within an 8 KiB prompt
 budget. Automatic writes never fail the triggering action.
@@ -327,18 +329,22 @@ has no assignments), computes due dates locally in UTC (2/5/10 calendar days by
 complexity), and inserts all stories in one transaction. The Tech Lead resolves
 clarification autonomously in up to two bounded follow-up calls; unresolved
 questions fail with `clarification_unresolved`, never a human prompt. Assigned
-stories execute in worktrees; a story that blocks after three attempts or a
-rejected review is taken over by the Tech Lead, given bounded technical context,
+stories execute in worktrees; a story that fails three attempts or a rejected
+review is taken over by the Tech Lead, given bounded technical context,
 optionally reassigned, and retried automatically for up to three remediation
-cycles. Provider, validation, budget, timeout, and cancellation outcomes
-preserve the request. A second request waits in `TODO` until the first
-finishes. Retries are bounded and may incur additional provider charges;
+cycles. The workflow never parks it in `BLOCKED`: after the last cycle the Tech
+Lead closes the card `DONE` with a recorded compromise and opens one unassigned
+`TODO` technical-debt card for the residual work. Provider, validation, budget,
+timeout, and cancellation outcomes preserve the request and stop the pass
+without consuming the remediation budget. A second request waits in `TODO`
+until the first finishes. Retries are bounded and may incur additional provider charges;
 exactly-once remote execution is not promised.
 
 Planning prompts include laboratory, project, and Tech Lead agent memories
-within 8 KiB, delimited as data. A successful plan also stores a short
-model-generated project summary memory. Request text, prompts, CVs, and provider
-responses are never stored in events or shown in errors. See
+within 8 KiB, delimited as data. A successful plan stores a markdown project
+recap with the request and story list; an accepted card stores a markdown
+completion recap in the assignee's agent memory. Request text, prompts, CVs, and
+provider responses are never stored in events or shown in errors. See
 [`.docs/planning.md`](.docs/planning.md).
 
 ## Direct questions

@@ -56,11 +56,13 @@ in its border. Use `←/→` or `h/l` for lists, `↑/↓` or `j/k` for cards,
 read-only; state changes come from the application workflow. After
 planning, assigned stories are executed for real in a git worktree and then
 moved through `IN_REVIEW` to `DONE` (work by the assignee, review by the first
-active QA or the Tech Lead). A `BLOCKED` story is taken over by the Tech Lead,
-given bounded context, optionally reassigned, and retried for up to three
-remediation cycles. A card detail shows the Tech Lead context, work summary,
-review, reviewer, branch, worktree, commit, and completion time. VLab never
-merges the branch automatically.
+active QA or the Tech Lead). A story that fails or is rejected is taken over by
+the Tech Lead, given bounded context, optionally reassigned, and retried for up
+to three remediation cycles. The workflow never parks it in `BLOCKED`; after the
+last cycle it closes `DONE` with a recorded `Tech Lead compromise:` decision and
+one linked `TODO` technical-debt card. A card detail shows the Tech Lead
+context, work summary, review, reviewer, branch, worktree, commit, and
+completion time. VLab never merges the branch automatically.
 
 **Interactions** (`i`) opens a read-only project history: planning, work, and
 review entries with time, participants, reference, outcome, and a recap.

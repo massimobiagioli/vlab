@@ -1,5 +1,9 @@
 # Feature 00025 — Autonomous remediation of blocked stories
 
+> Superseded by `00027-feat-story-technical-debt` for the exhausted-remediation
+> outcome. ADR-0067 is retained for history; ADR-0069 replaces the terminal
+> `BLOCKED` behavior with a Tech Lead closing compromise and a linked debt card.
+
 | Field | Value |
 |---|---|
 | Identifier | `00025` |

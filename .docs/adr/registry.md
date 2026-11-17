@@ -95,7 +95,9 @@ revises a technical decision must keep it current.
 | ADR-0064 | Non-blocking startup resume | Accepted | 2026-11-17 | — | [adr-0064.md](adr-0064.md) |
 | ADR-0065 | Live Kanban refresh and initial-based view keys | Accepted | 2026-11-17 | — | [adr-0065.md](adr-0065.md) |
 | ADR-0066 | Autonomous clarification resolution | Accepted | 2026-11-17 | — | [adr-0066.md](adr-0066.md) |
-| ADR-0067 | Autonomous remediation of blocked stories | Accepted | 2026-11-17 | — | [adr-0067.md](adr-0067.md) |
+| ADR-0067 | Autonomous remediation of blocked stories | Superseded | 2026-11-17 | — | [adr-0067.md](adr-0067.md) |
+| ADR-0068 | Markdown recap memories for planning and completed cards | Accepted | 2026-11-17 | — | [adr-0068.md](adr-0068.md) |
+| ADR-0069 | Close exhausted stories with a Tech Lead compromise and technical debt | Accepted | 2026-11-17 | ADR-0067 | [adr-0069.md](adr-0069.md) |
 
 ## Supersession map
 
@@ -108,3 +110,4 @@ revises a technical decision must keep it current.
 | ADR-0005 | ADR-0038 |
 | ADR-0048 | ADR-0050 |
 | ADR-0045 | ADR-0062 |
+| ADR-0067 | ADR-0069 |

@@ -119,26 +119,34 @@ then drains queued requests. There is no pre-dashboard blocking message
    worktree path, commit, and completion time, and the story becomes `DONE`.
 6. On provider, tool, or validation failure the story returns to
    `IN_PROGRESS`, a `workflow_failed` event is recorded with an error code, and
-   planning remains `PLANNED`. After three failed attempts the story becomes
-   `BLOCKED`.
-7. A blocked story is remediated by the Tech Lead: it reads the previous
-   outcome, makes a technical decision, adds bounded context, optionally
-   reassigns to an active roster agent, resets execution attempts, increments
-   the remediation counter, clears the stale outcome, and returns the story to
-   `IN_PROGRESS`. The same workflow pass retries it. Up to three remediation
-   cycles are allowed; an impossible story remains `BLOCKED` and is never
-   falsely marked `DONE`.
+   planning remains `PLANNED`. A transient provider, worktree, or environment
+   failure ends the pass after the failure is recorded, so an outage does not
+   consume the remediation budget. The workflow never sets `BLOCKED`.
+7. After three failed attempts or a rejected review, the Tech Lead remediates
+   the story: it reads the previous outcome, makes a technical decision, adds
+   bounded context, optionally reassigns to an active roster agent, resets
+   execution attempts, increments the remediation counter, clears the stale
+   outcome, and leaves the story in `IN_PROGRESS`. The same workflow pass
+   retries it.
+8. After three remediation cycles the Tech Lead makes a closing decision. The
+   story closes as `DONE` in one transaction with the last work and branch
+   evidence and a review outcome that records the `Tech Lead compromise:`
+   decision. The same transaction creates one unassigned `TODO` technical-debt
+   card linked through `debt_of_story_id`, carrying the decision, the residual
+   work, the original criteria, and a closing review.
 
-The review decides the final state. An accepted review sets `DONE`. A rejected
-review keeps the commit on `vlab/<story-id>`, stores `review_accepted = 0`, and
-starts Tech Lead remediation rather than waiting for a human. `DONE` means the
-work was executed, committed, and accepted by the reviewer; it does not mean the
-branch was merged or deployed, or that every check passed. Limits: 24 rounds,
-four actions per round, 120-second call timeout, 8,192 output tokens, 15-minute
-work deadline, 60-second command timeout, 64 KiB captured output, three
-execution attempts, three remediation cycles, and a 45-minute workflow deadline.
-One empty-output retry per round is allowed. Commands run with a cleared
-environment and no OS sandbox; use a trusted machine and account.
+An accepted review sets `DONE` normally. A rejected review keeps the commit on
+`vlab/<story-id>`, stores `review_accepted = 0`, and starts Tech Lead
+remediation rather than waiting for a human. A compromised closure is still
+`DONE` because the work and the explicit Tech Lead decision are recorded; it
+does not mean the work passed a normal review, and the debt card tracks the gap.
+`DONE` never means the branch was merged or deployed. Limits: 24 rounds, four
+actions per round, 120-second call timeout, 8,192 output tokens, 15-minute work
+deadline, 60-second command timeout, 64 KiB captured output, three execution
+attempts per cycle, three remediation cycles, one closing decision, and a
+45-minute workflow deadline. One empty-output retry per round is allowed.
+Commands run with a cleared environment and no OS sandbox; use a trusted machine
+and account.
 
 ## Provider contract
 

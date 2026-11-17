@@ -673,7 +673,7 @@ pub fn plan_queued(
         })
         .collect();
     store.finish_planned(&request_id, &project_id, &stories)?;
-    if let Some(summary) = planning_summary(
+    let summary = planning_summary(
         store,
         &lead.id,
         settings.provider.as_str(),
@@ -686,11 +686,25 @@ pub fn plan_queued(
         cancel_check,
         clock,
         run_id,
-    ) && let Some(memory) = crate::app::memories::remember(
+    );
+    let names: std::collections::HashMap<String, String> = members
+        .iter()
+        .map(|member| (member.id.to_string(), member.name.clone()))
+        .collect();
+    let recap = planning_recap(
+        &project.name,
+        &request_id,
+        request_text,
+        &created_at,
+        &stories,
+        &names,
+        summary.as_deref(),
+    );
+    if let Some(memory) = crate::app::memories::remember(
         store,
         state,
         MemoryScope::Project(project_id.clone()),
-        &summary,
+        &recap,
         settings.credentials.deepseek_api_key.as_deref(),
     ) && let Some(entity) = EntityRef::new(EntityType::Memory, memory.id.as_str())
     {
@@ -716,6 +730,57 @@ pub fn plan_queued(
         request_id,
         stories,
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn planning_recap(
+    project_name: &str,
+    request_id: &RequestId,
+    request_text: &str,
+    created_at: &str,
+    stories: &[PlannedStoryRow],
+    names: &std::collections::HashMap<String, String>,
+    summary: Option<&str>,
+) -> String {
+    let date = created_at.chars().take(10).collect::<String>();
+    let mut out = format!(
+        "# Planning recap — {date}\n\n- Project: {}\n- Request: {request_id}\n- Stories: {}\n- Created: {created_at}\n\n## Request\n\n{}\n\n## Stories\n\n",
+        markdown_text(project_name),
+        stories.len(),
+        markdown_text(&request_text.chars().take(800).collect::<String>())
+    );
+    for story in stories {
+        let assignee = story
+            .assigned_agent_id
+            .as_deref()
+            .and_then(|id| names.get(id))
+            .map(|name| markdown_text(name))
+            .unwrap_or_else(|| "unassigned".to_owned());
+        let _ = writeln!(
+            out,
+            "- **{}** — {assignee} — {} — due {}",
+            markdown_text(&story.title),
+            story.initial_state(),
+            markdown_text(&story.due_date)
+        );
+    }
+    if let Some(summary) = summary {
+        let _ = write!(
+            out,
+            "\n## Tech Lead summary\n\n{}\n",
+            markdown_text(summary)
+        );
+    }
+    crate::app::memories::bound_markdown(&out)
+}
+
+fn markdown_text(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| *ch == '\n' || *ch == '\t' || !ch.is_control())
+        .collect::<String>()
+        .trim()
+        .to_owned()
 }
 
 #[allow(clippy::too_many_arguments)]

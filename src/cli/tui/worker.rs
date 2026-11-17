@@ -27,6 +27,16 @@ use crate::obs::RunId;
 const IDLE_POLL: Duration = Duration::from_millis(250);
 const ERROR_BACKOFF: Duration = Duration::from_secs(5);
 
+/// Bounded workflow counters reported after a queued request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct WorkflowSummary {
+    pub completed: usize,
+    pub failed: usize,
+    pub remaining: usize,
+    pub remediated: usize,
+    pub debt: usize,
+}
+
 /// One observable transition from the worker.
 pub(super) enum WorkerEvent {
     Started {
@@ -35,7 +45,7 @@ pub(super) enum WorkerEvent {
     Finished {
         request_id: RequestId,
         outcome: PlanningOutcome,
-        workflow: Option<Result<(usize, usize, usize, usize), String>>,
+        workflow: Option<Result<WorkflowSummary, String>>,
     },
     Background(String),
     Warning(String),
@@ -200,13 +210,12 @@ fn run(
                     cancel.clone(),
                     run_id,
                 )
-                .map(|report| {
-                    (
-                        report.completed,
-                        report.failed,
-                        report.remaining,
-                        report.remediated,
-                    )
+                .map(|report| WorkflowSummary {
+                    completed: report.completed,
+                    failed: report.failed,
+                    remaining: report.remaining,
+                    remediated: report.remediated,
+                    debt: report.debt,
                 })
                 .map_err(|error| format!("{} {}", error, error.hint())),
             ),

@@ -931,8 +931,13 @@ impl App {
                     }
                 };
                 self.status = Some(match workflow {
-                    Some(Ok((completed, failed, remaining, remediated))) => format!(
-                        "{base} Workflow: {completed} completed, {failed} failed, {remaining} remaining, {remediated} remediated."
+                    Some(Ok(summary)) => format!(
+                        "{base} Workflow: {} completed, {} failed, {} remaining, {} remediated, {} technical debt.",
+                        summary.completed,
+                        summary.failed,
+                        summary.remaining,
+                        summary.remediated,
+                        summary.debt
                     ),
                     Some(Err(reason)) => format!("{base} Workflow skipped: {reason}"),
                     None => base,

@@ -92,6 +92,21 @@ pub fn remember(
     create(store, state, scope, content, secret).ok()
 }
 
+/// Trims a generated recap to the memory limit without splitting a character.
+pub fn bound_markdown(content: &str) -> String {
+    let trimmed = content.trim();
+    let mut chars = trimmed.chars();
+    let mut out: String = chars
+        .by_ref()
+        .take(crate::domain::memory::MEMORY_MAX_CHARS)
+        .collect();
+    if chars.next().is_some() {
+        out.pop();
+        out.push('…');
+    }
+    out
+}
+
 pub fn lab_created_content(lab: &Lab) -> String {
     format!("Laboratory '{}' was created.", lab.name)
 }

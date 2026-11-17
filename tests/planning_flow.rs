@@ -273,9 +273,14 @@ fn a_successful_plan_stores_a_model_summary_memory() {
             .unwrap()
     });
     assert_eq!(paths.len(), 1);
-    assert_eq!(
-        std::fs::read_to_string(fixture.db.files().base().join(&paths[0])).unwrap(),
-        "Planning summary: The team will add a password reset flow."
+    let recap = std::fs::read_to_string(fixture.db.files().base().join(&paths[0])).unwrap();
+    assert!(recap.starts_with("# Planning recap"), "{recap}");
+    assert!(recap.contains("- Project: Portal"), "{recap}");
+    assert!(recap.contains("## Stories"), "{recap}");
+    assert!(recap.contains("Add reset"), "{recap}");
+    assert!(
+        recap.contains("The team will add a password reset flow."),
+        "{recap}"
     );
 }
 

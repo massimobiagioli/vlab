@@ -55,7 +55,9 @@ laboratories staffed by AI agents.
   The model proposes actions; the application validates and executes them and
   owns every state transition.
 - **File store:** memories and imported documents are markdown under the data
-  directory. SQLite stores relative paths, not content (ADR-0059).
+  directory. SQLite stores relative paths, not content (ADR-0059). Automatic
+  project memories are planning recaps and accepted cards create agent
+  completion recaps; both are bounded markdown (ADR-0068).
 - **Queue:** intake persists a `TODO` request and returns; one in-process
   worker drains the active laboratory oldest-first, one request at a time, with
   no daemon or parallel provider calls (ADR-0061). `--run-queue` is the bounded
@@ -65,11 +67,14 @@ laboratories staffed by AI agents.
 - **Clarification:** the Tech Lead must resolve its own questions. Up to two
   bounded follow-up calls are allowed; new requests never wait for a human, and
   unresolved questions fail with `clarification_unresolved` (ADR-0066).
-- **Blocked stories:** the Tech Lead takes over a `BLOCKED` story, records a
-  bounded decision/context, may reassign it, resets execution attempts, and
-  returns it to `IN_PROGRESS` for up to three remediation cycles. The
-  application owns the transition and never marks `DONE` without a reviewed
-  commit (ADR-0067).
+- **Exhausted stories:** the workflow never sets `BLOCKED`. The Tech Lead takes
+  over a failing or rejected story, records a bounded decision/context, may
+  reassign it, resets execution attempts, and retries it for up to three
+  remediation cycles (ADR-0069). After the last cycle it records a closing
+  compromise, the card closes `DONE` with that review and the last work/branch
+  evidence, and one unassigned `TODO` technical-debt card is linked through
+  `debt_of_story_id`. Transient provider or environment failures stop the pass
+  without consuming the budget.
 - **Floor:** the laboratory floor is a fixed top-down T-plan MSX scene
   (Project Lab and Lounge above, War Room below) with furniture, doors,
   deterministic slow tours, and a bidirectional `f` link to the active
@@ -407,7 +412,8 @@ Ask these before approving any VLab change:
 - `.docs/configuration.md`
 - `.docs/adr/registry.md`
 - `.docs/adr/adr-0061.md`, `.docs/adr/adr-0062.md`, `.docs/adr/adr-0063.md`,
-  `.docs/adr/adr-0064.md`, `.docs/adr/adr-0066.md`, `.docs/adr/adr-0067.md`
+  `.docs/adr/adr-0064.md`, `.docs/adr/adr-0066.md`, `.docs/adr/adr-0067.md`,
+  `.docs/adr/adr-0068.md`, `.docs/adr/adr-0069.md`
 - `.agents/skills/msx-computer-senior-software-architect/SKILL.md`
 - `.project/IMPLEMENTATION-PLAN.md`
 - `.project/features/`

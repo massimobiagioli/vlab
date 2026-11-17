@@ -222,8 +222,9 @@ vlab --run-queue
 `--new-request` only queues. `--run-queue` calls DeepSeek with bounded retries,
 validates the JSON proposal, assigns only the project's agents (or laboratory
 members when none is assigned), computes due dates locally, and saves all
-stories in one transaction. It then stores a short planning-summary memory and
-prints the request status. If planning returns questions, the Tech Lead
+stories in one transaction. It then stores a markdown planning recap and prints
+the request status. When an agent closes an accepted card, VLab adds a markdown
+completion recap to that agent's memory. If planning returns questions, the Tech Lead
 resolves them autonomously in up to two bounded follow-up calls; unresolved
 questions fail with `clarification_unresolved`, never with a human prompt. A
 missing provider
@@ -237,12 +238,14 @@ vlab --show-project-kanban
 
 The board shows `TODO`, `IN PROGRESS`, `IN REVIEW`, `BLOCKED`, and `DONE`,
 with assignee, priority, due date, counts, and pending intake. It is read-only;
-states are changed only by the application workflow. A blocked story is
-remediated by the Tech Lead: it gets bounded context, may be reassigned, and
-returns to `IN PROGRESS` automatically for up to three cycles; the card is never
-falsely marked `DONE`. Open a `DONE` card with `Enter` to read its work summary,
-review, reviewer, branch, worktree, commit, and completion time. VLab never
-merges the branch automatically.
+states are changed only by the application workflow. A failing or rejected
+story is remediated by the Tech Lead: it gets bounded context, may be
+reassigned, and is retried for up to three cycles. The workflow never parks it
+in `BLOCKED`; after the last cycle the Tech Lead records a closing compromise,
+the card becomes `DONE`, and one linked unassigned `TODO` card captures the
+technical debt. A `DONE` card can be opened with `Enter` to read its work
+summary, review, reviewer, branch, worktree, commit, and completion time. VLab
+never merges the branch automatically.
 
 ### Interactions
 

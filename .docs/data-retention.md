@@ -196,9 +196,10 @@ requests are not duplicated into a second table or into events.
 | `assigned_agent_id` | Project roster member or `NULL` | Assignment; references are validated locally. |
 | `assignment_rationale` | Bounded explanation or `NULL` | Explains the assignment or why it is unassigned. |
 | `state` | Kanban state | Board column written only by the application workflow. Assigned stories start in `IN PROGRESS`; unassigned stories start in `TODO` (ADR-0047). |
-| `execution_attempts` | Integer counter | Bounds paid retries; three failures set `BLOCKED` and start Tech Lead remediation (ADR-0050, ADR-0067). |
-| `remediation_attempts` | Integer counter (schema v16) | Bounds autonomous blocked-story retries to three cycles (ADR-0067). |
-| `tech_lead_context` | Bounded decision and context text or `NULL` (schema v16) | Gives the next attempt the Tech Lead's technical decision; untrusted prompt data, displayed sanitized. |
+| `execution_attempts` | Integer counter | Bounds paid retries; three failures start Tech Lead remediation (ADR-0050, ADR-0069). |
+| `remediation_attempts` | Integer counter (schema v16) | Bounds autonomous remediation to three cycles before the closing decision (ADR-0069). |
+| `tech_lead_context` | Bounded decision and context text or `NULL` (schema v16) | Gives the next attempt the Tech Lead's technical decision, and stores the final closing compromise; untrusted prompt data, displayed sanitized. |
+| `debt_of_story_id` | Parent story identifier or `NULL` (schema v17) | Links one technical-debt follow-up card to the story it was opened for (ADR-0069). |
 | `due_date` | `YYYY-MM-DD` | Locally computed estimate, not a commitment. |
 | `created_at`, `updated_at` | RFC 3339 UTC timestamps | Ordering and diagnosis. |
 
@@ -243,7 +244,11 @@ retention as any other memory (ADR-0058).
 
 `data/memories/` and `data/documents/` contain `agents/`, `projects/`, and
 `lab/` subfolders. Files are UTF-8 markdown, bounded to 8 KiB for memories and
-1 MiB for documents. The data directory is private. The repository tracks only
+1 MiB for documents. Automatically generated project memories are planning
+recaps with metadata and the story list; automatically generated agent memories
+are card-completion recaps with branch, commit, work, review, and Tech Lead
+context. Both are bounded to the 2,000-character memory limit (ADR-0068). The
+data directory is private. The repository tracks only
 `.data/memories/.gitkeep` and `.data/documents/.gitkeep`; all generated content
 is ignored by git. VLab does not back up or encrypt these files.
 
