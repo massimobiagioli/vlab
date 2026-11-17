@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00020` |
 | Branch | `feat/background-queue` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-17 |
 | Related ADRs | ADR-0061 (queue), ADR-0049 (startup resume), ADR-0050 (bounded execution) |
 | Scope | Immediate TODO intake and a serial in-process Tech Lead worker |
@@ -71,8 +71,7 @@ in `TODO`.
 - `src/cli/tui/mod.rs` tests prove the `REQUEST` card, read-only detail, and
   content-free worker status events; `tests/cli_tui.rs` exercises the
   background worker end to end through the prompt.
-- Hosted CI has not been run in this session; the plan stays `In progress`
-  until it is green.
+- Hosted CI is green on commit `7c19563`.
 
 ## Task checklist
 
@@ -86,5 +85,5 @@ in `TODO`.
   observability, security, and data-retention notes.
 - [x] **F07-01** Add application, database, TUI, and CLI tests.
 - [x] **F08-01** Run `make check` and fix every failure.
-- [ ] **F08-02** Push the branch, confirm hosted CI is green, and set the
+- [x] **F08-02** Push the branch, confirm hosted CI is green, and set the
   status to `Done`.
