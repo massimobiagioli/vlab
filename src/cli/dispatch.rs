@@ -36,7 +36,7 @@ use crate::infra::db::Database;
 use crate::infra::execution::WorkspaceEnvironment;
 use crate::infra::paths::Paths;
 use crate::infra::provider::deepseek::{AdapterLimits, DEFAULT_ENDPOINT, DeepSeekProvider};
-use crate::infra::workspace::{DEFAULT_CLONE_TIMEOUT, GitWorkspace};
+use crate::infra::workspace::{DEFAULT_CLONE_TIMEOUT, DEFAULT_REMOTE_TIMEOUT, GitWorkspace};
 use crate::obs::events::{AuditEvent, EntityRef, EntityType, EventKind, EventSink, Outcome};
 use crate::obs::{ActionId, RunId};
 
@@ -157,7 +157,13 @@ pub fn dispatch(
             let cancel = CancelToken::default();
             let handler = cancel.clone();
             let _ = ctrlc::set_handler(move || handler.cancel());
-            let environment = WorkspaceEnvironment::new(Paths::from_environment()?.workspace_dir());
+            let paths = Paths::from_environment()?;
+            let environment = WorkspaceEnvironment::with_repository(
+                paths.workspace_dir(),
+                paths.sandbox_dir(),
+                settings.credentials.github_api_key.clone(),
+                DEFAULT_REMOTE_TIMEOUT,
+            );
             let report = crate::app::schedules::run_due(
                 &db,
                 &db,
@@ -187,7 +193,13 @@ pub fn dispatch(
             let cancel = CancelToken::default();
             let handler = cancel.clone();
             let _ = ctrlc::set_handler(move || handler.cancel());
-            let environment = WorkspaceEnvironment::new(Paths::from_environment()?.workspace_dir());
+            let paths = Paths::from_environment()?;
+            let environment = WorkspaceEnvironment::with_repository(
+                paths.workspace_dir(),
+                paths.sandbox_dir(),
+                settings.credentials.github_api_key.clone(),
+                DEFAULT_REMOTE_TIMEOUT,
+            );
             let mut processed = 0usize;
             let mut failed = 0usize;
             while processed < crate::app::queue::MAX_QUEUE_BATCH {
@@ -300,6 +312,19 @@ pub fn dispatch(
                     &format!("Queue: {processed} processed, {failed} failed.\n"),
                 )
             }
+        }
+        Action::SyncSandbox => {
+            let db = open_database(run_id)?;
+            let settings = settings::show(&settings_file()?)?.settings;
+            let paths = Paths::from_environment()?;
+            let repository = crate::infra::git_repository::GitRepository::new(
+                paths.workspace_dir(),
+                paths.sandbox_dir(),
+                settings.credentials.github_api_key,
+                DEFAULT_REMOTE_TIMEOUT,
+            );
+            let report = crate::app::integration::sync_active_lab(&db, &db, &repository, run_id)?;
+            write_stdout(stdout, &format!("{}\n", report.summary()))
         }
         Action::ImportDocument { src, into, agent } => {
             let mut db = open_database(run_id)?;
@@ -758,7 +783,12 @@ pub(crate) fn resume_pending_workflow(stderr: &mut dyn Write, run_id: RunId, can
         Err(_) => return,
     };
     let environment = match Paths::from_environment() {
-        Ok(paths) => WorkspaceEnvironment::new(paths.workspace_dir()),
+        Ok(paths) => WorkspaceEnvironment::with_repository(
+            paths.workspace_dir(),
+            paths.sandbox_dir(),
+            settings.credentials.github_api_key.clone(),
+            DEFAULT_REMOTE_TIMEOUT,
+        ),
         Err(error) => {
             let error = AppError::from(error);
             let _ = write_stderr(
@@ -837,6 +867,53 @@ pub(crate) fn resume_pending_workflow(stderr: &mut dyn Write, run_id: RunId, can
             let _ = write_stderr(
                 stderr,
                 &format!("Warning: workflow skipped: {} {}\n", error, error.hint()),
+            );
+        }
+    }
+}
+
+/// Reconciles pending develop integrations and refreshes every project's
+/// sandbox for the active laboratory (ADR-0070).
+pub(crate) fn sync_projects_on_startup(
+    db: &Database,
+    paths: &Paths,
+    stderr: &mut dyn Write,
+    run_id: RunId,
+) {
+    if context::active_lab(db)
+        .ok()
+        .and_then(|active| active.require().ok())
+        .is_none()
+    {
+        return;
+    }
+    let file = match settings_file() {
+        Ok(file) => file,
+        Err(_) => return,
+    };
+    let settings = match settings::show(&file) {
+        Ok(report) => report.settings,
+        Err(_) => return,
+    };
+    let repository = crate::infra::git_repository::GitRepository::new(
+        paths.workspace_dir(),
+        paths.sandbox_dir(),
+        settings.credentials.github_api_key,
+        DEFAULT_REMOTE_TIMEOUT,
+    );
+    match crate::app::integration::sync_active_lab(db, db, &repository, run_id) {
+        Ok(report) if report.projects > 0 => {
+            let _ = write_stderr(stderr, &format!("{}\n", report.summary()));
+        }
+        Ok(_) => {}
+        Err(error) => {
+            let _ = write_stderr(
+                stderr,
+                &format!(
+                    "Warning: sandbox sync skipped: {} {}\n",
+                    error,
+                    error.hint()
+                ),
             );
         }
     }

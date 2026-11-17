@@ -13,8 +13,12 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::app::execution::{Action, ActionError, ActionRunner, MAX_COMMAND_CHARS, MAX_FILE_BYTES};
-use crate::app::worktrees::{WorkflowEnvironment, Worktree, WorktreeError};
+use crate::app::worktrees::{
+    DevelopIntegration, ProjectRepository, SandboxCheckout, WorkflowEnvironment, Worktree,
+    WorktreeError,
+};
 use crate::domain::ids::{ProjectId, StoryId};
+use crate::infra::git_repository::GitRepository;
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(60);
 const GIT_TIMEOUT: Duration = Duration::from_secs(60);
@@ -241,14 +245,34 @@ impl ActionRunner for WorktreeActions {
     }
 }
 
-/// Prepares worktrees under `<workspace>/.worktrees/<story-id>`.
+/// Prepares worktrees under `<workspace>/.worktrees/<story-id>` and optionally
+/// integrates DONE stories into `develop` (ADR-0070).
 pub struct WorkspaceEnvironment {
     root: PathBuf,
+    repository: Option<GitRepository>,
 }
 
 impl WorkspaceEnvironment {
+    /// Execution-only environment. Develop integration is disabled.
     pub fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self {
+            root,
+            repository: None,
+        }
+    }
+
+    /// Execution plus develop integration and sandbox refresh.
+    pub fn with_repository(
+        root: PathBuf,
+        sandbox_root: PathBuf,
+        token: Option<String>,
+        timeout: Duration,
+    ) -> Self {
+        let repository = GitRepository::new(root.clone(), sandbox_root, token, timeout);
+        Self {
+            root,
+            repository: Some(repository),
+        }
     }
 
     fn clone_dir(&self, project: &ProjectId) -> Result<PathBuf, WorktreeError> {
@@ -318,6 +342,32 @@ impl WorkflowEnvironment for WorkspaceEnvironment {
 
     fn actions(&self, worktree: &Worktree) -> Box<dyn ActionRunner + '_> {
         Box::new(WorktreeActions::new(worktree.path.clone()))
+    }
+
+    fn integrate_story(
+        &self,
+        project: &ProjectId,
+        story: &StoryId,
+        branch: &str,
+        commit: &str,
+    ) -> Result<Option<DevelopIntegration>, WorktreeError> {
+        match &self.repository {
+            Some(repository) => repository
+                .integrate_story(project, story, branch, commit)
+                .map(Some)
+                .map_err(WorktreeError::Repository),
+            None => Ok(None),
+        }
+    }
+
+    fn sync_sandbox(&self, project: &ProjectId) -> Result<Option<SandboxCheckout>, WorktreeError> {
+        match &self.repository {
+            Some(repository) => repository
+                .sync_sandbox(project)
+                .map(Some)
+                .map_err(WorktreeError::Repository),
+            None => Ok(None),
+        }
     }
 }
 

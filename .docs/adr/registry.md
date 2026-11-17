@@ -98,6 +98,7 @@ revises a technical decision must keep it current.
 | ADR-0067 | Autonomous remediation of blocked stories | Superseded | 2026-11-17 | — | [adr-0067.md](adr-0067.md) |
 | ADR-0068 | Markdown recap memories for planning and completed cards | Accepted | 2026-11-17 | — | [adr-0068.md](adr-0068.md) |
 | ADR-0069 | Close exhausted stories with a Tech Lead compromise and technical debt | Accepted | 2026-11-17 | ADR-0067 | [adr-0069.md](adr-0069.md) |
+| ADR-0070 | Integrate DONE stories into develop and materialize a testable sandbox | Accepted | 2026-11-17 | — | [adr-0070.md](adr-0070.md) |
 
 ## Supersession map
 

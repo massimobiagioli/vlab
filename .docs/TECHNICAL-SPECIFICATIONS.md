@@ -231,6 +231,7 @@ Projects
   --delete-project
   --new-request [request-text]
   --assign-agent <agent-id>
+  --sync-sandbox
 
 Agents
   --list-agents
@@ -1046,8 +1047,9 @@ assigned stories in isolated git worktrees, commits their changes, moves them
 through `IN_REVIEW` to `DONE`, and stores the work/review outcome (ADR-0050).
 The board remains read-only; state changes come only from that
 application-owned workflow, not from navigation. `DONE` means the work ran and
-was committed on `vlab/<story-id>` and reviewed; it does not mean the branch was
-merged or deployed.
+was committed on `vlab/<story-id>` and reviewed, then integrated into
+`develop`; it does not mean the default branch was merged or the project was
+deployed.
 
 The `TODO` column also lists queued requests as `REQUEST` cards before stories.
 A card shows its `TODO` or `PLANNING` status; `Enter` opens a read-only detail
@@ -1092,7 +1094,7 @@ Schema changes shall use versioned migrations.
 
 Timestamps shall use UTC.
 
-Original requests, memories, and validated planning results shall be retained as project data. Project GitHub sources are retained as project metadata; GitHub credentials are never stored. Cloned repositories under `.workspace/` are disposable local files, outside version control and outside the database; no local path is persisted.
+Original requests, memories, and validated planning results shall be retained as project data. Project GitHub sources are retained as project metadata; GitHub credentials are never stored. Cloned repositories under `.workspace/` and testable checkouts under `.sandbox/` are disposable local files, outside version control and outside the database; no local path is persisted.
 
 Full chat transcripts shall not be retained by default. Diagnostic logs shall omit request and response bodies.
 
@@ -1136,7 +1138,7 @@ It shall:
 - Treat memory content as untrusted data: validate its scope, encoding, and size, delimit it in prompts, and never let it change permissions, roles, limits, or assignment rules.
 - Never log or render memory content without sanitization, and never store credentials in it.
 - Treat the GitHub source as a validated URL and `credentials.github_api_key` as a credential: never log, persist in the database, or display the key.
-- For the project clone, use the validated canonical URL, the global credential through a short-lived askpass helper, a bounded timeout, no shell, and no token in arguments or output. No other GitHub operation is permitted.
+- For the project clone, fetch, and develop push, use the validated canonical URL, the global credential through a short-lived askpass helper, a bounded timeout, no shell, and no token in arguments or output. Push only `develop`, never force, and never merge into the default branch (ADR-0070).
 - Include only the scoped memories selected by §3.5, within the configured memory budget.
 - Avoid sending unrelated project data to providers.
 - Redact credentials from logs and errors.
@@ -1249,6 +1251,8 @@ Live-provider tests shall be opt-in and shall never require committed credential
   dashboard without content.
 - The Kanban `TODO` column renders and opens request cards.
 - `--new-request` queues and exits; `--run-queue` drains a bounded batch.
+- `--sync-sandbox` integrates pending DONE stories and refreshes the sandbox
+  for every source project of the active laboratory.
 - Secret-bearing text is rejected before the request row.
 
 ### Floor Tests
@@ -1275,6 +1279,20 @@ Live-provider tests shall be opt-in and shall never require committed credential
 - The workflow never creates a new `BLOCKED` row.
 - A transient provider failure stops the pass without consuming the remediation
   budget.
+
+### Develop Integration and Sandbox Tests
+
+- A DONE commit is merged into `develop` with `--no-ff`, pushed to a local bare
+  remote, and materialized in `.sandbox/<project-id>`.
+- Repeating integration is idempotent and does not create a duplicate merge.
+- A conflicting merge is aborted, the card remains `DONE`, and the failure is
+  recorded as `develop_conflict`.
+- A push failure keeps the local merge, records a pending push, and is retried.
+- A project without a remote integrates locally and needs no push.
+- A sandbox refresh discards local edits and untracked files.
+- Startup reconciliation integrates only pending stories and syncs every
+  source project of the active laboratory.
+- Schema v18 adds `integrated_at`, `push_ok`, and `integration_error`.
 
 ## 17. Acceptance Criteria
 
@@ -1317,6 +1335,11 @@ The initial release is acceptable when:
     closed `DONE` with a recorded compromise and one linked technical-debt card;
     the workflow never parks it in `BLOCKED` or marks it `DONE` without recorded
     work and review.
+28. Every `DONE` card with a commit is integrated into `develop` and pushed to
+    the project remote without force; `develop` is created when missing. Every
+    source project of the active laboratory has a refreshed
+    `.sandbox/<project-id>` checkout of `develop`, at startup, after each DONE,
+    and by `--sync-sandbox`.
 
 ## 18. Incremental Delivery Plan
 
@@ -1451,7 +1474,7 @@ After planning, the application runs real, bounded execution (ADR-0050):
   laboratory roster when the project roster is empty; if there is no QA, the
   Tech Lead reviews. The review receives the summary, changed files, and a
   bounded diff and returns `review_outcome` and an `accepted` boolean. An
-  accepted review sets `DONE`.
+  accepted review sets `DONE` and starts develop integration.
 - A rejected review keeps the commit on `vlab/<story-id>`, stores it in
   `story_outcomes` with `review_accepted = 0`, and leaves the story in progress
   for autonomous Tech Lead remediation rather than human attention.
@@ -1473,11 +1496,24 @@ After planning, the application runs real, bounded execution (ADR-0050):
   creates one unassigned `TODO` technical-debt card linked through
   `debt_of_story_id`. The model never chooses a state transition, grants
   permission, or marks `DONE` without recorded work and review.
+- Every `DONE` story with a commit is integrated into `develop` with a
+  `--no-ff` merge and, when the project has an `origin` remote, pushed without
+  force. `develop` is created from `origin/develop`, the remote default branch,
+  or the base checkout `HEAD`. The story commit is checked for ancestry first,
+  so retries never duplicate a merge. A conflict or push failure leaves the
+  card `DONE`, records a content-free code, and is retried at startup or with
+  `--sync-sandbox` (ADR-0070).
+- `.sandbox/<project-id>` contains a disposable clone of each active
+  laboratory project's `develop`; it is refreshed at startup, after each DONE,
+  and by `--sync-sandbox`. A refresh fetches `origin/develop` when possible,
+  resets the checkout to `develop`, and removes untracked files. Projects
+  without a source are skipped.
 - Bounds: 24 work rounds, 120-second call timeout, 8,192 output tokens, four
   actions per round, 15-minute work deadline, 60-second command timeout, 64 KiB
   captured command output, three attempts per cycle, three remediation cycles,
-  one closing decision, and a 45-minute workflow deadline. One empty-output
-  retry per round is allowed. Stories are processed sequentially.
+  one closing decision, a 300-second clone timeout, a 120-second fetch/push
+  timeout, and a 45-minute workflow deadline. One empty-output retry per round is allowed. Stories are
+  processed sequentially.
 - Commands run in the worktree with a cleared environment, a private `HOME`,
   and no inherited secrets. There is no OS sandbox or network isolation; this is
   a documented residual risk.

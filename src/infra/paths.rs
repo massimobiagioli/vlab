@@ -190,6 +190,21 @@ impl Paths {
             self.data_dir.join("workspace")
         }
     }
+
+    /// Testable `develop` checkouts root (ADR-0070).
+    ///
+    /// Mirrors [`Self::workspace_dir`]: `<repo>/.sandbox` for the
+    /// repository-local development layout, `<data-dir>/sandbox` otherwise.
+    pub fn sandbox_dir(&self) -> PathBuf {
+        if self.data_dir.file_name() == Some(std::ffi::OsStr::new(".data")) {
+            self.data_dir
+                .parent()
+                .unwrap_or(&self.data_dir)
+                .join(".sandbox")
+        } else {
+            self.data_dir.join("sandbox")
+        }
+    }
 }
 
 /// The repository `.data` directory for a Cargo debug executable.

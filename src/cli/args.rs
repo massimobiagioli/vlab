@@ -19,7 +19,7 @@ use crate::app::AppError;
         "list_labs", "new_lab", "open_lab", "delete_lab", "check_lab",
         "list_projects", "new_project", "open_project", "show_project_kanban",
         "delete_project", "new_request", "assign_agent", "run_schedules", "run_queue",
-        "import_files",
+        "sync_sandbox", "import_files",
         "agent_create_from_file", "logs",
         "list_agents", "new_agent", "load_preset", "delete_agent", "show_agent_detail", "ask",
     ])),
@@ -122,6 +122,10 @@ pub struct Cli {
     /// Process queued TODO requests
     #[arg(hide = true, long, help_heading = "Projects")]
     run_queue: bool,
+
+    /// Integrate DONE stories into develop and refresh .sandbox/
+    #[arg(hide = true, long, help_heading = "Projects")]
+    sync_sandbox: bool,
 
     /// Import a markdown document into the data file store
     #[arg(hide = true, long = "import", help_heading = "Projects")]
@@ -236,6 +240,7 @@ pub enum Action {
     },
     RunSchedules,
     RunQueue,
+    SyncSandbox,
     ImportDocument {
         src: String,
         into: String,
@@ -283,6 +288,7 @@ impl Action {
             Self::AssignAgent { .. } => "--assign-agent",
             Self::RunSchedules => "--run-schedules",
             Self::RunQueue => "--run-queue",
+            Self::SyncSandbox => "--sync-sandbox",
             Self::ImportDocument { .. } => "--import",
             Self::CreateAgentFromFile { .. } => "--create-agent-from-file",
             Self::Logs => "--logs",
@@ -379,6 +385,8 @@ impl Cli {
             Action::RunSchedules
         } else if self.run_queue {
             Action::RunQueue
+        } else if self.sync_sandbox {
+            Action::SyncSandbox
         } else if self.import_files {
             Action::ImportDocument {
                 src: self.src.ok_or(AppError::Internal)?,
@@ -502,6 +510,7 @@ mod tests {
             })
         );
         assert_eq!(parse(&["--run-schedules"]), Some(Action::RunSchedules));
+        assert_eq!(parse(&["--sync-sandbox"]), Some(Action::SyncSandbox));
     }
 
     #[test]

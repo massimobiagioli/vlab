@@ -5,6 +5,8 @@ mod support;
 use std::fs;
 
 use vlab::app::storage::StorageError;
+use vlab::app::workflow::WorkflowStore;
+use vlab::domain::ids::ProjectId;
 use vlab::infra::db::{Database, SUPPORTED_SCHEMA_VERSION};
 use vlab::obs::RunId;
 
@@ -61,6 +63,87 @@ fn a_fresh_database_reaches_the_supported_version_and_records_it() {
         "created_at must be RFC 3339 UTC: {}",
         events[0].3
     );
+}
+
+#[test]
+fn schema_v18_adds_the_develop_integration_columns() {
+    let (_dir, db) = open();
+    db.migrate(RunId::generate()).unwrap();
+    let columns: Vec<String> = db.block_on(async {
+        let rows: Vec<(String,)> =
+            sqlx::query_as("SELECT name FROM pragma_table_info('story_outcomes')")
+                .fetch_all(db.pool())
+                .await
+                .unwrap();
+        rows.into_iter().map(|row| row.0).collect()
+    });
+    for column in ["integrated_at", "push_ok", "integration_error"] {
+        assert!(columns.iter().any(|name| name == column), "{column}");
+    }
+}
+
+fn migrator_before_legacy_develop_integration(
+    db: &Database,
+) -> (tempfile::TempDir, sqlx::migrate::Migrator) {
+    let dir = tempfile::tempdir().unwrap();
+    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    for entry in fs::read_dir(source).unwrap() {
+        let entry = entry.unwrap();
+        let name = entry.file_name();
+        if name.to_string_lossy().starts_with("0019") {
+            continue;
+        }
+        fs::copy(entry.path(), dir.path().join(name)).unwrap();
+    }
+    let migrator = db
+        .block_on(sqlx::migrate::Migrator::new(dir.path()))
+        .unwrap();
+    (dir, migrator)
+}
+
+#[test]
+fn schema_v19_does_not_publish_legacy_outcomes() {
+    let (_dir, db) = open();
+    let (_migrations, migrator) = migrator_before_legacy_develop_integration(&db);
+    db.migrate_with(&migrator, 18, RunId::generate()).unwrap();
+    for sql in [
+        "INSERT INTO labs (id, name, created_at, updated_at) VALUES ('a3f91c07', 'Lab', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "INSERT INTO agents (id, name, role, description, skills_json, provider, model, created_at, updated_at) VALUES ('0b1c2d3e', 'Ada', 'dev', 'x', '[]', 'deepseek', 'm', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "INSERT INTO projects (id, lab_id, name, created_at, updated_at) VALUES ('1c2d3e4f', 'a3f91c07', 'Portal', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "INSERT INTO requests (id, project_id, content, status, created_at, updated_at) VALUES ('2c3d4e5f', '1c2d3e4f', 'R', 'PLANNED', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "INSERT INTO stories (id, project_id, request_id, title, description, acceptance_criteria_json, priority, complexity, required_skills_json, assigned_agent_id, assignment_rationale, state, due_date, created_at, updated_at) VALUES ('3c4d5e6f', '1c2d3e4f', '2c3d4e5f', 'T', 'D', '[\"A\"]', 'high', 'small', '[]', '0b1c2d3e', NULL, 'DONE', '2026-01-03', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "INSERT INTO story_outcomes (story_id, work_outcome, review_outcome, reviewer_agent_id, review_accepted, branch, worktree_path, commit_sha) VALUES ('3c4d5e6f', 'W', 'R', '0b1c2d3e', 1, 'vlab/3c4d5e6f', '.worktrees/3c4d5e6f', 'abc1234')",
+    ] {
+        db.execute(sql).unwrap();
+    }
+    db.migrate_with(
+        &vlab::infra::db::migrate::MIGRATOR,
+        SUPPORTED_SCHEMA_VERSION,
+        RunId::generate(),
+    )
+    .unwrap();
+    let (push_ok, error): (i64, Option<String>) = db.block_on(async {
+        sqlx::query_as(
+            "SELECT push_ok, integration_error FROM story_outcomes \
+             WHERE story_id = '3c4d5e6f'",
+        )
+        .fetch_one(db.pool())
+        .await
+        .unwrap()
+    });
+    assert_eq!(push_ok, 1);
+    assert_eq!(error.as_deref(), Some("legacy_not_integrated"));
+    let project = ProjectId::parse("1c2d3e4f").unwrap();
+    assert!(db.pending_integrations(&project).unwrap().is_empty());
+
+    db.execute(
+        "UPDATE story_outcomes SET push_ok = 0, integration_error = NULL \
+         WHERE story_id = '3c4d5e6f'",
+    )
+    .unwrap();
+    let pending = db.pending_integrations(&project).unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].story_id.as_str(), "3c4d5e6f");
 }
 
 #[test]

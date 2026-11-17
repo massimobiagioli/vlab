@@ -39,7 +39,9 @@ Event kinds: `migration_applied`, `lab_created`, `lab_updated`, `lab_opened`, `l
 `planning_failed`, `provider_attempt`, `question_answered`, `confirmation_granted`, `confirmation_declined`,
 `budget_exhausted`, `cancelled`, `memory_created`, `memory_updated`,
 `memory_deleted`, `story_work_completed`, `story_reviewed`, `story_remediated`,
-`story_debt_created`, `story_completed`, `workflow_failed`.
+`story_debt_created`, `story_completed`, `develop_integrated`,
+`develop_push_failed`, `develop_integration_failed`, `sandbox_synced`,
+`sandbox_sync_failed`, `workflow_failed`.
 
 Memory events carry only the memory entity identifier; the scope is looked up
 from storage when needed. They never carry memory content. Agent duplication
@@ -47,7 +49,9 @@ records one `agent_created` event for the new profile; copied memories are part
 of the same operation and are not audited individually. Workflow events
 carry only the story identifier and an error code; file content, command
 output, diffs, and work/review text are project data and are never written to
-events.
+events. Develop and sandbox events carry only the story or project identifier
+and a content-free code such as `develop_conflict` or `develop_push_failed`;
+branch names, remote URLs, git output, and credentials are never recorded.
 
 Interaction metadata records `planning`, `question`, and `workflow`
 invocations, including each bounded action round. It stores no prompt,

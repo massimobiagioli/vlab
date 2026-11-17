@@ -49,6 +49,7 @@ own prints the list.
 | `make clean` | Remove build output. |
 | `make clean-data` | Delete the development data in `.data/`, keeping the example settings. |
 | `make clean-workspace` | Delete cloned project checkouts in `.workspace/`. |
+| `make clean-sandbox` | Delete testable `develop` checkouts in `.sandbox/`. |
 
 Examples:
 
@@ -80,6 +81,7 @@ VLab never writes to the current working directory by default.
 | Data | `<per-user data dir>/vlab/` | `VLAB_DATA_DIR` |
 | Database | `<per-user data dir>/vlab/vlab.db`, or `$VLAB_DATA_DIR/vlab.db` when that override is set | `VLAB_DB_PATH` |
 | Project checkouts | `<repo>/.workspace/` for the repository debug layout, otherwise `<data dir>/workspace/` | — |
+| Testable sandboxes | `<repo>/.sandbox/` for the repository debug layout, otherwise `<data dir>/sandbox/` | — |
 | Memory markdown | `<data dir>/memories/{agents,projects,lab}/` | — |
 | Document markdown | `<data dir>/documents/{agents,projects,lab}/` | — |
 
@@ -244,8 +246,11 @@ for real in its own git worktree: the assignee reads and writes files and runs
 commands in `.workspace/.worktrees/<story-id>`, the changes are committed on
 `vlab/<story-id>`, and the first active QA (or the Tech Lead) records a review.
 The `DONE` card detail shows the work summary, review, reviewer, branch,
-worktree, and commit. VLab never merges or deploys the branch. There are no
-manual state transitions.
+worktree, and commit. VLab merges the commit into `develop` and pushes that
+branch (creating it when missing); it never merges into the default branch,
+never force-pushes, and never deploys. A testable checkout of each active
+project's `develop` is kept under `.sandbox/<project-id>`. There are no manual
+state transitions.
 
 ### Automatic memories
 
@@ -318,11 +323,16 @@ vlab --open-project <project-id>
 vlab --new-request "Add password reset"
 cat request.md | vlab --new-request
 vlab --run-queue
+vlab --sync-sandbox
 vlab --show-project-kanban
 ```
 
 `--new-request` only persists the request as `TODO`; it calls no provider.
-`--run-queue` (or the interactive background worker) selects the oldest queued
+`--sync-sandbox` integrates pending DONE commits into `develop`, pushes the
+branch when a remote exists, and refreshes every active project's
+`.sandbox/<project-id>` checkout. The startup worker runs the same
+reconciliation; `--run-queue` (or the interactive background worker) selects
+the oldest queued
 request and plans it. DeepSeek returns a strict JSON proposal; VLab validates
 it, assigns only project agents (or active laboratory members when the project
 has no assignments), computes due dates locally in UTC (2/5/10 calendar days by
@@ -366,8 +376,9 @@ budget.
 - No backup/restore command; stop VLab before copying the database file.
 - Story states advance only through the bounded real workflow; there are no
   manual transitions. `DONE` means the agent worked, committed on
-  `vlab/<story-id>`, and a review was recorded; it does not mean the branch was
-  merged or deployed.
+  `vlab/<story-id>`, and a review was recorded, then the commit was merged into
+  `develop`; it does not mean the default branch was merged or the project was
+  deployed.
 - Commands run with the operator's privileges and no OS sandbox; run VLab on a
   trusted machine and account.
 - No JSON output mode, packaging/licensing, or Windows-specific hardening.

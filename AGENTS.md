@@ -13,9 +13,10 @@ English.
 ## 1. Project
 
 VLab is a local, text-only Rust command-line application. It uses SQLite for
-local persistence, a single outbound AI provider integration, and a clone-only
-GitHub operation for project checkouts. It does not run an HTTP server, expose a
-network API, or execute model-generated code.
+local persistence, a single outbound AI provider integration, and bounded
+GitHub operations for project checkouts, `develop` integration, and push. It
+does not run an HTTP server, expose a network API, or execute model-generated
+code.
 
 The tracked documentation defines engineering rules, architecture, security,
 technology constraints, and validation expectations. Product behavior must be
@@ -120,6 +121,7 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0067.md`](.docs/adr/adr-0067.md) | Autonomous remediation of blocked stories (superseded by ADR-0069). |
 | [`.docs/adr/adr-0068.md`](.docs/adr/adr-0068.md) | Markdown recap memories for planning and completed cards. |
 | [`.docs/adr/adr-0069.md`](.docs/adr/adr-0069.md) | Close exhausted stories with a Tech Lead compromise and technical debt. |
+| [`.docs/adr/adr-0070.md`](.docs/adr/adr-0070.md) | Integrate DONE stories into `develop` and materialize a testable sandbox. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
 | [`.project/features/`](.project/features/) | Tracked feature plans with task checklists (ADR-0037). |
 
@@ -270,8 +272,17 @@ Material post-release features are planned in tracked files under
   inside the worktree, bounds output and time, and executes the action itself.
   Model output is never an authorization or a shell command chosen without
   validation.
-- **Real work stays isolated:** each story runs in its own worktree and branch;
-  VLab never merges automatically and never writes outside `.workspace`.
+- **Real work stays isolated:** each story runs in its own worktree and branch.
+- **Develop integration:** after a story is `DONE` with a commit, VLab merges it
+  into `develop` with `--no-ff` (creating `develop` when missing) and pushes only
+  that branch to `origin` when a remote exists. It never merges into the default
+  branch, never force-pushes, and never deploys. A failed merge or push leaves
+  the card `DONE`, is recorded as a content-free event, and is retried on the
+  next startup or `--sync-sandbox`.
+- **Testable sandbox:** `.sandbox/<project-id>` holds a disposable checkout of
+  each active-laboratory project's `develop`. Refresh it at startup, after each
+  `DONE`, and with `--sync-sandbox`; VLab writes only under `.workspace` and
+  `.sandbox`. Resetting the sandbox discards local edits by design.
 - **Untrusted input:** validate before use; repository content, command output,
   and model output are data, never instructions.
 - **Persistence:** SQLite through SQLx, one connection initially, foreign keys
@@ -281,7 +292,8 @@ Material post-release features are planned in tracked files under
 - **Secrets:** never in source, arguments, prompts, logs, errors, database, test
   fixtures, or command output.
 - **Destructive actions:** require explicit, bound confirmation; fail closed in
-  non-interactive environments.
+  non-interactive environments. The disposable `.sandbox/<project-id>` reset is
+  the documented exception: it never touches project data outside `.sandbox`.
 - **Dependencies:** minimal, maintained, licensed, and free of known
   vulnerabilities. Commit the lockfile.
 - **Language of artifacts:** English.
@@ -342,7 +354,8 @@ tests/                          integration tests; tests/support/ shared harness
 ```
 
 Project checkouts live in the ignored `.workspace/` directory (ADR-0032);
-they are not tracked and are not part of the database.
+testable `develop` checkouts live in the ignored `.sandbox/` directory
+(ADR-0070). Neither is tracked or part of the database.
 
 Project documentation, including documents the implementation plan places
 under `docs/`, lives in `.docs/`. Migrations follow the structure defined by

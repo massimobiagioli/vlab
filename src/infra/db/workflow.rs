@@ -3,7 +3,9 @@
 use sqlx::SqliteConnection;
 
 use crate::app::storage::StorageError;
-use crate::app::workflow::{DebtStory, StoryOutcome, WorkflowStore, WorkflowStory};
+use crate::app::workflow::{
+    DebtStory, PendingIntegration, StoryOutcome, WorkflowStore, WorkflowStory,
+};
 use crate::domain::ids::{AgentId, ProjectId, RequestId, StoryId};
 use crate::infra::db::{Database, map_sqlx_error};
 
@@ -81,7 +83,29 @@ ON CONFLICT (story_id) DO UPDATE SET \
   branch = excluded.branch, \
   worktree_path = excluded.worktree_path, \
   commit_sha = excluded.commit_sha, \
-  completed_at = excluded.completed_at";
+  completed_at = excluded.completed_at, \
+  integrated_at = NULL, \
+  push_ok = 0, \
+  integration_error = NULL";
+
+const SELECT_PENDING_INTEGRATIONS: &str = "\
+SELECT o.story_id, o.branch, o.commit_sha \
+FROM story_outcomes o \
+JOIN stories s ON s.id = o.story_id \
+WHERE s.project_id = ?1 AND s.state = 'DONE' \
+  AND o.branch IS NOT NULL AND o.commit_sha IS NOT NULL \
+  AND ((o.integrated_at IS NULL \
+        AND COALESCE(o.integration_error, '') <> 'legacy_not_integrated') \
+       OR o.push_ok = 0) \
+ORDER BY o.completed_at, o.story_id";
+
+const FINISH_INTEGRATION: &str = "\
+UPDATE story_outcomes SET \
+  integrated_at = CASE WHEN ?2 IS NULL THEN integrated_at \
+    ELSE COALESCE(integrated_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) END, \
+  push_ok = ?3, \
+  integration_error = ?4 \
+WHERE story_id = ?1";
 
 #[derive(sqlx::FromRow)]
 struct Row {
@@ -108,6 +132,13 @@ struct Row {
     branch: Option<String>,
     worktree_path: Option<String>,
     commit_sha: Option<String>,
+}
+
+#[derive(sqlx::FromRow)]
+struct PendingRow {
+    story_id: String,
+    branch: String,
+    commit_sha: String,
 }
 
 impl WorkflowStore for Database {
@@ -204,6 +235,62 @@ impl WorkflowStore for Database {
                 }
                 Ok(())
             })
+        })
+    }
+
+    fn pending_integrations(
+        &self,
+        project: &ProjectId,
+    ) -> Result<Vec<PendingIntegration>, StorageError> {
+        self.block_on(async {
+            let mut connection = self
+                .pool()
+                .acquire()
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))?;
+            let rows: Vec<PendingRow> = sqlx::query_as(SELECT_PENDING_INTEGRATIONS)
+                .bind(project.as_str())
+                .fetch_all(&mut *connection)
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))?;
+            rows.into_iter()
+                .map(|row| {
+                    Some(PendingIntegration {
+                        story_id: StoryId::parse(&row.story_id)?,
+                        branch: row.branch,
+                        commit: row.commit_sha,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()
+                .ok_or(StorageError::Operation)
+        })
+    }
+
+    fn finish_integration(
+        &self,
+        story: &StoryId,
+        merge_commit: Option<&str>,
+        push_ok: bool,
+        error: Option<&str>,
+    ) -> Result<(), StorageError> {
+        let story = story.clone();
+        let merge_commit = merge_commit.map(str::to_owned);
+        let error = error.map(str::to_owned);
+        self.block_on(async {
+            let mut connection = self
+                .pool()
+                .acquire()
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))?;
+            sqlx::query(FINISH_INTEGRATION)
+                .bind(story.as_str())
+                .bind(merge_commit.as_deref())
+                .bind(push_ok)
+                .bind(error.as_deref())
+                .execute(&mut *connection)
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))?;
+            Ok(())
         })
     }
 

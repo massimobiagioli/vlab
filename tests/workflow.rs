@@ -3,6 +3,7 @@
 mod support;
 
 use std::process::Command;
+use std::time::Duration;
 
 use vlab::app::context::{save_active_lab, save_active_project};
 use vlab::app::directory::Directory;
@@ -441,6 +442,66 @@ fn an_exhausted_remediation_closes_the_card_with_technical_debt() {
     );
     assert!(recap.contains(debt_id), "{recap}");
     assert_eq!(provider.requests().len(), 1);
+    let _ = fixture.dir;
+}
+
+#[test]
+fn an_accepted_story_is_integrated_and_the_sandbox_is_materialized() {
+    let fixture = fixture(true);
+    let sandbox_root = fixture.dir.path().join("sandbox");
+    let environment = WorkspaceEnvironment::with_repository(
+        fixture.dir.path().join("workspace"),
+        sandbox_root.clone(),
+        None,
+        Duration::from_secs(30),
+    );
+    let provider = ScriptedProvider::new(vec![
+        Ok(response(
+            r##"{"actions":[{"tool":"write_file","path":"Playbook.md","content":"# Playbook\n"}],"done":false}"##,
+        )),
+        Ok(response(
+            r#"{"actions":[],"done":true,"summary":"Wrote Playbook.md."}"#,
+        )),
+        Ok(response(
+            r#"{"review_outcome":"Complete.","accepted":true}"#,
+        )),
+    ]);
+    let report = workflow::run(
+        &fixture.db,
+        &fixture.db,
+        &fixture.project,
+        &settings(),
+        &provider,
+        &environment,
+        ExecutionLimits::default(),
+        &TestClock::default(),
+        CancelToken::default(),
+        RunId::generate(),
+    )
+    .unwrap();
+    assert_eq!(report.completed, 1);
+    let base = fixture.dir.path().join("workspace/0b1c2d3e");
+    let commit = story(&fixture).outcome.unwrap().commit_sha.unwrap();
+    let ancestor = Command::new("git")
+        .current_dir(&base)
+        .args(["merge-base", "--is-ancestor", &commit, "develop"])
+        .status()
+        .unwrap();
+    assert!(ancestor.success(), "story commit is on develop");
+    assert_eq!(
+        std::fs::read_to_string(sandbox_root.join("0b1c2d3e/Playbook.md")).unwrap(),
+        "# Playbook\n"
+    );
+    let (integrated, push_ok): (Option<String>, i64) = fixture.db.block_on(async {
+        sqlx::query_as(
+            "SELECT integrated_at, push_ok FROM story_outcomes WHERE story_id = '5a617283'",
+        )
+        .fetch_one(fixture.db.pool())
+        .await
+        .unwrap()
+    });
+    assert!(integrated.is_some());
+    assert_eq!(push_ok, 1, "a project without a remote needs no push");
     let _ = fixture.dir;
 }
 

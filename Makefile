@@ -25,7 +25,7 @@ DEV_ENV := VLAB_CONFIG_DIR="$(DATA_DIR)" VLAB_DATA_DIR="$(DATA_DIR)"
 ARGS ?= --help
 
 .PHONY: help build-debug build-release run load-preset run-schedules run-queue import agent-create-from-file \
-	test lint fmt fmt-check clippy audit deny check tools snapshot clean clean-data clean-workspace
+	test lint fmt fmt-check clippy audit deny check tools snapshot clean clean-data clean-workspace clean-sandbox
 
 help: ## Show this help
 	@color=$$(if [ -t 1 ] && [ -z "$${NO_COLOR:-}" ]; then echo yes; else echo no; fi); \
@@ -44,7 +44,7 @@ help: ## Show this help
 		if (name == "help" || name == "build-debug" || name == "build-release" || name == "run") return 1; \
 		if (name == "load-preset" || name == "run-schedules" || name == "run-queue" || name == "import" || name == "agent-create-from-file") return 2; \
 		if (name == "test" || name == "lint" || name == "fmt" || name == "fmt-check" || name == "clippy" || name == "audit" || name == "deny" || name == "check") return 3; \
-		if (name == "tools" || name == "snapshot" || name == "clean" || name == "clean-data" || name == "clean-workspace") return 4; \
+		if (name == "tools" || name == "snapshot" || name == "clean" || name == "clean-data" || name == "clean-workspace" || name == "clean-sandbox") return 4; \
 		return 5; \
 	} \
 	END { \
@@ -145,3 +145,6 @@ clean-data: ## Delete the development data in .data/, keeping the example
 
 clean-workspace: ## Delete cloned project checkouts in .workspace/
 	rm -rf "$(WORKSPACE_DIR)"
+
+clean-sandbox: ## Delete testable develop checkouts in .sandbox/, keeping .gitkeep
+	find "$(CURDIR)/.sandbox" -mindepth 1 ! -name .gitkeep -exec rm -rf {} + 2>/dev/null || true

@@ -210,6 +210,7 @@ The hidden legacy flags still work for scripts:
 ```sh
 vlab --new-request "Add password reset"
 vlab --run-queue
+vlab --sync-sandbox
 ```
 
 Or pipe a file:
@@ -224,7 +225,12 @@ validates the JSON proposal, assigns only the project's agents (or laboratory
 members when none is assigned), computes due dates locally, and saves all
 stories in one transaction. It then stores a markdown planning recap and prints
 the request status. When an agent closes an accepted card, VLab adds a markdown
-completion recap to that agent's memory. If planning returns questions, the Tech Lead
+completion recap to that agent's memory. Every card that reaches `DONE` with a
+commit is merged into the project's `develop` branch (created from the default
+branch when missing) and pushed to `origin` without force. VLab refreshes
+`.sandbox/<project-id>` at startup, after each DONE, and on demand with
+`vlab --sync-sandbox`; the checkout is reset to `develop` and local edits are
+discarded. If planning returns questions, the Tech Lead
 resolves them autonomously in up to two bounded follow-up calls; unresolved
 questions fail with `clarification_unresolved`, never with a human prompt. A
 missing provider
@@ -245,7 +251,9 @@ in `BLOCKED`; after the last cycle the Tech Lead records a closing compromise,
 the card becomes `DONE`, and one linked unassigned `TODO` card captures the
 technical debt. A `DONE` card can be opened with `Enter` to read its work
 summary, review, reviewer, branch, worktree, commit, and completion time. VLab
-never merges the branch automatically.
+merges the commit into `develop` and pushes that branch; it never merges into
+`main`, never force-pushes, and never deploys. The testable checkout for each
+source project is under `.sandbox/<project-id>`.
 
 ### Interactions
 
@@ -301,6 +309,7 @@ is never executed or stored.
 | Settings | per-user config dir + `vlab/settings.yaml` | `VLAB_CONFIG_DIR` |
 | Database | per-user data dir + `vlab/vlab.db` | `VLAB_DATA_DIR`, `VLAB_DB_PATH` |
 | Project checkouts | `<repo>/.workspace/` for the debug layout, otherwise `<data dir>/workspace/` | — |
+| Testable sandboxes | `<repo>/.sandbox/` for the debug layout, otherwise `<data dir>/sandbox/` | — |
 
 A debug build from this checkout uses `.data/` automatically (ADR-0031). It
 contains `settings.yaml` once you create it, and that file holds your keys;
@@ -309,10 +318,11 @@ contains `settings.yaml` once you create it, and that file holds your keys;
 ```sh
 make clean-data
 make clean-workspace
+make clean-sandbox
 ```
 
-`make clean-workspace` deletes cloned checkouts; project deletion does not
-remove them automatically yet. There is no backup command; stop VLab before copying the database. SQLite is
+`make clean-workspace` deletes cloned checkouts and `make clean-sandbox` deletes
+the testable checkouts; project deletion does not remove them automatically yet. There is no backup command; stop VLab before copying the database. SQLite is
 not encrypted at rest; use OS disk encryption for sensitive data. Protect
 backups of `settings.yaml` as secrets.
 

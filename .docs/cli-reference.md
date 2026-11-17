@@ -62,7 +62,10 @@ to three remediation cycles. The workflow never parks it in `BLOCKED`; after the
 last cycle it closes `DONE` with a recorded `Tech Lead compromise:` decision and
 one linked `TODO` technical-debt card. A card detail shows the Tech Lead
 context, work summary, review, reviewer, branch, worktree, commit, and
-completion time. VLab never merges the branch automatically.
+completion time. On `DONE`, VLab merges the commit into `develop` and pushes
+that branch, creating it when missing; it never merges into `main`, never
+force-pushes, and never deploys. The testable checkout is under
+`.sandbox/<project-id>`.
 
 **Interactions** (`i`) opens a read-only project history: planning, work, and
 review entries with time, participants, reference, outcome, and a recap.
@@ -144,15 +147,18 @@ window but is hidden from `--help`. New work uses the group subcommands.
 | `--new-request [text]` | Validate a request for the current project from literal text or piped stdin and queue it as `TODO`; return immediately without a provider call. |
 | `--run-queue` | Drain up to eight queued `TODO` requests for the active laboratory, oldest first, running planning and the bounded workflow; print a per-request and batch summary. |
 | `--run-schedules` | Run up to three due schedules for the current project, creating bounded requests and executing planned work; print a run/failed/remaining summary. |
+| `--sync-sandbox` | Integrate pending DONE commits into `develop`, push them when a remote exists, and refresh `.sandbox/<project-id>` for every source project of the active laboratory; print a sync summary. |
 | `--import --src <file.md> --into <dest> [--agent <name-or-id>]` | Copy a UTF-8 markdown file into the data document store. `--into` is `lab/<name>`, `project/<name>`, or `agent` (with `--agent`). |
 
 ## Memories
 
 Memories have no CLI commands. VLab writes structural memories when a
-laboratory, agent, or project is created, and a bounded model summary after a
-successful plan. Laboratory and project memories can be viewed, created,
-edited, and deleted from the Lab floor (`m`); agent memories have no manual
-surface. Deletion follows the owning laboratory or project.
+laboratory, agent, or project is created, a markdown planning recap after a
+successful plan, and a markdown completion recap to the assignee when a card is
+accepted. A compromise closure writes the Tech Lead's recap. Laboratory and
+project memories can be viewed, created, edited, and deleted from the Lab floor
+(`m`); agent memories have no manual surface. Deletion follows the owning
+laboratory or project.
 
 ## Agents
 
@@ -177,6 +183,8 @@ surface. Deletion follows the owning laboratory or project.
   with `--github-source`.
 - `--run-schedules`: run due project schedules instead of a dashboard action.
 - `--run-queue`: process queued `TODO` requests instead of opening a dashboard.
+- `--sync-sandbox`: reconcile develop integrations and testable sandboxes
+  instead of opening a dashboard.
 - `--src`, `--into`, `--agent`: destination for `--import`.
 - `--create-agent-from-file`: read an agent definition instead of the wizard.
 

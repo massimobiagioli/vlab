@@ -70,7 +70,9 @@ Prompts are behavioral guidance, not security boundaries.
 |---|---|
 | Caller → application | Validate inputs and establish caller identity and scope where applicable. |
 | Application → model provider | Minimize transmitted data and apply provider-specific privacy requirements. |
-| Application → GitHub | Validate the project source; clone only the validated repository; pass the global credential through a short-lived askpass helper and child environment; bound time; discard output; no token in arguments or logs. |
+| Application → GitHub | Validate the project source; clone only the validated repository; for DONE integration push only `refs/heads/develop` without force; pass the global credential through a short-lived askpass helper and child environment; bound time; discard output; no token in arguments or logs. |
+| Application → develop | Merge only the reviewed story commit into `develop` with `--no-ff`; never merge into the default branch; never force-push; abort conflicts; record only content-free codes. |
+| Application → sandbox | Keep `.sandbox/<project-id>` under a private root; clone/refresh only from `develop`; reject symlinks; reset and clean only the project's own disposable checkout. |
 | Application → local folder | Accept only an absolute path outside `.workspace`; reject symlinks and special files; exclude `.git`; bound entries, bytes, and depth; copy into a private temporary directory; initialize git only inside the copy; never modify the source. |
 | Schedule → workflow | Do not grant the model a timer or arbitrary command authority. Due schedules create normal bounded requests, at most three per pass; the existing planning/workflow rules and budgets apply; no background daemon. |
 | Queue → worker | Intake only writes a `TODO` request. One in-process worker reads the oldest request, uses its own database connection, runs one bounded planning/workflow at a time, never touches the terminal, and stops on cancellation. No model-chosen order, no parallel provider call, no daemon. |
@@ -98,7 +100,7 @@ before exposure.
 | Prompt injection | External content, including memory content, cannot modify policy, permissions, or approval requirements. |
 | Memory poisoning | Memory text cannot grant capabilities, alter rules, or be treated as an instruction; it is bounded and delimited. |
 | Memory data leakage | Only the scoped memories selected by the specification are sent to the provider; content is never logged or rendered unsanitized. |
-| Executed work mistaken for merged delivery | `DONE` is documented and displayed as committed work on `vlab/<story-id>`; VLab never merges or deploys, and the detail shows branch, worktree, and commit. |
+| Executed work mistaken for merged delivery | `DONE` is documented and displayed as committed work on `vlab/<story-id>` integrated into `develop`; VLab never merges the default branch, never force-pushes, and never deploys, and the detail shows branch, worktree, and commit. |
 | Worktree escape | Every path is canonicalized and checked against the worktree; absolute paths, `..`, and symlinked destinations are rejected. |
 | Unauthorized tool use | Use a fixed tool registry (`list_files`, `read_file`, `write_file`, `run_command`) and validate every action. |
 | Data exfiltration | Restrict outbound destinations at the product level; commands can reach the network and this is a documented residual risk. |
@@ -208,7 +210,7 @@ case. Model-generated URLs are never implicitly trusted.
 - Prefer short-lived, narrowly scoped credentials.
 - Keep credentials out of prompts, tool results, errors, logs, database rows, and every file other than `settings.yaml`. The GitHub key comes only from `credentials.github_api_key`.
 - Validate the project GitHub source as a canonical HTTPS GitHub URL; it is metadata, not a credential.
-- For the clone, disable credential helpers, set `GIT_TERMINAL_PROMPT=0`, use a private short-lived `GIT_ASKPASS`, and never put the token in a URL or process argument.
+- For clone, fetch, and push, disable credential helpers, set `GIT_TERMINAL_PROMPT=0`, use a private short-lived `GIT_ASKPASS`, and never put the token in a URL or process argument. Only `develop` is pushed, without force; git output is discarded.
 - Do not assume that the model can reliably redact secrets.
 - Send only necessary data to model providers.
 - Confirm provider retention and processing requirements before transmitting
@@ -283,6 +285,10 @@ Required scenarios include:
 - Denied actions never reach the tool implementation.
 - Approval cannot be reused for a modified action or another run.
 - Filesystem traversal and symlink escape attempts are blocked.
+- A develop merge conflict is aborted and leaves the card DONE with a recorded
+  `develop_conflict`; no force-push occurs.
+- A sandbox symlink or a path outside `.sandbox/<project-id>` is rejected, and a
+  refresh removes only that checkout's untracked files.
 - Network restrictions remain effective across redirects.
 - Secrets are excluded from logs and outbound model requests.
 - Memory content is scoped, bounded, and delimited; an oversized or out-of-scope

@@ -53,10 +53,20 @@ project deletion does not remove it automatically in the initial release, so
 use `make clean-workspace` for an explicit reset. VLab does not back it up or
 encrypt it; use disk encryption for sensitive sources.
 
-The GitHub token used for the clone is passed through a short-lived private
-askpass helper and the child process environment. It is never part of the
-checkout or its git config. Folder import reads no credential and performs no
-network call.
+### Testable sandboxes (`.sandbox/`)
+
+Each project of the active laboratory with a source gets a disposable checkout
+of its `develop` branch at `.sandbox/<project-id>` (or
+`<data-dir>/sandbox/<project-id>` for non-repository layouts). The sandbox is
+private, ignored by version control, and refreshed at startup, after each DONE
+card, and by `--sync-sandbox`. A refresh resets the checkout to `develop` and
+removes untracked files, so local edits are discarded by design. VLab does not
+back it up or encrypt it; use `make clean-sandbox` for an explicit reset.
+
+The GitHub token used for the clone, fetch, and push is passed through a
+short-lived private askpass helper and the child process environment. It is
+never part of the checkout, its git config, or the sandbox. Folder import reads
+no credential and performs no network call.
 
 ### SQLite database (`vlab.db`)
 
@@ -212,16 +222,19 @@ ADR-0050 adds one optional row per completed story:
 | `story_id` | Story identifier | Primary key and cascade owner. |
 | `work_outcome` | Bounded work summary | What the agent changed and ran. |
 | `review_outcome` | Bounded review text | Reviewer assessment. |
-| `review_accepted` | `0` or `1` | Final review decision; `0` blocks the story. |
+| `review_accepted` | `0` or `1` | Final review decision; `0` keeps the story in remediation. |
 | `reviewer_agent_id` | Reviewer agent | Who reviewed the work. |
 | `branch` | Story branch, for example `vlab/5a617283` | Locates the committed work. |
 | `worktree_path` | Path relative to `.workspace`, for example `.worktrees/5a617283` | Locates the isolated checkout. |
 | `commit_sha` | Git commit hash | Identifies the exact committed state. |
 | `completed_at` | RFC 3339 UTC timestamp | Completion ordering and diagnosis. |
+| `integrated_at` | RFC 3339 UTC timestamp or `NULL` (schema v18) | When the commit entered local `develop` (ADR-0070). |
+| `push_ok` | `0` or `1` (schema v18) | No pending push: pushed, no remote, or a legacy outcome intentionally not published (schema v19). |
+| `integration_error` | Content-free code or `NULL` (schema v18) | Last integration/push failure for retry; never git output. |
 
 The outcome text is project data, not audit metadata. It is untrusted and
 rendered sanitized. File content, command output, and diffs are never stored in
-this table.
+this table. The integration columns store no remote URL, branch list, or token.
 
 #### `memories`
 

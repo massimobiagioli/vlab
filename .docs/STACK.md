@@ -162,8 +162,13 @@ of this stack.
 - Keep TLS certificate validation enabled.
 - Keep credentials out of source control except the private, git-ignored
   `settings.yaml`; keep them out of prompts, logs, and command output.
-- Use the local `git` executable for project clones with a private askpass
-  helper, no shell, a bounded timeout, and no token in arguments (ADR-0032).
+- Use the local `git` executable for project clones, `develop` merges, pushes,
+  and sandbox checkouts with a private askpass helper, no shell, bounded
+  timeouts, and no token in arguments or URLs. Never force-push and never merge
+  into the default branch (ADR-0032, ADR-0070).
+- Keep testable checkouts under `.sandbox/` (repository root for debug builds,
+  `<data-dir>/sandbox` otherwise); they are ignored, private, and disposable
+  (ADR-0070).
 
 Use supported provider APIs and supported model identifiers. Record model
 configuration for evaluation and troubleshooting without recording secrets.

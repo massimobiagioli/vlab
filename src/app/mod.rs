@@ -15,6 +15,7 @@ pub mod documents;
 mod errors;
 pub mod execution;
 pub mod floor;
+pub mod integration;
 pub mod interactions;
 pub mod invocation;
 pub mod kanban;

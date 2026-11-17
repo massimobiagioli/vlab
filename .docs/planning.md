@@ -140,7 +140,8 @@ An accepted review sets `DONE` normally. A rejected review keeps the commit on
 remediation rather than waiting for a human. A compromised closure is still
 `DONE` because the work and the explicit Tech Lead decision are recorded; it
 does not mean the work passed a normal review, and the debt card tracks the gap.
-`DONE` never means the branch was merged or deployed. Limits: 24 rounds, four
+`DONE` means the commit was integrated into `develop`; it never means the
+default branch was merged or the project was deployed. Limits: 24 rounds, four
 actions per round, 120-second call timeout, 8,192 output tokens, 15-minute work
 deadline, 60-second command timeout, 64 KiB captured output, three execution
 attempts per cycle, three remediation cycles, one closing decision, and a

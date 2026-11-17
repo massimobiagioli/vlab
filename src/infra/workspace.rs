@@ -20,6 +20,9 @@ use crate::infra::paths::{PathError, create_private_file, ensure_private_dir};
 /// Default upper bound for one clone attempt.
 pub const DEFAULT_CLONE_TIMEOUT: Duration = Duration::from_secs(300);
 
+/// Default upper bound for one fetch or push attempt (ADR-0070).
+pub const DEFAULT_REMOTE_TIMEOUT: Duration = Duration::from_secs(120);
+
 /// Upper bound for one local folder import.
 const MAX_IMPORT_ENTRIES: u64 = 100_000;
 const MAX_IMPORT_BYTES: u64 = 1024 * 1024 * 1024;
@@ -32,7 +35,7 @@ struct CopyBudget {
     bytes: u64,
 }
 
-const ASKPASS: &str = r#"#!/bin/sh
+pub(crate) const ASKPASS: &str = r#"#!/bin/sh
 case "$1" in
   *Username*) printf '%s\n' "x-access-token" ;;
   *Password*) printf '%s\n' "$VLAB_GIT_TOKEN" ;;

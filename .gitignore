@@ -12,6 +12,7 @@
 /.data/documents/*
 !/.data/documents/.gitkeep
 /.workspace/
+/.sandbox/
 *.db
 *.db-wal
 *.db-shm

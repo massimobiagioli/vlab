@@ -39,11 +39,13 @@ laboratories staffed by AI agents.
 - **Runtime:** one process, no HTTP server, no network API, no model-generated
   code execution, no background daemon.
 - **Persistence:** SQLite through SQLx, one connection, foreign keys enabled,
-  versioned migrations. Schema version `15`, migrations `0001`–`0015`.
+  versioned migrations. Schema version `19`, migrations `0001`–`0019`.
 - **Provider:** DeepSeek only, through one bounded adapter. Credentials live only
   in the private `settings.yaml`.
 - **Source control:** project GitHub sources are cloned with the local `git`
-  executable into `.workspace/`; VLab never merges or deploys.
+  executable into `.workspace/`. A DONE commit is merged into `develop` and
+  pushed without force; VLab never merges the default branch, never
+  force-pushes, and never deploys (ADR-0070).
 - **Layering:** `cli -> app -> domain`; `infra` implements ports. Domain code
   performs no I/O.
 - **UI:** plain, width-aware output plus `ratatui` full-screen dashboards.
@@ -54,6 +56,14 @@ laboratories staffed by AI agents.
   action loop with explicit round, time, output, and attempt budgets (ADR-0050).
   The model proposes actions; the application validates and executes them and
   owns every state transition.
+- **Develop integration and sandbox:** every DONE story with a commit is merged
+  into `develop` with `--no-ff` (created from `origin/develop`, the default
+  branch, or `HEAD`) and pushed to `origin` when present (ADR-0070). Conflicts
+  and push failures leave the card DONE, store a content-free code on
+  `story_outcomes`, and retry at startup or with `--sync-sandbox`.
+  `.sandbox/<project-id>` holds a disposable `develop` checkout for each source
+  project of the active laboratory; it is refreshed at startup, after each DONE,
+  and manually, and a refresh discards local edits and untracked files.
 - **File store:** memories and imported documents are markdown under the data
   directory. SQLite stores relative paths, not content (ADR-0059). Automatic
   project memories are planning recaps and accepted cards create agent
@@ -217,8 +227,8 @@ Use the `vlab-security-review` skill for any change touching:
 
 - authorization, approvals, confirmations, or destructive actions;
 - untrusted input, model output, prompts, or imported content;
-- filesystem paths, symlinks, worktrees, or `.workspace`;
-- network calls, GitHub, or provider data flow;
+- filesystem paths, symlinks, worktrees, `.workspace`, or `.sandbox`;
+- network calls, GitHub, develop merges/pushes, or provider data flow;
 - secrets, logging, audit events, or retention;
 - schema migrations or backup/recovery behavior.
 
@@ -413,7 +423,7 @@ Ask these before approving any VLab change:
 - `.docs/adr/registry.md`
 - `.docs/adr/adr-0061.md`, `.docs/adr/adr-0062.md`, `.docs/adr/adr-0063.md`,
   `.docs/adr/adr-0064.md`, `.docs/adr/adr-0066.md`, `.docs/adr/adr-0067.md`,
-  `.docs/adr/adr-0068.md`, `.docs/adr/adr-0069.md`
+  `.docs/adr/adr-0068.md`, `.docs/adr/adr-0069.md`, `.docs/adr/adr-0070.md`
 - `.agents/skills/msx-computer-senior-software-architect/SKILL.md`
 - `.project/IMPLEMENTATION-PLAN.md`
 - `.project/features/`

@@ -32,7 +32,7 @@ The initial architecture does not include:
 - Arbitrary shell execution outside the story worktree. Commands run with the
   story worktree as working directory, a bounded time, and capped output; there
   is no OS-level sandbox (ADR-0050).
-- Autonomous memory decisions or model-chosen retention; scoped memories are application-managed, including a bounded planning summary, and remain untrusted context (ADR-0022, ADR-0036).
+- Autonomous memory decisions or model-chosen retention; scoped memories are application-managed, including bounded markdown recaps, and remain untrusted context (ADR-0022, ADR-0036, ADR-0068).
 - A general-purpose plugin framework.
 - Unrequested background activity.
 
@@ -55,12 +55,15 @@ planning or questions, delimits them in the prompt, and never interprets them
 as instructions or authorization. The model cannot choose what to store, edit,
 or delete.
 
-Projects may carry an optional GitHub source URL. The GitHub credential is a
-global secret stored in `settings.yaml`, separate from the DeepSeek planning
-provider. Creating a project with a GitHub source clones it into `.workspace/`
-through the local `git` executable; no other GitHub operation is part of the
-initial release. The source-control provider is configured separately from the
-AI provider.
+Projects may carry an optional GitHub or folder source. The GitHub credential
+is a global secret stored in `settings.yaml`, separate from the DeepSeek
+planning provider. Creating a project with a GitHub source clones it into
+`.workspace/` through the local `git` executable. When a story reaches `DONE`,
+the application merges its commit into `develop` and pushes only that branch to
+`origin`; it never merges into the default branch and never force-pushes
+(ADR-0070). A disposable checkout of each active laboratory project's `develop`
+lives in `.sandbox/<project-id>`. The source-control provider is configured
+separately from the AI provider.
 
 Prefer a deterministic workflow without a model whenever it satisfies the
 requirement.
@@ -69,8 +72,10 @@ The execution workflow is a separate application component: after planning it
 selects pending assigned stories, creates one git worktree and branch per
 story, runs the bounded action loop, commits the result, asks the reviewer for
 one bounded review, and owns the `IN_REVIEW`/`DONE` transitions and the outcome
-row. The model proposes actions; the application validates paths, executes
-them, and never lets the model choose a state transition (ADR-0050).
+row. A DONE story is then integrated into `develop` and its sandbox checkout is
+refreshed by a deterministic git adapter; failure never changes the card state
+(ADR-0070). The model proposes actions; the application validates paths,
+executes them, and never lets the model choose a state transition (ADR-0050).
 
 ## Components
 

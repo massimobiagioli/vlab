@@ -22,6 +22,7 @@ use crate::infra::config::SettingsFile;
 use crate::infra::db::{DEFAULT_BUSY_TIMEOUT, Database};
 use crate::infra::execution::WorkspaceEnvironment;
 use crate::infra::paths::Paths;
+use crate::infra::workspace::DEFAULT_REMOTE_TIMEOUT;
 use crate::obs::RunId;
 
 const IDLE_POLL: Duration = Duration::from_millis(250);
@@ -107,6 +108,7 @@ fn run(
     ));
     let mut startup = Vec::new();
     crate::cli::dispatch::resume_pending_workflow(&mut startup, run_id, cancel.clone());
+    crate::cli::dispatch::sync_projects_on_startup(&db, &paths, &mut startup, run_id);
     for line in String::from_utf8_lossy(&startup)
         .lines()
         .filter(|line| !line.trim().is_empty())
@@ -171,7 +173,12 @@ fn run(
         let _ = tx.send(WorkerEvent::Started {
             request_id: request.id.clone(),
         });
-        let environment = WorkspaceEnvironment::new(paths.workspace_dir());
+        let environment = WorkspaceEnvironment::with_repository(
+            paths.workspace_dir(),
+            paths.sandbox_dir(),
+            settings.credentials.github_api_key.clone(),
+            DEFAULT_REMOTE_TIMEOUT,
+        );
         let outcome = requests::plan_queued(
             &db,
             &db,

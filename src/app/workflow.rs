@@ -61,6 +61,14 @@ pub struct WorkflowStory {
     pub last_outcome: Option<StoryOutcome>,
 }
 
+/// A DONE story whose commit still needs develop integration or a push.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingIntegration {
+    pub story_id: StoryId,
+    pub branch: String,
+    pub commit: String,
+}
+
 /// Technical-debt follow-up created when a story exhausts remediation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DebtStory {
@@ -119,6 +127,24 @@ pub trait WorkflowStore {
         outcome: &StoryOutcome,
         decision: &str,
         debt: Option<&DebtStory>,
+    ) -> Result<(), StorageError>;
+
+    /// DONE stories whose commit is not yet in `develop` or whose push is
+    /// still pending (ADR-0070).
+    fn pending_integrations(
+        &self,
+        project: &ProjectId,
+    ) -> Result<Vec<PendingIntegration>, StorageError>;
+
+    /// Records the integration result. `merge_commit` is `Some` once the
+    /// commit is in the local `develop`; `push_ok` is true when the remote was
+    /// updated or the project has no remote.
+    fn finish_integration(
+        &self,
+        story: &StoryId,
+        merge_commit: Option<&str>,
+        push_ok: bool,
+        error: Option<&str>,
     ) -> Result<(), StorageError>;
 
     fn update_story_state(&self, story: &StoryId, state: &str) -> Result<(), StorageError>;
@@ -218,6 +244,7 @@ pub fn run(
                 match close_with_debt(
                     store,
                     state,
+                    environment,
                     &tech_lead,
                     &story,
                     &names,
@@ -480,6 +507,7 @@ pub fn run(
                     &story.id,
                     None,
                 );
+                integrate_done_story(store, environment, project, &story.id, &outcome, run_id);
                 let assignee = names
                     .get(&story.assignee)
                     .map(String::as_str)
@@ -717,10 +745,93 @@ fn agent_card_recap(story: &WorkflowStory, assignee: &str, outcome: &StoryOutcom
     memories::bound_markdown(&recap)
 }
 
+fn integrate_done_story(
+    store: &(impl WorkflowStore + InvocationStore),
+    environment: &impl WorkflowEnvironment,
+    project: &ProjectId,
+    story: &StoryId,
+    outcome: &StoryOutcome,
+    run_id: RunId,
+) {
+    if outcome.branch.is_empty() || outcome.commit_sha.is_empty() {
+        let _ = store.finish_integration(story, None, false, Some("develop_no_commit"));
+        record(
+            store,
+            run_id,
+            EventKind::DevelopIntegrationFailed,
+            Outcome::Failure,
+            story,
+            Some("develop_no_commit"),
+        );
+        return;
+    }
+    match environment.integrate_story(project, story, &outcome.branch, &outcome.commit_sha) {
+        Ok(Some(integration)) => {
+            let push_ok = !integration.remote || integration.pushed;
+            let _ = store.finish_integration(
+                story,
+                Some(&integration.merge_commit),
+                push_ok,
+                (!push_ok).then_some("develop_push_failed"),
+            );
+            record(
+                store,
+                run_id,
+                EventKind::DevelopIntegrated,
+                Outcome::Success,
+                story,
+                None,
+            );
+            if !push_ok {
+                record(
+                    store,
+                    run_id,
+                    EventKind::DevelopPushFailed,
+                    Outcome::Failure,
+                    story,
+                    Some("develop_push_failed"),
+                );
+            }
+            match environment.sync_sandbox(project) {
+                Ok(Some(_)) => record_project(
+                    store,
+                    run_id,
+                    EventKind::SandboxSynced,
+                    Outcome::Success,
+                    project,
+                    None,
+                ),
+                Ok(None) => {}
+                Err(error) => record_project(
+                    store,
+                    run_id,
+                    EventKind::SandboxSyncFailed,
+                    Outcome::Failure,
+                    project,
+                    Some(error.code()),
+                ),
+            }
+        }
+        Ok(None) => {}
+        Err(error) => {
+            let _ = store.finish_integration(story, None, false, Some(error.code()));
+            record(
+                store,
+                run_id,
+                EventKind::DevelopIntegrationFailed,
+                Outcome::Failure,
+                story,
+                Some(error.code()),
+            );
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn close_with_debt(
     store: &(impl WorkflowStore + InvocationStore + MemoryStore + Directory + ProjectStore),
     state: &impl AppStateStore,
+    environment: &impl WorkflowEnvironment,
     tech_lead: &AgentId,
     story: &WorkflowStory,
     names: &HashMap<AgentId, String>,
@@ -754,6 +865,14 @@ fn close_with_debt(
         Outcome::Success,
         &debt.id,
         None,
+    );
+    integrate_done_story(
+        store,
+        environment,
+        &story.project_id,
+        &story.id,
+        &outcome,
+        run_id,
     );
     let lead_name = names
         .get(tech_lead)
@@ -1031,6 +1150,24 @@ fn record_memory(
     );
     if let Some(entity) = EntityRef::new(EntityType::Memory, memory.as_str()) {
         event = event.entity(entity);
+    }
+    let _ = store.record_event(&event);
+}
+
+fn record_project(
+    store: &impl InvocationStore,
+    run_id: RunId,
+    kind: EventKind,
+    outcome: Outcome,
+    project: &ProjectId,
+    error_code: Option<&'static str>,
+) {
+    let mut event = AuditEvent::new(run_id, ActionId::generate(), kind, outcome);
+    if let Some(entity) = EntityRef::new(EntityType::Project, project.as_str()) {
+        event = event.entity(entity);
+    }
+    if let Some(code) = error_code {
+        event = event.error_code(code);
     }
     let _ = store.record_event(&event);
 }

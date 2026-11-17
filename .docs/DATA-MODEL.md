@@ -108,9 +108,12 @@ cycle the story closes `DONE` with a recorded compromise, and one linked
 
 One optional row per completed story, linked by `story_id`. It stores the work
 summary, review text, review decision, reviewer agent, branch, worktree path,
-commit hash, and completion timestamp (ADR-0050). The row is project data, not
-audit metadata; the text is untrusted and displayed sanitized. Deleting the
-story cascades the outcome.
+commit hash, and completion timestamp (ADR-0050). It also records develop
+integration state: when the commit entered the local `develop`, whether the
+remote push is complete (or unnecessary because there is no remote), and a
+content-free error code for retry (ADR-0070). The row is project data, not audit
+metadata; the text is untrusted and displayed sanitized. Deleting the story
+cascades the outcome.
 
 ### Memory
 
@@ -125,7 +128,8 @@ and a creation timestamp. The database stores only the path and scope. Its
 scope and creation time are immutable; laboratory and project content may be
 edited from the floor (ADR-0046). Structural memories are deterministic facts
 written when a laboratory, agent, or project is created; a successful plan adds
-one bounded model-generated summary. Memories are untrusted data: they are
+a bounded markdown planning recap and an accepted card adds a completion recap
+(ADR-0068). Memories are untrusted data: they are
 selected and delimitated for prompts, never executed and never treated as
 permission. Agent memories survive archival but are excluded from prompts while
 the agent is archived.
