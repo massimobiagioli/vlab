@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00022` |
 | Branch | `feat/nonblocking-startup` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-17 |
 | Related ADRs | ADR-0064 (startup), ADR-0049 (resume), ADR-0061 (worker) |
 | Scope | Open the dashboard immediately and run startup schedules/workflow in the background worker |
@@ -54,7 +54,7 @@ and pending story execution run in the existing worker.
 - `src/cli/tui/mod.rs` test covers the `Background:` status event.
 - The pre-TUI call is removed from `src/cli/mod.rs`; startup work is invoked
   only from `src/cli/tui/worker.rs`.
-- Hosted CI has not been run; the plan stays `In progress` until it is green.
+- Hosted CI is green on commit `b4c2371`.
 
 ## Task checklist
 
@@ -66,4 +66,4 @@ and pending story execution run in the existing worker.
 - [x] **F04-01** Update the specification, planning, CLI reference, README,
   playbook, and skill guidance.
 - [x] **F05-01** Add the status-event test and verify `make check`.
-- [ ] **F05-02** Push, confirm hosted CI is green, and set the status to `Done`.
+- [x] **F05-02** Push, confirm hosted CI is green, and set the status to `Done`.
