@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00028` |
 | Branch | `feat/develop-sandbox` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-17 |
 | Related ADRs | ADR-0070 (integration), ADR-0032 (clone), ADR-0050 (workflow), ADR-0069 (DONE closure) |
 | Scope | DONE → `develop` merge and push, `.sandbox/<project-id>`, startup/manual sync |
@@ -67,7 +67,7 @@ checkout of `develop` for every project in the active laboratory.
   fake repository.
 - The workflow test asserts develop and sandbox after an accepted card.
 - Migration tests cover schema v18 and the v19 legacy marker.
-- `make check` passed; hosted CI pending.
+- `make check` passed; hosted CI is green on `a673034`.
 
 ## Task checklist
 
@@ -86,4 +86,4 @@ checkout of `develop` for every project in the active laboratory.
 - [x] **F07-01** Update documentation, retention notes, `.gitignore`, Makefile,
   and the Tech Lead skill.
 - [x] **F08-01** Run `make check`.
-- [ ] **F08-02** Push, confirm hosted CI is green, and set the status to `Done`.
+- [x] **F08-02** Push, confirm hosted CI is green, and set the status to `Done`.
