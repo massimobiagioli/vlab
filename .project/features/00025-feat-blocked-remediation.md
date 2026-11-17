@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00025` |
 | Branch | `feat/blocked-remediation` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-17 |
 | Related ADRs | ADR-0067 (remediation), ADR-0050 (workflow), ADR-0026 (provider) |
 | Scope | Tech Lead context, reassignment, retry, and bounded blocked-story recovery |
@@ -61,7 +61,7 @@ technical decision, add context, reassign if useful, and put it back in
   remediation to `DONE`, reassignment, context, and normal work.
 - `src/app/workflow.rs` tests cover the remediation prompt and strict decision
   parsing.
-- Hosted CI has not run; the plan stays `In progress` until it is green.
+- Hosted CI is green on commit `15007ed`.
 
 ## Task checklist
 
@@ -73,4 +73,4 @@ technical decision, add context, reassign if useful, and put it back in
 - [x] **F04-01** Show Tech Lead context in story detail and record the event.
 - [x] **F05-01** Update tests and documentation.
 - [x] **F06-01** Run `make check`.
-- [ ] **F06-02** Push, confirm hosted CI is green, and set the status to `Done`.
+- [x] **F06-02** Push, confirm hosted CI is green, and set the status to `Done`.
