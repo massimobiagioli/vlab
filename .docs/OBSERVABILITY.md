@@ -38,8 +38,8 @@ Event kinds: `migration_applied`, `lab_created`, `lab_updated`, `lab_opened`, `l
 `request_accepted`, `request_queued`, `planning_started`, `planning_completed`,
 `planning_failed`, `provider_attempt`, `question_answered`, `confirmation_granted`, `confirmation_declined`,
 `budget_exhausted`, `cancelled`, `memory_created`, `memory_updated`,
-`memory_deleted`, `story_work_completed`, `story_reviewed`, `story_remediated`,
-`story_debt_created`, `story_completed`, `develop_integrated`,
+`memory_deleted`, `story_work_completed`, `story_reviewed`, `story_reworked`,
+`story_remediated`, `story_debt_created`, `story_completed`, `develop_integrated`,
 `develop_push_failed`, `develop_integration_failed`, `sandbox_synced`,
 `sandbox_sync_failed`, `workflow_failed`.
 

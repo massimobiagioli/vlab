@@ -90,6 +90,9 @@ pub struct WorkReport {
     pub summary: String,
     pub commit: String,
     pub rounds: u32,
+    /// False when a work bound stopped the loop before the agent declared the
+    /// story complete. Such a result is not a review submission (ADR-0071).
+    pub completed: bool,
 }
 
 /// Work-loop failure.
@@ -229,6 +232,7 @@ pub fn work(
                     summary,
                     commit,
                     rounds: round,
+                    completed: true,
                 }),
                 Ok(None) => Err(WorkError::NoChanges),
                 Err(error) => Err(WorkError::Tool(error)),
@@ -279,6 +283,7 @@ fn finalize_after_limit(
             summary,
             commit,
             rounds: MAX_ROUNDS,
+            completed: false,
         }),
         Ok(None) => Err(WorkError::NoChanges),
         Err(error) => Err(WorkError::Tool(error)),
@@ -468,7 +473,19 @@ fn validate_summary(summary: &str) -> Result<String, WorkError> {
 pub struct ReviewOutcome {
     pub text: String,
     pub accepted: bool,
+    /// Concrete items the next attempt must fix. A rejection always has at
+    /// least one; an acceptance may have none.
+    pub findings: Vec<String>,
+    /// Optional scope the next review must retest.
+    pub retest: Option<String>,
 }
+
+/// Maximum number of review findings kept for one outcome.
+pub const MAX_REVIEW_FINDINGS: usize = 8;
+/// Maximum characters in one review finding.
+pub const MAX_FINDING_CHARS: usize = 500;
+/// Maximum characters in the retest scope.
+pub const MAX_RETEST_CHARS: usize = 1_000;
 
 /// Parses the reviewer's strict JSON output.
 pub fn review_outcome(content: &str) -> Result<ReviewOutcome, WorkError> {
@@ -477,6 +494,10 @@ pub fn review_outcome(content: &str) -> Result<ReviewOutcome, WorkError> {
     struct Review {
         review_outcome: String,
         accepted: bool,
+        #[serde(default)]
+        findings: Vec<String>,
+        #[serde(default)]
+        retest: Option<String>,
     }
     let review: Review = serde_json::from_str(content).map_err(|_| WorkError::InvalidOutput)?;
     let text = review.review_outcome.trim();
@@ -488,9 +509,44 @@ pub fn review_outcome(content: &str) -> Result<ReviewOutcome, WorkError> {
     {
         return Err(WorkError::InvalidOutput);
     }
+    let mut findings = Vec::new();
+    for finding in review.findings.into_iter().take(MAX_REVIEW_FINDINGS) {
+        let cleaned = finding.trim();
+        if cleaned.is_empty()
+            || cleaned.chars().count() > MAX_FINDING_CHARS
+            || cleaned
+                .chars()
+                .any(|c| c.is_control() && c != '\n' && c != '\t')
+        {
+            return Err(WorkError::InvalidOutput);
+        }
+        findings.push(cleaned.to_owned());
+    }
+    if !review.accepted && findings.is_empty() {
+        findings.push(text.chars().take(MAX_FINDING_CHARS).collect());
+    }
+    let retest = match review.retest {
+        Some(value) => {
+            let cleaned = value.trim();
+            if cleaned.is_empty() {
+                None
+            } else if cleaned.chars().count() > MAX_RETEST_CHARS
+                || cleaned
+                    .chars()
+                    .any(|c| c.is_control() && c != '\n' && c != '\t')
+            {
+                return Err(WorkError::InvalidOutput);
+            } else {
+                Some(cleaned.to_owned())
+            }
+        }
+        None => None,
+    };
     Ok(ReviewOutcome {
         text: text.to_owned(),
         accepted: review.accepted,
+        findings,
+        retest,
     })
 }
 
@@ -531,7 +587,10 @@ fn round_prompt(
          you ran them. Do not repeat an inspection you already ran; after at most \
          two inspection rounds, start implementing with write_file or run_command. \
          Reuse the project's existing directories and conventions; do not invent a \
-         parallel directory tree. Before finishing, run the relevant tests or build."
+         parallel directory tree. If <tech_lead_context> lists reviewer findings, \
+         the worktree already contains the previous attempt: fix only those findings \
+         and any directly required regression; do not redo the whole story. Before \
+         finishing, run the relevant tests or build."
     );
     let mut user = String::new();
     user.push_str(&format!("<round>{round}/{MAX_ROUNDS}</round>\n"));
@@ -539,8 +598,17 @@ fn round_prompt(
         "<project>{}</project>\n",
         escape(&story.project_name)
     ));
+    let rework = story
+        .tech_lead_context
+        .as_deref()
+        .is_some_and(|context| context.starts_with("Rework only"));
     user.push_str(&format!("<progress>round {round}/{MAX_ROUNDS}; "));
-    if written.is_empty() {
+    if rework && written.is_empty() {
+        user.push_str(
+            "this is a rework; the previous attempt is committed. Read the findings and make \
+             only the required changes.",
+        );
+    } else if written.is_empty() {
         user.push_str(
             "files written: none. Start implementing after at most two inspection rounds.",
         );
@@ -659,8 +727,23 @@ mod tests {
         assert_eq!(validate_summary("  Done.  ").unwrap(), "Done.".to_owned());
         assert!(validate_summary("").is_err());
         assert!(review_outcome(r#"{"review_outcome":"Accepted.","accepted":true}"#).is_ok());
+        let rejected = review_outcome(
+            r#"{"review_outcome":"Fix it.","accepted":false,"findings":["Add X."],"retest":"Only X."}"#,
+        )
+        .unwrap();
+        assert_eq!(rejected.findings, ["Add X."]);
+        assert_eq!(rejected.retest.as_deref(), Some("Only X."));
+        let fallback = review_outcome(r#"{"review_outcome":"Fix it.","accepted":false}"#).unwrap();
+        assert_eq!(fallback.findings, ["Fix it."]);
         assert!(review_outcome(r#"{"review_outcome":""}"#).is_err());
         assert!(review_outcome(r#"{"review_outcome":"ok","accepted":true,"extra":1}"#).is_err());
+        assert!(
+            review_outcome(
+                r#"{"review_outcome":"ok","accepted":false,"findings":["a","b","c","d","e","f","g","h","i"]}"#
+            )
+            .is_ok(),
+            "extra findings are truncated"
+        );
     }
 
     #[test]

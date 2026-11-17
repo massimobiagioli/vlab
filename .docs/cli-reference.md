@@ -56,13 +56,13 @@ in its border. Use `←/→` or `h/l` for lists, `↑/↓` or `j/k` for cards,
 read-only; state changes come from the application workflow. After
 planning, assigned stories are executed for real in a git worktree and then
 moved through `IN_REVIEW` to `DONE` (work by the assignee, review by the first
-active QA or the Tech Lead). A story that fails or is rejected is taken over by
-the Tech Lead, given bounded context, optionally reassigned, and retried for up
-to three remediation cycles. The workflow never parks it in `BLOCKED`; after the
-last cycle it closes `DONE` with a recorded `Tech Lead compromise:` decision and
-one linked `TODO` technical-debt card. A card detail shows the Tech Lead
-context, work summary, review, reviewer, branch, worktree, commit, and
-completion time. On `DONE`, VLab merges the commit into `develop` and pushes
+active QA or the Tech Lead). A rejection returns the same assignee with only
+the reviewer findings; a second failure escalates to a different active agent;
+a third closes `DONE` with a recorded `Tech Lead compromise:` decision and one
+linked `TODO` technical-debt card with the remaining findings. A work-limit stop
+is not sent to review, and the workflow never parks a card in `BLOCKED`. A card
+detail shows the Tech Lead context, work summary, review, reviewer, branch,
+worktree, commit, and completion time. On `DONE`, VLab merges the commit into `develop` and pushes
 that branch, creating it when missing; it never merges into `main`, never
 force-pushes, and never deploys. The testable checkout is under
 `.sandbox/<project-id>`.

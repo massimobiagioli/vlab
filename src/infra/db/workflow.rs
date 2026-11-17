@@ -13,9 +13,10 @@ const SELECT_PENDING: &str = "\
 SELECT s.id, s.request_id, s.project_id, s.title, s.description, \
        s.acceptance_criteria_json, s.priority, s.complexity, p.name AS project_name, \
        s.assigned_agent_id AS assignee, r.content AS request_text, s.due_date, \
-       s.execution_attempts, s.remediation_attempts, s.tech_lead_context, \
-       s.debt_of_story_id, o.work_outcome, o.review_outcome, \
-       o.reviewer_agent_id, o.review_accepted, o.branch, o.worktree_path, o.commit_sha \
+       s.execution_attempts, s.remediation_attempts, s.rework_attempts, \
+       s.tech_lead_context, s.debt_of_story_id, o.work_outcome, o.review_outcome, \
+       o.reviewer_agent_id, o.review_accepted, o.branch, o.worktree_path, o.commit_sha, \
+       o.review_findings_json, o.review_retest \
 FROM stories s \
 JOIN projects p ON p.id = s.project_id \
 JOIN requests r ON r.id = s.request_id \
@@ -23,17 +24,19 @@ LEFT JOIN story_outcomes o ON o.story_id = s.id \
 WHERE s.project_id = ?1 AND s.state IN ('TODO', 'IN_PROGRESS', 'IN_REVIEW') \
   AND s.assigned_agent_id IS NOT NULL \
   AND NOT (s.state = 'IN_PROGRESS' AND s.execution_attempts >= 3 \
-           AND s.remediation_attempts < 3) \
-  AND NOT (COALESCE(o.review_accepted, 1) = 0 AND s.remediation_attempts < 3) \
+           AND s.remediation_attempts < 3 AND s.rework_attempts < 3) \
+  AND NOT (COALESCE(o.review_accepted, 1) = 0 \
+           AND s.remediation_attempts < 3 AND s.rework_attempts < 3) \
 ORDER BY s.created_at, s.id";
 
 const SELECT_BLOCKED: &str = "\
 SELECT s.id, s.request_id, s.project_id, s.title, s.description, \
        s.acceptance_criteria_json, s.priority, s.complexity, p.name AS project_name, \
        s.assigned_agent_id AS assignee, r.content AS request_text, s.due_date, \
-       s.execution_attempts, s.remediation_attempts, s.tech_lead_context, \
-       s.debt_of_story_id, o.work_outcome, o.review_outcome, \
-       o.reviewer_agent_id, o.review_accepted, o.branch, o.worktree_path, o.commit_sha \
+       s.execution_attempts, s.remediation_attempts, s.rework_attempts, \
+       s.tech_lead_context, s.debt_of_story_id, o.work_outcome, o.review_outcome, \
+       o.reviewer_agent_id, o.review_accepted, o.branch, o.worktree_path, o.commit_sha, \
+       o.review_findings_json, o.review_retest \
 FROM stories s \
 JOIN projects p ON p.id = s.project_id \
 JOIN requests r ON r.id = s.request_id \
@@ -58,6 +61,17 @@ UPDATE stories SET assigned_agent_id = ?2, state = 'IN_PROGRESS', \
   tech_lead_context = ?3, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
 WHERE id = ?1";
 
+const REWORK: &str = "\
+UPDATE stories SET assigned_agent_id = ?2, state = 'IN_PROGRESS', \
+  execution_attempts = 0, tech_lead_context = ?3, \
+  updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+WHERE id = ?1";
+
+const INCREMENT_REWORK: &str = "\
+UPDATE stories SET rework_attempts = rework_attempts + 1, \
+  updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+WHERE id = ?1 RETURNING rework_attempts";
+
 const CLOSE_STORY: &str = "\
 UPDATE stories SET state = 'DONE', tech_lead_context = ?2, \
   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
@@ -73,8 +87,10 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, '[]', NULL, ?9, 'TODO', ?10, \
 
 const UPSERT_OUTCOME: &str = "\
 INSERT INTO story_outcomes (story_id, work_outcome, review_outcome, reviewer_agent_id, \
-  review_accepted, branch, worktree_path, commit_sha, completed_at) \
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) \
+  review_accepted, branch, worktree_path, commit_sha, review_findings_json, \
+  review_retest, completed_at) \
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, \
+  strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) \
 ON CONFLICT (story_id) DO UPDATE SET \
   work_outcome = excluded.work_outcome, \
   review_outcome = excluded.review_outcome, \
@@ -83,6 +99,8 @@ ON CONFLICT (story_id) DO UPDATE SET \
   branch = excluded.branch, \
   worktree_path = excluded.worktree_path, \
   commit_sha = excluded.commit_sha, \
+  review_findings_json = excluded.review_findings_json, \
+  review_retest = excluded.review_retest, \
   completed_at = excluded.completed_at, \
   integrated_at = NULL, \
   push_ok = 0, \
@@ -123,6 +141,7 @@ struct Row {
     due_date: String,
     execution_attempts: i64,
     remediation_attempts: i64,
+    rework_attempts: i64,
     tech_lead_context: Option<String>,
     debt_of_story_id: Option<String>,
     work_outcome: Option<String>,
@@ -132,6 +151,8 @@ struct Row {
     branch: Option<String>,
     worktree_path: Option<String>,
     commit_sha: Option<String>,
+    review_findings_json: Option<String>,
+    review_retest: Option<String>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -178,6 +199,50 @@ impl WorkflowStore for Database {
         })
     }
 
+    fn rework_story(
+        &self,
+        story: &StoryId,
+        assignee: &AgentId,
+        context: &str,
+    ) -> Result<(), StorageError> {
+        let story = story.clone();
+        let assignee = assignee.clone();
+        let context = context.to_owned();
+        self.transaction(move |connection| {
+            Box::pin(async move {
+                sqlx::query(REWORK)
+                    .bind(story.as_str())
+                    .bind(assignee.as_str())
+                    .bind(&context)
+                    .execute(&mut *connection)
+                    .await
+                    .map_err(|_| StorageError::Operation)?;
+                sqlx::query("DELETE FROM story_outcomes WHERE story_id = ?1")
+                    .bind(story.as_str())
+                    .execute(&mut *connection)
+                    .await
+                    .map_err(|_| StorageError::Operation)?;
+                Ok(())
+            })
+        })
+    }
+
+    fn increment_rework_attempts(&self, story: &StoryId) -> Result<u32, StorageError> {
+        self.block_on(async {
+            let mut connection = self
+                .pool()
+                .acquire()
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))?;
+            let attempts: i64 = sqlx::query_scalar(INCREMENT_REWORK)
+                .bind(story.as_str())
+                .fetch_one(&mut *connection)
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))?;
+            u32::try_from(attempts).map_err(|_| StorageError::Operation)
+        })
+    }
+
     fn close_with_debt(
         &self,
         story: &WorkflowStory,
@@ -195,6 +260,8 @@ impl WorkflowStore for Database {
         let debt = debt.cloned();
         self.transaction(move |connection| {
             Box::pin(async move {
+                let findings = serde_json::to_string(&outcome.findings)
+                    .map_err(|_| StorageError::Operation)?;
                 sqlx::query(UPSERT_OUTCOME)
                     .bind(story_id.as_str())
                     .bind(&outcome.work_outcome)
@@ -204,6 +271,8 @@ impl WorkflowStore for Database {
                     .bind(&outcome.branch)
                     .bind(&outcome.worktree_path)
                     .bind(&outcome.commit_sha)
+                    .bind(&findings)
+                    .bind(outcome.retest.as_deref())
                     .execute(&mut *connection)
                     .await
                     .map_err(|_| StorageError::Operation)?;
@@ -334,6 +403,8 @@ impl WorkflowStore for Database {
         let final_state = final_state.to_owned();
         self.transaction(move |connection| {
             Box::pin(async move {
+                let findings = serde_json::to_string(&outcome.findings)
+                    .map_err(|_| StorageError::Operation)?;
                 sqlx::query(UPSERT_OUTCOME)
                     .bind(story.as_str())
                     .bind(&outcome.work_outcome)
@@ -343,6 +414,8 @@ impl WorkflowStore for Database {
                     .bind(&outcome.branch)
                     .bind(&outcome.worktree_path)
                     .bind(&outcome.commit_sha)
+                    .bind(&findings)
+                    .bind(outcome.retest.as_deref())
                     .execute(&mut *connection)
                     .await
                     .map_err(|_| StorageError::Operation)?;
@@ -392,6 +465,12 @@ async fn set_state(
 }
 
 fn map_row(row: Row) -> Option<WorkflowStory> {
+    let findings = row
+        .review_findings_json
+        .as_deref()
+        .and_then(|json| serde_json::from_str(json).ok())
+        .unwrap_or_default();
+    let retest = row.review_retest;
     let last_outcome = match (row.work_outcome, row.review_outcome) {
         (Some(work_outcome), Some(review_outcome)) => {
             let reviewer_agent_id = AgentId::parse(row.reviewer_agent_id.as_deref()?)?;
@@ -403,6 +482,8 @@ fn map_row(row: Row) -> Option<WorkflowStory> {
                 branch: row.branch.unwrap_or_default(),
                 worktree_path: row.worktree_path.unwrap_or_default(),
                 commit_sha: row.commit_sha.unwrap_or_default(),
+                findings,
+                retest,
             })
         }
         _ => None,
@@ -422,6 +503,7 @@ fn map_row(row: Row) -> Option<WorkflowStory> {
         due_date: row.due_date,
         execution_attempts: u32::try_from(row.execution_attempts).ok()?,
         remediation_attempts: u32::try_from(row.remediation_attempts).ok()?,
+        rework_attempts: u32::try_from(row.rework_attempts).ok()?,
         tech_lead_context: row.tech_lead_context,
         debt_of_story_id: row.debt_of_story_id.as_deref().and_then(StoryId::parse),
         last_outcome,

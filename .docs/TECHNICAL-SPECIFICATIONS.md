@@ -1269,16 +1269,21 @@ Live-provider tests shall be opt-in and shall never require committed credential
 
 ### Workflow Remediation Tests
 
-- An exhausted story is remediated, reassigned, and completes.
-- A rejected review is remediated with Tech Lead context and completes.
-- The remediation prompt and strict decision parser reject malformed output.
-- The remediation counter and context persist and migration preserves data.
-- An exhausted remediation closes the card `DONE` with a documented
+- A retry reuses the story branch and worktree, preserving the previous commit.
+- A first rejection reworks the same assignee with only the reviewer findings
+  and completes.
+- A second failure escalates to a different active agent with more context.
+- A third failure closes the card `DONE` with a documented
   `Tech Lead compromise:` review and creates one linked unassigned `TODO`
-  technical-debt card.
+  technical-debt card containing the remaining findings.
+- A work-limit stop is not sent to review and is followed by a bounded rework.
+- An invalid or unavailable review is never accepted as `DONE`.
+- The remediation prompt and strict decision parser reject malformed output and
+  the previous assignee when another candidate exists.
+- Schema v20 adds `rework_attempts`, `review_findings_json`, and
+  `review_retest`.
 - The workflow never creates a new `BLOCKED` row.
-- A transient provider failure stops the pass without consuming the remediation
-  budget.
+- A transient provider failure stops the pass without consuming the budget.
 
 ### Develop Integration and Sandbox Tests
 
@@ -1330,11 +1335,13 @@ The initial release is acceptable when:
 26. New requests never wait for human clarification: the Tech Lead resolves
     ambiguity in up to two bounded follow-up calls, otherwise the request fails
     with `clarification_unresolved` and no partial stories.
-27. A story that exhausts execution or review is remediated by the Tech Lead
-    with bounded context and an active assignee for up to three cycles, then
-    closed `DONE` with a recorded compromise and one linked technical-debt card;
-    the workflow never parks it in `BLOCKED` or marks it `DONE` without recorded
-    work and review.
+27. A rejected review returns the same assignee with only the reviewer findings
+    and preserves the previous branch/worktree. A second failure escalates to a
+    different active agent; a third closes `DONE` with a recorded compromise and
+    one linked technical-debt card containing the remaining findings. A
+    work-limit stop is not reviewed. The workflow never loops, never parks a
+    card in `BLOCKED`, and never marks it `DONE` without recorded work and
+    review (ADR-0071).
 28. Every `DONE` card with a commit is integrated into `develop` and pushed to
     the project remote without force; `develop` is created when missing. Every
     source project of the active laboratory has a refreshed
@@ -1463,39 +1470,47 @@ After planning, the application runs real, bounded execution (ADR-0050):
 
 - Each assigned `TODO`, `IN_PROGRESS`, or `IN_REVIEW` story gets a worktree
   under `.workspace/.worktrees/<story-id>` on branch `vlab/<story-id>`. An
-  assigned `TODO` story moves to `IN_PROGRESS` when the attempt starts.
-- The assigned agent works through at most 12 rounds. Each round is one
+  assigned `TODO` story moves to `IN_PROGRESS` when the attempt starts. A retry
+  reuses the existing worktree and branch, preserving the previous commits and
+  any uncommitted work (ADR-0071).
+- The assigned agent works through at most 24 rounds. Each round is one
   strict JSON action list; the application executes up to four validated
   `list_files`, `read_file`, `write_file`, or `run_command` actions inside the
   worktree. Paths leaving the worktree are rejected.
 - On success the application stages and commits all changes and records the
   commit hash. A story with no changes fails the attempt.
+- A work-limit or deadline stop is not a review submission: the application
+  records an incomplete outcome, increments `rework_attempts`, keeps the story
+  `IN_PROGRESS`, and does not call the reviewer.
 - The reviewer is the first active `qa` in the project roster, or in the active
   laboratory roster when the project roster is empty; if there is no QA, the
-  Tech Lead reviews. The review receives the summary, changed files, and a
-  bounded diff and returns `review_outcome` and an `accepted` boolean. An
-  accepted review sets `DONE` and starts develop integration.
+  Tech Lead reviews. The review receives the summary, changed files, bounded
+  diff, and any previous findings, and returns `review_outcome`, `accepted`,
+  `findings` (1–8 concrete items on rejection), and an optional `retest`
+  scope. An accepted review sets `DONE` and starts develop integration.
 - A rejected review keeps the commit on `vlab/<story-id>`, stores it in
-  `story_outcomes` with `review_accepted = 0`, and leaves the story in progress
-  for autonomous Tech Lead remediation rather than human attention.
+  `story_outcomes` with `review_accepted = 0`, the findings, and the retest
+  scope, increments `rework_attempts`, and keeps the same assignee for the
+  first rework. The rework context lists only the reviewer findings and retest
+  scope; the agent fixes only those, not the whole story.
+- On the second failure the Tech Lead receives the previous findings and must
+  choose a different active agent with additional instructions; the previous
+  assignee is excluded when another candidate exists. If no other agent
+  exists, the card closes instead of looping.
+- On the third failure the Tech Lead records a closing compromise, the original
+  story becomes `DONE` with a `Tech Lead compromise:` review outcome, and one
+  unassigned `TODO` technical-debt card contains the remaining findings,
+  linked through `debt_of_story_id`. The model never chooses a state
+  transition, grants permission, or marks `DONE` without recorded work and
+  review.
 - On provider, tool, or validation failure the story stays in progress, a
   content-free `workflow_failed` event is recorded, and the planning request is
   still `PLANNED`. A transient provider, worktree, or environment failure ends
-  the pass without consuming the remediation budget. The workflow never sets
+  the pass without consuming the rework budget. The workflow never sets
   `BLOCKED`.
-- After three failed attempts or a rejected review, the story is passed to the
-  Tech Lead with the request, story, acceptance criteria, previous
-  work/review, previous context, and active roster. The Tech Lead returns a
-  bounded decision/context and a valid assignee; the application stores the
-  context, may reassign the story, resets the execution attempts, increments
-  `remediation_attempts`, clears the stale outcome, and leaves it
-  `IN_PROGRESS`. Up to three remediation cycles are attempted per story.
-- After the last cycle the Tech Lead returns a bounded closing decision and
-  residual-work description. The application marks the story `DONE` with the
-  last work/branch evidence and a `Tech Lead compromise:` review outcome, and
-  creates one unassigned `TODO` technical-debt card linked through
-  `debt_of_story_id`. The model never chooses a state transition, grants
-  permission, or marks `DONE` without recorded work and review.
+- An invalid or unavailable review is never accepted: a synthetic rejection
+  with one actionable finding is recorded and the bounded remediation path
+  handles it.
 - Every `DONE` story with a commit is integrated into `develop` with a
   `--no-ff` merge and, when the project has an `origin` remote, pushed without
   force. `develop` is created from `origin/develop`, the remote default branch,
@@ -1510,10 +1525,11 @@ After planning, the application runs real, bounded execution (ADR-0050):
   without a source are skipped.
 - Bounds: 24 work rounds, 120-second call timeout, 8,192 output tokens, four
   actions per round, 15-minute work deadline, 60-second command timeout, 64 KiB
-  captured command output, three attempts per cycle, three remediation cycles,
-  one closing decision, a 300-second clone timeout, a 120-second fetch/push
-  timeout, and a 45-minute workflow deadline. One empty-output retry per round is allowed. Stories are
-  processed sequentially.
+  captured command output, three execution attempts per cycle, three bounded
+  rework attempts (direct rework, escalation, then close), one closing
+  decision, a 300-second clone timeout, a 120-second fetch/push timeout, and a
+  45-minute workflow deadline. One empty-output retry per round is allowed.
+  Stories are processed sequentially.
 - Commands run in the worktree with a cleared environment, a private `HOME`,
   and no inherited secrets. There is no OS sandbox or network isolation; this is
   a documented residual risk.

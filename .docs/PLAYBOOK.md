@@ -244,13 +244,14 @@ vlab --show-project-kanban
 
 The board shows `TODO`, `IN PROGRESS`, `IN REVIEW`, `BLOCKED`, and `DONE`,
 with assignee, priority, due date, counts, and pending intake. It is read-only;
-states are changed only by the application workflow. A failing or rejected
-story is remediated by the Tech Lead: it gets bounded context, may be
-reassigned, and is retried for up to three cycles. The workflow never parks it
-in `BLOCKED`; after the last cycle the Tech Lead records a closing compromise,
-the card becomes `DONE`, and one linked unassigned `TODO` card captures the
-technical debt. A `DONE` card can be opened with `Enter` to read its work
-summary, review, reviewer, branch, worktree, commit, and completion time. VLab
+states are changed only by the application workflow. A rejected review returns
+the same assignee with only the reviewer findings and preserves the previous
+work; a second failure escalates to a different active agent; a third closes the
+card `DONE` with a recorded compromise and one linked unassigned `TODO` card
+that captures the remaining findings. A work-limit stop is not sent to review,
+and the workflow never parks a card in `BLOCKED`. A `DONE` card can be opened
+with `Enter` to read its work summary, review, reviewer, branch, worktree,
+commit, and completion time. VLab
 merges the commit into `develop` and pushes that branch; it never merges into
 `main`, never force-pushes, and never deploys. The testable checkout for each
 source project is under `.sandbox/<project-id>`.

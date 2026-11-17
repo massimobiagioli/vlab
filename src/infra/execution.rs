@@ -300,31 +300,49 @@ impl WorkflowEnvironment for WorkspaceEnvironment {
         fs::create_dir_all(&tree_root).map_err(|_| WorktreeError::Io)?;
         let path = tree_root.join(story.as_str());
         let branch = format!("vlab/{}", story.as_str());
+        let path_text = path.to_string_lossy().into_owned();
 
         if path.exists() {
-            let _ = run_git(
-                &clone,
-                &["worktree", "remove", "--force", &path.to_string_lossy()],
-            );
+            // A retry preserves the previous work (ADR-0071). Reuse a worktree
+            // already on the story branch, including uncommitted files.
+            let (code, current, _) = run_git(&path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+            if code == 0 && current.trim() == branch {
+                let canonical = fs::canonicalize(&path).map_err(|_| WorktreeError::Io)?;
+                if !canonical.starts_with(&root) {
+                    return Err(WorktreeError::Confined);
+                }
+                return Ok(Worktree {
+                    path: canonical,
+                    relative_path: format!(".worktrees/{}", story.as_str()),
+                    branch,
+                });
+            }
+            let _ = run_git(&clone, &["worktree", "remove", "--force", &path_text]);
             let _ = fs::remove_dir_all(&path);
         }
         let _ = run_git(&clone, &["worktree", "prune"]);
-        let _ = run_git(&clone, &["branch", "-D", &branch]);
         if path.exists() {
             return Err(WorktreeError::Occupied);
         }
 
-        let (code, _, _) = run_git(
+        let branch_exists = run_git(
             &clone,
             &[
-                "worktree",
-                "add",
-                "-b",
-                &branch,
-                &path.to_string_lossy(),
-                "HEAD",
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                &format!("refs/heads/{branch}"),
             ],
-        )?;
+        )?
+        .0 == 0;
+        let (code, _, _) = if branch_exists {
+            run_git(&clone, &["worktree", "add", &path_text, &branch])?
+        } else {
+            run_git(
+                &clone,
+                &["worktree", "add", "-b", &branch, &path_text, "HEAD"],
+            )?
+        };
         if code != 0 {
             return Err(WorktreeError::Git);
         }

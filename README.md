@@ -244,7 +244,11 @@ intake. Planning creates assigned stories in `IN PROGRESS` and unassigned
 stories in `TODO`. After planning, the application executes each assigned story
 for real in its own git worktree: the assignee reads and writes files and runs
 commands in `.workspace/.worktrees/<story-id>`, the changes are committed on
-`vlab/<story-id>`, and the first active QA (or the Tech Lead) records a review.
+`vlab/<story-id>`, and the first active QA (or the Tech Lead) records a review
+with concrete findings. A rejected review reworks the same assignee with only
+those findings and preserves the worktree and branch. A second failure escalates
+to a different active agent; a third closes the card `DONE` with a recorded
+compromise and a technical-debt card. A work-limit stop is not sent to review.
 The `DONE` card detail shows the work summary, review, reviewer, branch,
 worktree, and commit. VLab merges the commit into `develop` and pushes that
 branch (creating it when missing); it never merges into the default branch,
@@ -339,14 +343,13 @@ has no assignments), computes due dates locally in UTC (2/5/10 calendar days by
 complexity), and inserts all stories in one transaction. The Tech Lead resolves
 clarification autonomously in up to two bounded follow-up calls; unresolved
 questions fail with `clarification_unresolved`, never a human prompt. Assigned
-stories execute in worktrees; a story that fails three attempts or a rejected
-review is taken over by the Tech Lead, given bounded technical context,
-optionally reassigned, and retried automatically for up to three remediation
-cycles. The workflow never parks it in `BLOCKED`: after the last cycle the Tech
-Lead closes the card `DONE` with a recorded compromise and opens one unassigned
-`TODO` technical-debt card for the residual work. Provider, validation, budget,
-timeout, and cancellation outcomes preserve the request and stop the pass
-without consuming the remediation budget. A second request waits in `TODO`
+stories execute in worktrees; a rejected review returns the same assignee with
+only the reviewer findings, a second failure escalates to a different active
+agent, and a third closes the card `DONE` with a recorded compromise and one
+unassigned `TODO` technical-debt card for the residual work. A work-limit stop
+is not sent to review. The workflow never parks a card in `BLOCKED`. Provider,
+validation, budget, timeout, and cancellation outcomes preserve the request and
+stop the pass without consuming the rework budget. A second request waits in `TODO`
 until the first finishes. Retries are bounded and may incur additional provider charges;
 exactly-once remote execution is not promised.
 

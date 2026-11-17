@@ -122,6 +122,7 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0068.md`](.docs/adr/adr-0068.md) | Markdown recap memories for planning and completed cards. |
 | [`.docs/adr/adr-0069.md`](.docs/adr/adr-0069.md) | Close exhausted stories with a Tech Lead compromise and technical debt. |
 | [`.docs/adr/adr-0070.md`](.docs/adr/adr-0070.md) | Integrate DONE stories into `develop` and materialize a testable sandbox. |
+| [`.docs/adr/adr-0071.md`](.docs/adr/adr-0071.md) | Bounded rework from review findings and Tech Lead escalation. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
 | [`.project/features/`](.project/features/) | Tracked feature plans with task checklists (ADR-0037). |
 
@@ -273,6 +274,12 @@ Material post-release features are planned in tracked files under
   Model output is never an authorization or a shell command chosen without
   validation.
 - **Real work stays isolated:** each story runs in its own worktree and branch.
+- **Bounded rework:** a retry reuses the existing branch and worktree. A valid
+  review rejection returns the card to the same assignee with only the reviewer
+  findings; the second failure escalates to a different active agent; the third
+  closes the original with a technical-debt card. A work-limit stop is not sent
+  to review. A card never loops between `IN_PROGRESS` and `IN_REVIEW`
+  (ADR-0071).
 - **Develop integration:** after a story is `DONE` with a commit, VLab merges it
   into `develop` with `--no-ff` (creating `develop` when missing) and pushes only
   that branch to `origin` when a remote exists. It never merges into the default

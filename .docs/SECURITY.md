@@ -78,7 +78,7 @@ Prompts are behavioral guidance, not security boundaries.
 | Queue → worker | Intake only writes a `TODO` request. One in-process worker reads the oldest request, uses its own database connection, runs one bounded planning/workflow at a time, never touches the terminal, and stops on cancellation. No model-chosen order, no parallel provider call, no daemon. |
 | File store → local disk | Reject absolute paths, `..`, symlinks, and paths outside the data directory; bound markdown files; write with private permissions; never execute imported content. |
 | Floor → terminal | The floor is read-only: it renders sanitized stored names, task titles, and states, never prompts, responses, CVs, or credentials; animation is presentation state only and never calls the provider or writes. |
-| Exhausted story → closure | Model-chosen state, invalid assignee, secret or hostile context, unbounded retries, fabricated completion | Strict bounded JSON, local roster validation, escaped/delimited context, application-owned transitions, three remediation cycles, recorded work and closing review, one unassigned debt card, no permissions or tools | `src/app/workflow.rs`, `src/infra/db/workflow.rs`, `tests/workflow.rs` |
+| Failed attempt → rework/closure | Model-chosen state, invalid assignee, secret or hostile context, unbounded retries, fabricated completion | Strict bounded review/decision JSON, findings bounded to 8×500 characters, local roster validation, previous assignee excluded on escalation, escaped/delimited context, application-owned transitions, three failures maximum, recorded work and closing review, one unassigned debt card, no permissions or tools | `src/app/workflow.rs`, `src/infra/db/workflow.rs`, `tests/workflow.rs` |
 | Model → orchestrator | Validate responses; never interpret proposals as authorization. |
 | Workflow output → story state | Accept only strict action/review JSON; the application validates and executes actions, owns `IN_REVIEW`/`DONE`, and the model cannot choose a transition. |
 | Orchestrator → worktree | Resolve every path inside the story worktree; reject absolute paths, `..`, and symlink escapes; bound file size, command time, and output. |
@@ -127,10 +127,12 @@ before exposure.
   15-minute work deadline, a 60-second command timeout, 64 KiB captured output,
   and three attempts per cycle. A story that exhausts attempts or review is
   remediated with a bounded decision/context and active assignee for at most
-  three cycles. The workflow never sets `BLOCKED`; the Tech Lead then closes the
-  story `DONE` with a bounded compromise and one linked technical-debt card. The
-  application owns every transition and never marks `DONE` without recorded
-  work and review.
+  three cycles. A rejection reworks the same assignee with only bounded reviewer
+  findings; a second failure escalates to a different agent; a third closes the
+  story `DONE` with a bounded compromise and one linked technical-debt card. A
+  work-limit stop is not reviewed. The workflow never sets `BLOCKED` and the
+  application owns every transition; it never marks `DONE` without recorded work
+  and review.
 - Run every command with the worktree as working directory, a cleared
   environment, a private `HOME`, no inherited credentials, and no privilege
   escalation. Do not claim OS-level isolation; none exists.

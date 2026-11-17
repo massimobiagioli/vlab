@@ -8,8 +8,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use vlab::app::worktrees::{ProjectRepository, RepositoryError};
+use vlab::app::worktrees::{ProjectRepository, RepositoryError, WorkflowEnvironment};
 use vlab::domain::ids::{ProjectId, StoryId};
+use vlab::infra::execution::WorkspaceEnvironment;
 use vlab::infra::git_repository::GitRepository;
 
 const PROJECT: &str = "0b1c2d3e";
@@ -272,6 +273,28 @@ fn a_push_failure_keeps_the_local_merge() {
     assert!(integration.remote);
     assert!(!integration.pushed);
     assert_eq!(rev(&fixture.base, "develop"), integration.merge_commit);
+    let _ = fixture.dir;
+}
+
+#[test]
+fn a_retry_reuses_the_story_worktree_and_branch() {
+    let fixture = Fixture::new(false);
+    let environment = WorkspaceEnvironment::new(fixture.dir.path().join("workspace"));
+    let project = project_id();
+    let story = story_id();
+    let first = environment.prepare(&project, &story).unwrap();
+    fs::write(first.path.join("story.txt"), "first\n").unwrap();
+    git(&first.path, &["add", "."]);
+    commit(&first.path, "first attempt");
+    let head = rev(&first.path, "HEAD");
+
+    let second = environment.prepare(&project, &story).unwrap();
+    assert_eq!(second.path, first.path);
+    assert_eq!(rev(&second.path, "HEAD"), head);
+    assert_eq!(
+        fs::read_to_string(second.path.join("story.txt")).unwrap(),
+        "first\n"
+    );
     let _ = fixture.dir;
 }
 

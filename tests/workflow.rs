@@ -328,7 +328,7 @@ fn an_assigned_todo_story_is_executed() {
 }
 
 #[test]
-fn a_rejected_review_is_remediated_and_the_story_finishes() {
+fn a_rejected_review_is_reworked_by_the_same_assignee_and_finishes() {
     let fixture = fixture(true);
     let provider = ScriptedProvider::new(vec![
         Ok(response(
@@ -338,10 +338,7 @@ fn a_rejected_review_is_remediated_and_the_story_finishes() {
             r#"{"actions":[],"done":true,"summary":"Updated the README."}"#,
         )),
         Ok(response(
-            r#"{"review_outcome":"Incomplete.","accepted":false}"#,
-        )),
-        Ok(response(
-            r#"{"decision":"Address the review and rerun the checks.","context":"The reviewer found the README incomplete; add the missing section.","assignee_id":"2d3e4f50"}"#,
+            r#"{"review_outcome":"The README is incomplete.","accepted":false,"findings":["Add the missing section."],"retest":"Only the missing section and the README rendering."}"#,
         )),
         Ok(response(
             r#"{"actions":[{"tool":"write_file","path":"README.md","content":"complete\n","append":true}],"done":false}"#,
@@ -358,9 +355,129 @@ fn a_rejected_review_is_remediated_and_the_story_finishes() {
     assert_eq!(report.completed, 1);
     let detail = story(&fixture);
     assert_eq!(detail.state, kanban::StoryState::Done);
+    assert_eq!(detail.assignee.as_deref(), Some("Ada"));
+    assert!(
+        detail
+            .tech_lead_context
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Rework only"),
+        "the rework context names the bounded scope"
+    );
+    assert!(
+        detail
+            .tech_lead_context
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Add the missing section."),
+        "the rework context carries the reviewer finding"
+    );
     let outcome = detail.outcome.unwrap();
     assert!(outcome.accepted);
     assert!(outcome.commit_sha.is_some());
+    assert_eq!(
+        provider.requests().len(),
+        6,
+        "no Tech Lead call on the first failure"
+    );
+}
+
+#[test]
+fn a_second_failure_escalates_to_a_different_agent() {
+    let fixture = fixture(true);
+    let provider = ScriptedProvider::new(vec![
+        Ok(response(
+            r#"{"actions":[{"tool":"write_file","path":"README.md","content":"first\n"}],"done":false}"#,
+        )),
+        Ok(response(
+            r#"{"actions":[],"done":true,"summary":"First attempt."}"#,
+        )),
+        Ok(response(
+            r#"{"review_outcome":"Missing a section.","accepted":false,"findings":["Add the missing section."]}"#,
+        )),
+        Ok(response(
+            r#"{"actions":[{"tool":"write_file","path":"README.md","content":"second\n","append":true}],"done":false}"#,
+        )),
+        Ok(response(
+            r#"{"actions":[],"done":true,"summary":"Rework attempt."}"#,
+        )),
+        Ok(response(
+            r#"{"review_outcome":"Still missing the section.","accepted":false,"findings":["The section is still missing."]}"#,
+        )),
+        Ok(response(
+            r#"{"decision":"The previous assignee could not fix it; reassign.","context":"Add the missing section and run the checks.","assignee_id":"1c2d3e4f"}"#,
+        )),
+        Ok(response(
+            r#"{"actions":[{"tool":"write_file","path":"README.md","content":"final\n"}],"done":false}"#,
+        )),
+        Ok(response(
+            r#"{"actions":[],"done":true,"summary":"Completed after escalation."}"#,
+        )),
+        Ok(response(
+            r#"{"review_outcome":"Complete.","accepted":true}"#,
+        )),
+    ]);
+    let report = run(&fixture, &provider);
+    assert_eq!(report.remediated, 2);
+    assert_eq!(report.completed, 1);
+    let detail = story(&fixture);
+    assert_eq!(detail.state, kanban::StoryState::Done);
+    assert_eq!(detail.assignee.as_deref(), Some("Grace"));
+    let (remediation, rework): (i64, i64) = fixture.db.block_on(async {
+        sqlx::query_as(
+            "SELECT remediation_attempts, rework_attempts FROM stories \
+             WHERE id = '5a617283'",
+        )
+        .fetch_one(fixture.db.pool())
+        .await
+        .unwrap()
+    });
+    assert_eq!(remediation, 1);
+    assert_eq!(rework, 2);
+    assert_eq!(provider.requests().len(), 10);
+}
+
+#[test]
+fn a_work_limit_is_reworked_before_any_review() {
+    let fixture = fixture(true);
+    let mut outcomes: Vec<Result<ProviderResponse, ProviderError>> = (1..24)
+        .map(|_| {
+            Ok(response(
+                r#"{"actions":[{"tool":"list_files","path":"."}],"done":false}"#,
+            ))
+        })
+        .collect();
+    outcomes.push(Ok(response(
+        r#"{"actions":[{"tool":"write_file","path":"README.md","content":"partial\n"}],"done":false}"#,
+    )));
+    outcomes.push(Ok(response(
+        r#"{"actions":[{"tool":"write_file","path":"README.md","content":"complete\n"}],"done":false}"#,
+    )));
+    outcomes.push(Ok(response(
+        r#"{"actions":[],"done":true,"summary":"Finished the rework."}"#,
+    )));
+    outcomes.push(Ok(response(
+        r#"{"review_outcome":"Complete.","accepted":true}"#,
+    )));
+    let provider = ScriptedProvider::new(outcomes);
+    let report = run(&fixture, &provider);
+    assert_eq!(report.completed, 1);
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 27);
+    assert!(
+        requests[24].user.contains("Rework only"),
+        "the work-limit attempt is followed by a bounded rework"
+    );
+    assert!(
+        requests[24].system.contains("developer"),
+        "the rework is work, not a review"
+    );
+    assert!(
+        requests[26].system.contains("reviewer"),
+        "the review happens only after the rework completes"
+    );
+    let detail = story(&fixture);
+    assert_eq!(detail.state, kanban::StoryState::Done);
 }
 
 #[test]
@@ -369,17 +486,19 @@ fn an_exhausted_remediation_closes_the_card_with_technical_debt() {
     fixture
         .db
         .execute(
-            "UPDATE stories SET execution_attempts = 3, remediation_attempts = 3 \
-             WHERE id = '5a617283'",
+            "UPDATE stories SET execution_attempts = 3, remediation_attempts = 0, \
+             rework_attempts = 3 WHERE id = '5a617283'",
         )
         .unwrap();
     fixture
         .db
         .execute(
             "INSERT INTO story_outcomes (story_id, work_outcome, review_outcome, \
-             reviewer_agent_id, review_accepted, branch, worktree_path, commit_sha, completed_at) \
+             reviewer_agent_id, review_accepted, branch, worktree_path, commit_sha, \
+             review_findings_json, review_retest, completed_at) \
              VALUES ('5a617283', 'Added the reset endpoint.', 'The audit log is missing.', \
              '3e4f5061', 0, 'vlab/5a617283', '.worktrees/5a617283', 'abc1234', \
+             '[\"Add the missing audit log.\"]', 'Only the audit log and the reset endpoint.', \
              '2026-01-02T00:00:00Z')",
         )
         .unwrap();
@@ -403,21 +522,26 @@ fn an_exhausted_remediation_closes_the_card_with_technical_debt() {
     assert!(outcome.review.contains("without the audit log"));
     assert_eq!(outcome.reviewer, "Grace");
     assert_eq!(outcome.branch.as_deref(), Some("vlab/5a617283"));
-    let debt: Vec<(String, String, String, Option<String>, String)> = fixture.db.block_on(async {
-        sqlx::query_as(
-            "SELECT id, title, state, assigned_agent_id, debt_of_story_id FROM stories \
-             WHERE debt_of_story_id = '5a617283'",
-        )
-        .fetch_all(fixture.db.pool())
-        .await
-        .unwrap()
-    });
+    let debt: Vec<(String, String, String, Option<String>, String, String)> =
+        fixture.db.block_on(async {
+            sqlx::query_as(
+                "SELECT id, title, state, assigned_agent_id, debt_of_story_id, description \
+                 FROM stories WHERE debt_of_story_id = '5a617283'",
+            )
+            .fetch_all(fixture.db.pool())
+            .await
+            .unwrap()
+        });
     assert_eq!(debt.len(), 1);
-    let (debt_id, debt_title, debt_state, assignee, parent) = &debt[0];
+    let (debt_id, debt_title, debt_state, assignee, parent, debt_description) = &debt[0];
     assert!(debt_title.starts_with("Technical debt:"), "{debt_title}");
     assert_eq!(debt_state, "TODO");
     assert!(assignee.is_none(), "a debt card waits for triage");
     assert_eq!(parent.as_str(), "5a617283");
+    assert!(
+        debt_description.contains("Add the missing audit log."),
+        "{debt_description}"
+    );
     let blocked: i64 = fixture.db.block_on(async {
         sqlx::query_scalar("SELECT COUNT(*) FROM stories WHERE state = 'BLOCKED'")
             .fetch_one(fixture.db.pool())

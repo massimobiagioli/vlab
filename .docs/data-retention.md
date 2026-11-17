@@ -206,9 +206,10 @@ requests are not duplicated into a second table or into events.
 | `assigned_agent_id` | Project roster member or `NULL` | Assignment; references are validated locally. |
 | `assignment_rationale` | Bounded explanation or `NULL` | Explains the assignment or why it is unassigned. |
 | `state` | Kanban state | Board column written only by the application workflow. Assigned stories start in `IN PROGRESS`; unassigned stories start in `TODO` (ADR-0047). |
-| `execution_attempts` | Integer counter | Bounds paid retries; three failures start Tech Lead remediation (ADR-0050, ADR-0069). |
-| `remediation_attempts` | Integer counter (schema v16) | Bounds autonomous remediation to three cycles before the closing decision (ADR-0069). |
-| `tech_lead_context` | Bounded decision and context text or `NULL` (schema v16) | Gives the next attempt the Tech Lead's technical decision, and stores the final closing compromise; untrusted prompt data, displayed sanitized. |
+| `execution_attempts` | Integer counter | Bounds paid retries; exhausted attempts start remediation or rework (ADR-0050, ADR-0071). |
+| `remediation_attempts` | Integer counter (schema v16) | Bounds Tech Lead remediation cycles before the closing decision (ADR-0069). |
+| `rework_attempts` | Integer counter (schema v20) | Bounds failed attempts: direct rework, escalation, then close (ADR-0071). |
+| `tech_lead_context` | Bounded decision, findings, or context text or `NULL` (schema v16) | Gives the next attempt the Tech Lead decision or the reviewer findings, and stores the final closing compromise; untrusted prompt data, displayed sanitized. |
 | `debt_of_story_id` | Parent story identifier or `NULL` (schema v17) | Links one technical-debt follow-up card to the story it was opened for (ADR-0069). |
 | `due_date` | `YYYY-MM-DD` | Locally computed estimate, not a commitment. |
 | `created_at`, `updated_at` | RFC 3339 UTC timestamps | Ordering and diagnosis. |
@@ -225,16 +226,19 @@ ADR-0050 adds one optional row per completed story:
 | `review_accepted` | `0` or `1` | Final review decision; `0` keeps the story in remediation. |
 | `reviewer_agent_id` | Reviewer agent | Who reviewed the work. |
 | `branch` | Story branch, for example `vlab/5a617283` | Locates the committed work. |
-| `worktree_path` | Path relative to `.workspace`, for example `.worktrees/5a617283` | Locates the isolated checkout. |
+| `worktree_path` | Path relative to `.workspace`, for example `.worktrees/5a617283` | Locates the isolated checkout; a retry reuses it (ADR-0071). |
 | `commit_sha` | Git commit hash | Identifies the exact committed state. |
+| `review_findings_json` | Bounded string array or `NULL` (schema v20) | Reviewer findings used by the rework and debt card; untrusted project data. |
+| `review_retest` | Bounded text or `NULL` (schema v20) | Scope the next review must retest; untrusted project data. |
 | `completed_at` | RFC 3339 UTC timestamp | Completion ordering and diagnosis. |
 | `integrated_at` | RFC 3339 UTC timestamp or `NULL` (schema v18) | When the commit entered local `develop` (ADR-0070). |
 | `push_ok` | `0` or `1` (schema v18) | No pending push: pushed, no remote, or a legacy outcome intentionally not published (schema v19). |
 | `integration_error` | Content-free code or `NULL` (schema v18) | Last integration/push failure for retry; never git output. |
 
-The outcome text is project data, not audit metadata. It is untrusted and
-rendered sanitized. File content, command output, and diffs are never stored in
-this table. The integration columns store no remote URL, branch list, or token.
+The outcome text and findings are project data, not audit metadata. They are
+untrusted and rendered sanitized. File content, command output, and diffs are
+never stored in this table. The integration columns store no remote URL, branch
+list, or token.
 
 #### `memories`
 

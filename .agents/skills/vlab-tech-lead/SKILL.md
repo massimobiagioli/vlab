@@ -39,7 +39,7 @@ laboratories staffed by AI agents.
 - **Runtime:** one process, no HTTP server, no network API, no model-generated
   code execution, no background daemon.
 - **Persistence:** SQLite through SQLx, one connection, foreign keys enabled,
-  versioned migrations. Schema version `19`, migrations `0001`–`0019`.
+  versioned migrations. Schema version `20`, migrations `0001`–`0020`.
 - **Provider:** DeepSeek only, through one bounded adapter. Credentials live only
   in the private `settings.yaml`.
 - **Source control:** project GitHub sources are cloned with the local `git`
@@ -77,14 +77,18 @@ laboratories staffed by AI agents.
 - **Clarification:** the Tech Lead must resolve its own questions. Up to two
   bounded follow-up calls are allowed; new requests never wait for a human, and
   unresolved questions fail with `clarification_unresolved` (ADR-0066).
-- **Exhausted stories:** the workflow never sets `BLOCKED`. The Tech Lead takes
-  over a failing or rejected story, records a bounded decision/context, may
-  reassign it, resets execution attempts, and retries it for up to three
-  remediation cycles (ADR-0069). After the last cycle it records a closing
-  compromise, the card closes `DONE` with that review and the last work/branch
-  evidence, and one unassigned `TODO` technical-debt card is linked through
-  `debt_of_story_id`. Transient provider or environment failures stop the pass
-  without consuming the budget.
+- **Bounded rework:** a retry reuses the story worktree and branch (ADR-0071).
+  A valid rejection returns the same assignee with only the bounded reviewer
+  findings and retest scope; a second failure escalates to a different active
+  agent; a third closes the card `DONE` with a compromise and one linked
+  technical-debt card containing the remaining findings. A work-limit stop is
+  not sent to review. `rework_attempts` is the hard bound; invalid review
+  output is never accepted.
+- **Exhausted attempts:** the workflow never sets `BLOCKED`. Transient provider
+  or environment failures stop the pass without consuming the rework budget.
+  The Tech Lead records a bounded decision/context, may reassign, resets
+  execution attempts, and the card either completes or closes with debt
+  (ADR-0069).
 - **Floor:** the laboratory floor is a fixed top-down T-plan MSX scene
   (Project Lab and Lounge above, War Room below) with furniture, doors,
   deterministic slow tours, and a bidirectional `f` link to the active
@@ -423,7 +427,8 @@ Ask these before approving any VLab change:
 - `.docs/adr/registry.md`
 - `.docs/adr/adr-0061.md`, `.docs/adr/adr-0062.md`, `.docs/adr/adr-0063.md`,
   `.docs/adr/adr-0064.md`, `.docs/adr/adr-0066.md`, `.docs/adr/adr-0067.md`,
-  `.docs/adr/adr-0068.md`, `.docs/adr/adr-0069.md`, `.docs/adr/adr-0070.md`
+  `.docs/adr/adr-0068.md`, `.docs/adr/adr-0069.md`, `.docs/adr/adr-0070.md`,
+  `.docs/adr/adr-0071.md`
 - `.agents/skills/msx-computer-senior-software-architect/SKILL.md`
 - `.project/IMPLEMENTATION-PLAN.md`
 - `.project/features/`

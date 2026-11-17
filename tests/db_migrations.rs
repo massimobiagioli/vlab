@@ -82,6 +82,31 @@ fn schema_v18_adds_the_develop_integration_columns() {
     }
 }
 
+#[test]
+fn schema_v20_adds_the_rework_columns() {
+    let (_dir, db) = open();
+    db.migrate(RunId::generate()).unwrap();
+    let stories: Vec<String> = db.block_on(async {
+        let rows: Vec<(String,)> = sqlx::query_as("SELECT name FROM pragma_table_info('stories')")
+            .fetch_all(db.pool())
+            .await
+            .unwrap();
+        rows.into_iter().map(|row| row.0).collect()
+    });
+    assert!(stories.iter().any(|name| name == "rework_attempts"));
+    let outcomes: Vec<String> = db.block_on(async {
+        let rows: Vec<(String,)> =
+            sqlx::query_as("SELECT name FROM pragma_table_info('story_outcomes')")
+                .fetch_all(db.pool())
+                .await
+                .unwrap();
+        rows.into_iter().map(|row| row.0).collect()
+    });
+    for column in ["review_findings_json", "review_retest"] {
+        assert!(outcomes.iter().any(|name| name == column), "{column}");
+    }
+}
+
 fn migrator_before_legacy_develop_integration(
     db: &Database,
 ) -> (tempfile::TempDir, sqlx::migrate::Migrator) {
