@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00027` |
 | Branch | `feat/story-technical-debt` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-17 |
 | Related ADRs | ADR-0069 (closing decision), ADR-0067 (superseded), ADR-0050 (workflow), ADR-0068 (memories) |
 | Scope | No automatic `BLOCKED`, Tech Lead compromise closure, linked debt card |
@@ -59,7 +59,7 @@ flow reaches a conclusion without a human.
   `BLOCKED` rows, Tech Lead memory, and transient provider failure.
 - `src/app/workflow.rs` unit tests cover the closure prompt and parser.
 - Migration tests cover schema v17.
-- `make check` and hosted CI.
+- `make check` passed; hosted CI is green on `390d04d`.
 
 ## Task checklist
 
@@ -76,5 +76,5 @@ flow reaches a conclusion without a human.
 - [x] **F05-01** Write the Tech Lead closure recap memory.
 - [x] **F06-01** Update tests, documentation, retention notes, and the Tech Lead
   skill.
-- [ ] **F07-01** Run `make check`.
-- [ ] **F07-02** Push, confirm hosted CI is green, and set the status to `Done`.
+- [x] **F07-01** Run `make check`.
+- [x] **F07-02** Push, confirm hosted CI is green, and set the status to `Done`.

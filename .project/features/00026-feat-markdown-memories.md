@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00026` |
 | Branch | `feat/markdown-memories` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-17 |
 | Related ADRs | ADR-0068 (recaps), ADR-0022 (memories), ADR-0059 (file store) |
 | Scope | Structured project planning recaps and agent card-completion memories |
@@ -47,7 +47,7 @@ card an agent completes, instead of raw `Planning summary:` snippets.
 
 - `tests/planning_flow.rs` checks the project recap markdown and summary.
 - `tests/workflow.rs` checks the agent completion recap.
-- `make check` passed; hosted CI pending.
+- `make check` passed; hosted CI is green on `390d04d`.
 
 ## Task checklist
 
@@ -57,4 +57,4 @@ card an agent completes, instead of raw `Planning summary:` snippets.
 - [x] **F02-01** Bound both recaps and keep them best effort.
 - [x] **F03-01** Update tests, docs, and the Tech Lead skill.
 - [x] **F04-01** Run `make check`.
-- [ ] **F04-02** Push, confirm hosted CI is green, and set the status to `Done`.
+- [x] **F04-02** Push, confirm hosted CI is green, and set the status to `Done`.
