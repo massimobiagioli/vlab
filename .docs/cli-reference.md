@@ -33,7 +33,7 @@ least one agent and exactly one Tech Lead; archived profiles and archived
 memberships are preserved. The catalog comes from `make load-preset`.
 
 The Projects dashboard actions are New, Edit, Request, Open, Assign, Kanban,
-Delete, Filter, Help, Back, and Quit. **New** opens a form with a source choice
+Interactions, Schedules, Delete, Filter, Help, Back, and Quit. **New** opens a form with a source choice
 (`None`, `GitHub`, `Folder`) and one source field; the source cannot be changed
 after creation. **Edit** renames the selected project. **Request** (`r`, or `n` on the Kanban board)
 makes the project current and opens a prompt dialog: type or paste the request
@@ -48,13 +48,26 @@ Every list scrolls on its own and shows `↑N`, `↓N more`, and `position/total
 in its border. Use `←/→` or `h/l` for lists, `↑/↓` or `j/k` for cards,
 `PgUp/PgDn` to scroll a page, `Home/End` or `g/G` for the first/last card,
 `Enter` for the detail dialog (every story field; `↑/↓` scroll, `Esc` close),
-`n` for a new request, `r` to reload, `?` for help, `Esc` to return to Projects, and `q` to quit. The
-board is read-only; state changes come from the application workflow. After
+`n` for a new request, `i` for the project interaction history, `r` to reload,
+`?` for help, `Esc` to return to Projects, and `q` to quit. The board is
+read-only; state changes come from the application workflow. After
 planning, assigned stories are executed for real in a git worktree and then
 moved through `IN_REVIEW` to `DONE` (work by the assignee, review by the first
 active QA or the Tech Lead). A `DONE` card detail shows the work summary,
 review, reviewer, branch, worktree, commit, and completion time. VLab never
 merges the branch automatically.
+
+**Interactions** (`i`) opens a read-only project history: planning, work, and
+review entries with time, participants, reference, outcome, and a recap.
+`Enter` opens a scrollable full recap, `r` reloads, and `Esc` returns to the
+originating screen. It is available from the Projects dashboard for the
+selected project and from the Kanban board for the current project.
+
+**Schedules** (`s`) opens the selected project's recurring tasks. The page lists
+title, owner, interval, next run, status, and last result; `n` creates a task,
+`p` pauses/resumes, `d` deletes after confirmation, `Enter` opens the full task,
+`r` reloads, and `Esc` returns. Due schedules run on dashboard startup and with
+`--run-schedules`; the page itself never calls the provider.
 
 The home dashboard lists Laboratories, Projects, Agents, Settings, Lab
 floor, and Metrics. Use `Enter` to open the selected group, `1`–`6` to jump
@@ -117,6 +130,8 @@ window but is hidden from `--help`. New work uses the group subcommands.
 | `--show-project-kanban` | Read-only five-column board for the current project, plus counts and pending intake. |
 | `--delete-project` | Confirm, then delete the current project and cascade requests/stories/memories/assignments. |
 | `--new-request [text]` | Plan a request for the current project from literal text or piped stdin, then execute assigned stories in git worktrees. |
+| `--run-schedules` | Run up to three due schedules for the current project, creating bounded requests and executing planned work; print a run/failed/remaining summary. |
+| `--import --src <file.md> --into <dest> [--agent <name-or-id>]` | Copy a UTF-8 markdown file into the data document store. `--into` is `lab/<name>`, `project/<name>`, or `agent` (with `--agent`). |
 
 ## Memories
 
@@ -132,6 +147,8 @@ surface. Deletion follows the owning laboratory or project.
 |---|---|
 | `--list-agents` | Active members of the active laboratory with project/open-story counts. |
 | `--new-agent` | Guided interactive profile creation; non-TTY exits 4. |
+| `--create-agent-from-file <file>` | Read a markdown definition with strict YAML frontmatter (`name`, `role`, `description`, `skills`) and a markdown body as CV; create the profile and join the active laboratory when available. |
+| `c` in the Agents dashboard | Duplicate the selected agent with a new name and an optional `Preserve memory` choice. |
 | `--load-preset <file>` | Validate a tracked YAML catalog and create any missing profiles in one transaction. Creates no laboratory or membership, never calls the provider, and skips existing names case-insensitively. |
 | `--show-agent-detail <agent-id>` | Profile, skills, CV, memberships, projects, assignments, memory count; unavailable metrics show `N/A`. |
 | `--delete-agent <agent-id>` | Confirm; block unfinished stories; archive the profile, remove memberships, preserve history/memories. |
@@ -145,6 +162,9 @@ surface. Deletion follows the owning laboratory or project.
 - `--github-source`: optional project GitHub URL.
 - `--folder-source`: optional project local folder path; mutually exclusive
   with `--github-source`.
+- `--run-schedules`: run due project schedules instead of a dashboard action.
+- `--src`, `--into`, `--agent`: destination for `--import`.
+- `--create-agent-from-file`: read an agent definition instead of the wizard.
 
 ## Exit codes
 

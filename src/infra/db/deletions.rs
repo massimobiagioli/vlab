@@ -10,7 +10,8 @@ use crate::app::deletions::{
 };
 use crate::app::directory::LabOverview;
 use crate::domain::ids::{AgentId, LabId, ProjectId};
-use crate::infra::db::{Database, map_sqlx_error};
+use crate::infra::db::{Database, map_sqlx_error, memory_files};
+use crate::infra::files::{LAB, PROJECTS};
 
 /// Planning lease from the execution limits (WP-4-T6).
 pub const PLANNING_LEASE_SECONDS: i64 = 240;
@@ -73,6 +74,7 @@ impl DeletionStore for Database {
 
     fn delete_lab(&self, plan: &LabDeletionPlan) -> Result<(), AppError> {
         let plan = plan.clone();
+        let files = self.files().clone();
         self.block_on(async {
             let mut transaction = self
                 .pool()
@@ -101,6 +103,24 @@ impl DeletionStore for Database {
                     "Wait for planning to finish, then retry the deletion.",
                 ));
             }
+            let lab_folder = memory_files::folder_for(&mut transaction, "lab", plan.id.as_str())
+                .await
+                .map_err(|error| db_error(self.path(), error))?;
+            let project_ids: Vec<String> =
+                sqlx::query_scalar("SELECT id FROM projects WHERE lab_id = ?1")
+                    .bind(plan.id.as_str())
+                    .fetch_all(&mut *transaction)
+                    .await
+                    .map_err(|error| db_error(self.path(), error))?;
+            let mut project_folders = Vec::new();
+            for id in &project_ids {
+                if let Some(folder) = memory_files::folder_for(&mut transaction, "project", id)
+                    .await
+                    .map_err(|error| db_error(self.path(), error))?
+                {
+                    project_folders.push(folder);
+                }
+            }
             transaction
                 .execute(sqlx::query("DELETE FROM labs WHERE id = ?1").bind(plan.id.as_str()))
                 .await
@@ -112,10 +132,29 @@ impl DeletionStore for Database {
                 )
                 .await
                 .map_err(|error| db_error(self.path(), error))?;
+            sqlx::query("DELETE FROM entity_folders WHERE kind = 'lab' AND entity_id = ?1")
+                .bind(plan.id.as_str())
+                .execute(&mut *transaction)
+                .await
+                .map_err(|error| db_error(self.path(), error))?;
+            for id in &project_ids {
+                sqlx::query("DELETE FROM entity_folders WHERE kind = 'project' AND entity_id = ?1")
+                    .bind(id)
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(|error| db_error(self.path(), error))?;
+            }
             transaction
                 .commit()
                 .await
-                .map_err(|error| db_error(self.path(), error))
+                .map_err(|error| db_error(self.path(), error))?;
+            if let Some(folder) = lab_folder {
+                files.remove_entity(LAB, &folder);
+            }
+            for folder in &project_folders {
+                files.remove_entity(PROJECTS, folder);
+            }
+            Ok(())
         })
     }
 
@@ -148,6 +187,7 @@ impl DeletionStore for Database {
 
     fn delete_project(&self, plan: &ProjectDeletionPlan) -> Result<(), AppError> {
         let plan = plan.clone();
+        let files = self.files().clone();
         self.block_on(async {
             let mut transaction = self
                 .pool()
@@ -176,14 +216,26 @@ impl DeletionStore for Database {
                     "Wait for planning to finish, then retry the deletion.",
                 ));
             }
+            let folder = memory_files::folder_for(&mut transaction, "project", plan.id.as_str())
+                .await
+                .map_err(|error| db_error(self.path(), error))?;
             transaction
                 .execute(sqlx::query("DELETE FROM projects WHERE id = ?1").bind(plan.id.as_str()))
+                .await
+                .map_err(|error| db_error(self.path(), error))?;
+            sqlx::query("DELETE FROM entity_folders WHERE kind = 'project' AND entity_id = ?1")
+                .bind(plan.id.as_str())
+                .execute(&mut *transaction)
                 .await
                 .map_err(|error| db_error(self.path(), error))?;
             transaction
                 .commit()
                 .await
-                .map_err(|error| db_error(self.path(), error))
+                .map_err(|error| db_error(self.path(), error))?;
+            if let Some(folder) = folder {
+                files.remove_entity(PROJECTS, &folder);
+            }
+            Ok(())
         })
     }
 

@@ -49,6 +49,8 @@ fn the_migrated_schema_contains_only_the_documented_application_tables() {
         [
             "agents",
             "app_state",
+            "documents",
+            "entity_folders",
             "events",
             "interactions",
             "lab_memberships",
@@ -57,6 +59,7 @@ fn the_migrated_schema_contains_only_the_documented_application_tables() {
             "project_agents",
             "projects",
             "requests",
+            "schedules",
             "stories",
             "story_outcomes"
         ]

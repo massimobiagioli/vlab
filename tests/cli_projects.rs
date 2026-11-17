@@ -27,6 +27,14 @@ fn activate(sandbox: &Sandbox, lab: &LabId) {
 }
 
 #[test]
+fn running_schedules_requires_a_current_project() {
+    let sandbox = Sandbox::new();
+    sandbox
+        .run(&["--run-schedules"])
+        .assert_failure(3, "no active project is selected.");
+}
+
+#[test]
 fn project_commands_require_an_active_laboratory() {
     let sandbox = Sandbox::new();
     sandbox

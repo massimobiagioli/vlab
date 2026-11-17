@@ -70,6 +70,9 @@ pub enum StorageError {
     #[error("the database at `{}` could not be opened: {kind}.", path.display())]
     Io { path: PathBuf, kind: io::ErrorKind },
 
+    #[error("a data file operation failed: {kind}.")]
+    File { kind: io::ErrorKind },
+
     #[error("a database operation failed.")]
     Operation,
 }
@@ -93,6 +96,9 @@ impl StorageError {
             }
             Self::Io { .. } => {
                 "Check that the path exists, is writable, and has free space, then retry."
+            }
+            Self::File { .. } => {
+                "Check the data directory's permissions and free space, then retry."
             }
             Self::Operation => "Retry; if the problem persists, check the database file.",
         }
@@ -131,6 +137,9 @@ mod tests {
             StorageError::SchemaMismatch,
             StorageError::Io {
                 path: path.clone(),
+                kind: ErrorKind::PermissionDenied,
+            },
+            StorageError::File {
                 kind: ErrorKind::PermissionDenied,
             },
             StorageError::Operation,

@@ -56,14 +56,18 @@ fn creating_a_laboratory_writes_a_lab_memory() {
     let outcome = sandbox.run(&["--new-lab", "Payments"]);
     outcome.assert_success();
     let db = sandbox.seed_database();
-    let (scope, content): (String, String) = db.block_on(async {
-        sqlx::query_as("SELECT scope_type, content FROM memories")
+    let (scope, path): (String, String) = db.block_on(async {
+        sqlx::query_as("SELECT scope_type, path FROM memories")
             .fetch_one(db.pool())
             .await
             .unwrap()
     });
     assert_eq!(scope, "lab");
-    assert_eq!(content, "Laboratory 'Payments' was created.");
+    assert!(path.starts_with("memories/lab/"), "{path}");
+    assert_eq!(
+        std::fs::read_to_string(sandbox.data_dir().join(path)).unwrap(),
+        "Laboratory 'Payments' was created."
+    );
 }
 
 #[test]
@@ -80,14 +84,18 @@ fn creating_a_project_writes_a_project_memory_and_selects_it() {
         .trim()
         .to_owned();
     let db = sandbox.seed_database();
-    let (scope, content): (String, String) = db.block_on(async {
-        sqlx::query_as("SELECT scope_type, content FROM memories")
+    let (scope, path): (String, String) = db.block_on(async {
+        sqlx::query_as("SELECT scope_type, path FROM memories")
             .fetch_one(db.pool())
             .await
             .unwrap()
     });
     assert_eq!(scope, "project");
-    assert_eq!(content, "Project 'Portal' was created.");
+    assert!(path.starts_with("memories/projects/"), "{path}");
+    assert_eq!(
+        std::fs::read_to_string(sandbox.data_dir().join(path)).unwrap(),
+        "Project 'Portal' was created."
+    );
 
     // --new-project selected the project, so the board works without --open-project.
     sandbox.run(&["--show-project-kanban"]).assert_success();

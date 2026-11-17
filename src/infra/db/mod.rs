@@ -11,21 +11,26 @@
 //! application layer free of async plumbing. [`Database::pool`] exposes the
 //! underlying pool for tests and for the provider work in later packages.
 
+pub mod agent_copy;
 pub mod agents;
 pub mod app_state;
 pub mod deletions;
 pub mod directory;
+pub mod documents;
 pub mod events;
+pub mod interaction_history;
 pub mod interactions;
 pub mod kanban;
 pub mod labs;
 pub mod memories;
+pub mod memory_files;
 pub mod metrics;
 pub mod migrate;
 pub mod planning;
 pub mod policy;
 pub mod project_agents;
 pub mod projects;
+pub mod schedules;
 pub mod workflow;
 pub mod workspace;
 
@@ -43,13 +48,14 @@ use sqlx::sqlite::{
 };
 
 use crate::app::storage::StorageError;
+use crate::infra::files::FileStore;
 use crate::infra::paths::ensure_private_dir;
 
 /// Bounded wait for another process to release the SQLite write lock.
 pub const DEFAULT_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Schema version this binary creates and supports (ADR-0016).
-pub const SUPPORTED_SCHEMA_VERSION: i64 = 12;
+pub const SUPPORTED_SCHEMA_VERSION: i64 = 15;
 
 struct Inner {
     runtime: tokio::runtime::Runtime,
@@ -61,6 +67,7 @@ struct Inner {
 pub struct Database {
     inner: Arc<Inner>,
     path: PathBuf,
+    files: FileStore,
 }
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
@@ -79,6 +86,26 @@ impl Database {
         busy_timeout: Duration,
     ) -> Result<Self, StorageError> {
         let path = path.into();
+        let data_dir = path
+            .parent()
+            .map(Path::to_path_buf)
+            .ok_or_else(|| StorageError::Io {
+                path: path.clone(),
+                kind: io::ErrorKind::InvalidInput,
+            })?;
+        Self::open_with_data_dir(path, data_dir, busy_timeout)
+    }
+
+    /// Opens the database with an explicit data directory for the markdown
+    /// file store. The CLI passes the resolved data directory; tests derive it
+    /// from the database path.
+    pub fn open_with_data_dir(
+        path: impl Into<PathBuf>,
+        data_dir: impl Into<PathBuf>,
+        busy_timeout: Duration,
+    ) -> Result<Self, StorageError> {
+        let path = path.into();
+        let data_dir = data_dir.into();
         let parent = path
             .parent()
             .map(Path::to_path_buf)
@@ -88,6 +115,8 @@ impl Database {
             })?;
         ensure_private_dir(&parent)
             .map_err(|_| StorageError::PermissionDenied { path: path.clone() })?;
+        let files = FileStore::new(data_dir);
+        files.ensure_layout().map_err(StorageError::from)?;
         create_private_database_file(&path)?;
 
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -117,6 +146,7 @@ impl Database {
         let database = Self {
             inner: Arc::new(Inner { runtime, pool }),
             path,
+            files,
         };
         database.verify_connection(busy_timeout)?;
         database.verify_permissions()?;
@@ -126,6 +156,10 @@ impl Database {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    pub fn files(&self) -> &FileStore {
+        &self.files
     }
 
     /// The single-connection pool. Exposed for tests and later adapters; the

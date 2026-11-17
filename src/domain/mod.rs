@@ -14,5 +14,6 @@ pub mod name;
 pub mod preset;
 pub mod project;
 pub mod provider;
+pub mod schedule;
 pub mod settings;
 pub mod skills;

@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use sqlx::migrate::{MigrateError, Migrator};
 
-use super::{Database, SUPPORTED_SCHEMA_VERSION};
+use super::{DEFAULT_BUSY_TIMEOUT, Database, SUPPORTED_SCHEMA_VERSION};
 use crate::app::storage::StorageError;
 use crate::infra::db::events;
 use crate::obs::events::{AuditEvent, EventKind, Outcome};
@@ -41,6 +41,17 @@ impl Database {
         run_id: RunId,
     ) -> Result<(Self, MigrationReport), StorageError> {
         let database = Self::open(path)?;
+        let report = database.migrate(run_id)?;
+        Ok((database, report))
+    }
+
+    /// Opens and migrates with an explicit data directory for markdown files.
+    pub fn open_and_migrate_with_data_dir(
+        path: impl Into<PathBuf>,
+        data_dir: impl Into<PathBuf>,
+        run_id: RunId,
+    ) -> Result<(Self, MigrationReport), StorageError> {
+        let database = Self::open_with_data_dir(path, data_dir, DEFAULT_BUSY_TIMEOUT)?;
         let report = database.migrate(run_id)?;
         Ok((database, report))
     }
@@ -77,6 +88,12 @@ impl Database {
                 .await
         })
         .map_err(|error| super::map_sqlx_error(self.path(), &error))?;
+
+        if target >= 15 {
+            // File materialization is best effort; legacy content remains in
+            // the database if a file cannot be written.
+            let _ = self.materialize_memories();
+        }
 
         let report = MigrationReport { from, to: target };
         if report.applied() {

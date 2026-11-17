@@ -2,6 +2,8 @@
 
 mod support;
 
+use std::fs;
+
 use vlab::app::context::save_active_lab;
 use vlab::app::directory::Directory;
 use vlab::app::memories::{self, MemoryStore};
@@ -74,6 +76,94 @@ fn lab_project_and_agent_memories_round_trip() {
         memories::create(&db, &db, scope.clone(), "Keep work small.", None).unwrap();
         assert_eq!(memories::list_checked(&db, &db, scope).unwrap().len(), 1);
     }
+}
+
+#[test]
+fn memory_content_is_stored_in_markdown_and_the_database_has_only_the_path() {
+    let (dir, db) = migrated();
+    let lab = LabId::parse("a3f91c07").unwrap();
+    seed_lab(&db, "a3f91c07", "Payments");
+    save_active_lab(&db, &lab).unwrap();
+    let scope = MemoryScope::Lab(lab);
+    let memory = memories::create(
+        &db,
+        &db,
+        scope.clone(),
+        "# Keep work small.\n\nTests first.",
+        None,
+    )
+    .unwrap();
+    let path: Option<String> = db
+        .block_on(
+            sqlx::query_scalar("SELECT path FROM memories WHERE id = ?1")
+                .bind(memory.id.as_str())
+                .fetch_one(db.pool()),
+        )
+        .unwrap();
+    let path = path.expect("path");
+    assert!(path.starts_with("memories/lab/"), "{path}");
+    assert!(path.ends_with(".md"), "{path}");
+    assert_eq!(
+        fs::read_to_string(dir.path().join(&path)).unwrap(),
+        "# Keep work small.\n\nTests first."
+    );
+    let content: String = db
+        .block_on(
+            sqlx::query_scalar("SELECT content FROM memories WHERE id = ?1")
+                .bind(memory.id.as_str())
+                .fetch_one(db.pool()),
+        )
+        .unwrap();
+    assert!(content.is_empty(), "{content:?}");
+
+    let updated = memories::update(&db, &db, memory.id.as_str(), "Updated note.", None).unwrap();
+    assert_eq!(
+        fs::read_to_string(dir.path().join(&path)).unwrap(),
+        "Updated note."
+    );
+    db.delete_memory(&updated.id).unwrap();
+    assert!(!dir.path().join(&path).exists());
+}
+
+#[test]
+fn a_v14_memory_is_materialized_as_a_markdown_file_on_migration() {
+    let dir = support::private_tempdir();
+    let migrations = support::private_tempdir();
+    for entry in
+        fs::read_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations")).unwrap()
+    {
+        let entry = entry.unwrap();
+        let name = entry.file_name();
+        if name.to_string_lossy().as_ref() < "0015" && name.to_string_lossy().ends_with(".sql") {
+            fs::copy(entry.path(), migrations.path().join(&name)).unwrap();
+        }
+    }
+    let db = Database::open(dir.path().join("vlab.db")).unwrap();
+    let migrator = db
+        .block_on(sqlx::migrate::Migrator::new(migrations.path()))
+        .unwrap();
+    db.migrate_with(&migrator, 14, vlab::obs::RunId::generate())
+        .unwrap();
+    seed_lab(&db, "a3f91c07", "Payments");
+    db.execute(
+        "INSERT INTO memories (id, scope_type, lab_id, content, created_at) \
+         VALUES ('0b1c2d3e', 'lab', 'a3f91c07', 'Legacy note.', '2026-01-01T00:00:00Z')",
+    )
+    .unwrap();
+    db.migrate(vlab::obs::RunId::generate()).unwrap();
+    let row: (Option<String>, String) = db
+        .block_on(
+            sqlx::query_as("SELECT path, content FROM memories WHERE id = '0b1c2d3e'")
+                .fetch_one(db.pool()),
+        )
+        .unwrap();
+    let path = row.0.expect("path");
+    assert!(path.starts_with("memories/lab/payments/"), "{path}");
+    assert!(row.1.is_empty());
+    assert_eq!(
+        fs::read_to_string(dir.path().join(path)).unwrap(),
+        "Legacy note."
+    );
 }
 
 #[test]

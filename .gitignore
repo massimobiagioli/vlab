@@ -5,6 +5,12 @@
 # a fresh clone can copy it to settings.yaml.
 /.data/*
 !/.data/settings.example.yaml
+!/.data/memories/
+!/.data/documents/
+/.data/memories/*
+!/.data/memories/.gitkeep
+/.data/documents/*
+!/.data/documents/.gitkeep
 /.workspace/
 *.db
 *.db-wal

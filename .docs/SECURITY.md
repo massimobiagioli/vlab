@@ -72,6 +72,8 @@ Prompts are behavioral guidance, not security boundaries.
 | Application → model provider | Minimize transmitted data and apply provider-specific privacy requirements. |
 | Application → GitHub | Validate the project source; clone only the validated repository; pass the global credential through a short-lived askpass helper and child environment; bound time; discard output; no token in arguments or logs. |
 | Application → local folder | Accept only an absolute path outside `.workspace`; reject symlinks and special files; exclude `.git`; bound entries, bytes, and depth; copy into a private temporary directory; initialize git only inside the copy; never modify the source. |
+| Schedule → workflow | Do not grant the model a timer or arbitrary command authority. Due schedules create normal bounded requests, at most three per pass; the existing planning/workflow rules and budgets apply; no background daemon. |
+| File store → local disk | Reject absolute paths, `..`, symlinks, and paths outside the data directory; bound markdown files; write with private permissions; never execute imported content. |
 | Model → orchestrator | Validate responses; never interpret proposals as authorization. |
 | Workflow output → story state | Accept only strict action/review JSON; the application validates and executes actions, owns `IN_REVIEW`/`DONE`, and the model cannot choose a transition. |
 | Orchestrator → worktree | Resolve every path inside the story worktree; reject absolute paths, `..`, and symlink escapes; bound file size, command time, and output. |

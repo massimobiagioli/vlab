@@ -39,8 +39,10 @@ use crate::obs::events::{AuditEvent, EntityRef, EntityType, EventKind, Outcome};
 use crate::obs::{ActionId, RunId};
 
 mod floor;
+mod interactions;
 mod memory;
 mod populate;
+mod schedules;
 
 /// Opens a group dashboard.
 pub fn run(group: DashboardGroup, no_color: bool, run_id: RunId) -> Result<(), AppError> {
@@ -99,6 +101,11 @@ enum Screen {
     /// Staged laboratory membership editor (ADR-0053); state lives in
     /// `App::populate`.
     Populate,
+    /// Read-only project interaction history (ADR-0056); state lives in
+    /// `App::interactions`.
+    Interactions,
+    /// Project recurring schedules (ADR-0057); state lives in `App::schedules`.
+    Schedules,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,7 +131,7 @@ impl ScreenItem {
         match self {
             Self::Group(DashboardGroup::Labs) => "create, check, activate, delete",
             Self::Group(DashboardGroup::Projects) => "create, edit, request, board",
-            Self::Group(DashboardGroup::Agents) => "inspect, create, assign, archive",
+            Self::Group(DashboardGroup::Agents) => "inspect, create, duplicate, assign, archive",
             Self::Group(DashboardGroup::Settings) => "inspect and edit settings",
             Self::Floor => "watch agents cooperate, see memories",
             Self::Metrics => "open, closed, and per-project story counts",
@@ -154,12 +161,19 @@ enum FormKind {
     LabEdit(LabId),
     ProjectNew,
     ProjectEdit(ProjectId),
+    ScheduleNew {
+        project: ProjectId,
+        agents: Vec<(AgentId, String)>,
+    },
+    AgentDuplicate {
+        source: AgentId,
+    },
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum FormFieldKind {
     Text,
-    Choice { options: &'static [&'static str] },
+    Choice { options: Vec<String> },
 }
 
 #[derive(Debug, Clone)]
@@ -182,25 +196,22 @@ impl FormField {
         }
     }
 
-    fn choice(label: &'static str, options: &'static [&'static str], selected: usize) -> Self {
+    fn choice(label: &'static str, options: Vec<String>, selected: usize) -> Self {
+        let value = options.get(selected).cloned().unwrap_or_default();
         Self {
             label,
-            value: options
-                .get(selected)
-                .copied()
-                .unwrap_or_default()
-                .to_owned(),
+            value,
             cursor: 0,
             kind: FormFieldKind::Choice { options },
         }
     }
 
     fn is_choice(&self) -> bool {
-        matches!(self.kind, FormFieldKind::Choice { .. })
+        matches!(&self.kind, FormFieldKind::Choice { .. })
     }
 
     fn cycle(&mut self, delta: isize) {
-        let FormFieldKind::Choice { options } = self.kind else {
+        let FormFieldKind::Choice { options } = &self.kind else {
             return;
         };
         if options.is_empty() {
@@ -211,7 +222,7 @@ impl FormField {
             .position(|option| *option == self.value)
             .unwrap_or(0);
         let next = (current as isize + delta).rem_euclid(options.len() as isize) as usize;
-        self.value = options[next].to_owned();
+        self.value = options[next].clone();
     }
 
     fn insert(&mut self, ch: char) {
@@ -341,7 +352,11 @@ impl Form {
             kind: FormKind::ProjectNew,
             fields: vec![
                 FormField::new("Name", ""),
-                FormField::choice("Source", &["None", "GitHub", "Folder"], 0),
+                FormField::choice(
+                    "Source",
+                    vec!["None".to_owned(), "GitHub".to_owned(), "Folder".to_owned()],
+                    0,
+                ),
                 FormField::new("Source URL or folder path", ""),
             ],
             focus: 0,
@@ -352,6 +367,43 @@ impl Form {
         Self {
             kind: FormKind::ProjectEdit(id),
             fields: vec![FormField::new("Name", name)],
+            focus: 0,
+        }
+    }
+
+    fn agent_duplicate(source: AgentId, name: String) -> Self {
+        Self {
+            kind: FormKind::AgentDuplicate { source },
+            fields: vec![
+                FormField::new("New name", name),
+                FormField::choice(
+                    "Preserve memory",
+                    vec!["No".to_owned(), "Yes".to_owned()],
+                    0,
+                ),
+            ],
+            focus: 0,
+        }
+    }
+
+    fn schedule_new(project: ProjectId, agents: Vec<(AgentId, String)>) -> Self {
+        let options: Vec<String> = agents.iter().map(|(_, label)| label.clone()).collect();
+        Self {
+            kind: FormKind::ScheduleNew { project, agents },
+            fields: vec![
+                FormField::new("Title", ""),
+                FormField::new("Task request (single line)", ""),
+                FormField::choice(
+                    "Every",
+                    vec![
+                        "Daily".to_owned(),
+                        "Weekly".to_owned(),
+                        "Monthly".to_owned(),
+                    ],
+                    1,
+                ),
+                FormField::choice("Owner agent", options, 0),
+            ],
             focus: 0,
         }
     }
@@ -419,12 +471,27 @@ impl Form {
         )
     }
 
+    fn duplicate_values(&self) -> (String, bool) {
+        (self.fields[0].value.clone(), self.fields[1].value == "Yes")
+    }
+
+    fn schedule_values(&self) -> (String, String, String, String) {
+        (
+            self.fields[0].value.clone(),
+            self.fields[1].value.clone(),
+            self.fields[2].value.clone(),
+            self.fields[3].value.clone(),
+        )
+    }
+
     fn title(&self) -> String {
         match &self.kind {
             FormKind::LabNew => "New laboratory".to_owned(),
             FormKind::LabEdit(id) => format!("Edit laboratory {id}"),
             FormKind::ProjectNew => "New project".to_owned(),
             FormKind::ProjectEdit(id) => format!("Edit project {id}"),
+            FormKind::ScheduleNew { .. } => "New scheduled task".to_owned(),
+            FormKind::AgentDuplicate { source } => format!("Duplicate agent {source}"),
         }
     }
 
@@ -490,6 +557,15 @@ enum Mode {
         record: crate::app::memories::MemoryRecord,
         scroll: u16,
     },
+    InteractionDetail {
+        entry: crate::app::interactions::InteractionEntry,
+        scroll: u16,
+    },
+    ScheduleDetail {
+        schedule: crate::domain::schedule::Schedule,
+        owner: String,
+        scroll: u16,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -503,6 +579,10 @@ enum ConfirmAction {
         preview: String,
     },
     DiscardPopulate,
+    Schedule {
+        id: crate::domain::ids::ScheduleId,
+        title: String,
+    },
 }
 
 /// Navigation state of the Kanban screen. Moving never writes.
@@ -661,13 +741,21 @@ struct App {
     populate: Option<populate::PopulateView>,
     /// Screen to return to when Populate closes (Labs or Floor).
     populate_return: Screen,
+    interactions: Option<interactions::InteractionView>,
+    /// Screen to return to when Interactions closes (Projects or Kanban).
+    interactions_return: Screen,
+    schedules: Option<schedules::ScheduleView>,
     pending_request: Option<(ProjectId, String)>,
 }
 
 impl App {
     fn new(screen: Screen, no_color: bool, run_id: RunId) -> Result<Self, AppError> {
         let paths = Paths::from_environment()?;
-        let (db, _) = Database::open_and_migrate(paths.database_file(), run_id)?;
+        let (db, _) = Database::open_and_migrate_with_data_dir(
+            paths.database_file(),
+            paths.data_dir(),
+            run_id,
+        )?;
         let no_color = no_color
             || std::env::var_os("NO_COLOR").is_some()
             || std::env::var("CLICOLOR").is_ok_and(|value| value == "0")
@@ -704,6 +792,9 @@ impl App {
             metrics_error: None,
             populate: None,
             populate_return: Screen::Group(DashboardGroup::Labs),
+            interactions: None,
+            interactions_return: Screen::Group(DashboardGroup::Projects),
+            schedules: None,
             pending_request: None,
         };
         app.reload();
@@ -799,6 +890,16 @@ impl App {
                 }
             }
             Screen::Metrics => self.reload_metrics(),
+            Screen::Interactions => {
+                if let Some(view) = self.interactions.as_mut() {
+                    view.reload(&self.db);
+                }
+            }
+            Screen::Schedules => {
+                if let Some(view) = self.schedules.as_mut() {
+                    view.reload(&self.db);
+                }
+            }
             // Populate edits staged data; reloading here would discard it.
             Screen::Populate => {}
             Screen::Group(DashboardGroup::Labs) => {
@@ -883,7 +984,9 @@ impl App {
             | Screen::Floor
             | Screen::Memories
             | Screen::Metrics
-            | Screen::Populate => 0,
+            | Screen::Populate
+            | Screen::Interactions
+            | Screen::Schedules => 0,
         }
     }
 
@@ -1129,6 +1232,42 @@ impl App {
                 self.mode = Mode::MemoryDetail { record, scroll };
                 None
             }
+            Mode::InteractionDetail { entry, mut scroll } => {
+                match key.code {
+                    KeyCode::Esc | KeyCode::Enter => return None,
+                    KeyCode::Up | KeyCode::Char('k') => scroll = scroll.saturating_sub(1),
+                    KeyCode::Down | KeyCode::Char('j') => scroll = scroll.saturating_add(1),
+                    KeyCode::PageUp => scroll = scroll.saturating_sub(10),
+                    KeyCode::PageDown | KeyCode::Char(' ') => scroll = scroll.saturating_add(10),
+                    KeyCode::Home | KeyCode::Char('g') => scroll = 0,
+                    KeyCode::End | KeyCode::Char('G') => scroll = u16::MAX,
+                    _ => {}
+                }
+                self.mode = Mode::InteractionDetail { entry, scroll };
+                None
+            }
+            Mode::ScheduleDetail {
+                schedule,
+                owner,
+                mut scroll,
+            } => {
+                match key.code {
+                    KeyCode::Esc | KeyCode::Enter => return None,
+                    KeyCode::Up | KeyCode::Char('k') => scroll = scroll.saturating_sub(1),
+                    KeyCode::Down | KeyCode::Char('j') => scroll = scroll.saturating_add(1),
+                    KeyCode::PageUp => scroll = scroll.saturating_sub(10),
+                    KeyCode::PageDown | KeyCode::Char(' ') => scroll = scroll.saturating_add(10),
+                    KeyCode::Home | KeyCode::Char('g') => scroll = 0,
+                    KeyCode::End | KeyCode::Char('G') => scroll = u16::MAX,
+                    _ => {}
+                }
+                self.mode = Mode::ScheduleDetail {
+                    schedule,
+                    owner,
+                    scroll,
+                };
+                None
+            }
             Mode::Story { detail, mut scroll } => {
                 match key.code {
                     KeyCode::Esc | KeyCode::Enter => return None,
@@ -1192,6 +1331,14 @@ impl App {
             }
             Screen::Populate => {
                 self.handle_populate(key);
+                None
+            }
+            Screen::Interactions => {
+                self.handle_interactions(key);
+                None
+            }
+            Screen::Schedules => {
+                self.handle_schedules(key);
                 None
             }
             Screen::Home => {
@@ -1289,6 +1436,16 @@ impl App {
                         let result = self.open_populate();
                         self.apply_result(result);
                     }
+                    KeyCode::Char('c') if group == DashboardGroup::Agents => {
+                        if let Some(agent) = self.selected_agent() {
+                            self.mode = Mode::Form(Form::agent_duplicate(
+                                agent.record.id.clone(),
+                                format!("{} copy", agent.record.name),
+                            ));
+                        } else {
+                            self.status = Some("Select an agent to duplicate.".to_owned());
+                        }
+                    }
                     KeyCode::Char('a') => match group {
                         DashboardGroup::Labs => {
                             let result = self.open_selected_lab();
@@ -1332,6 +1489,14 @@ impl App {
                     }
                     KeyCode::Char('v') if group == DashboardGroup::Projects => {
                         let result = self.open_kanban();
+                        self.apply_result(result);
+                    }
+                    KeyCode::Char('i') if group == DashboardGroup::Projects => {
+                        let result = self.open_selected_project_interactions();
+                        self.apply_result(result);
+                    }
+                    KeyCode::Char('s') if group == DashboardGroup::Projects => {
+                        let result = self.open_selected_project_schedules();
                         self.apply_result(result);
                     }
                     KeyCode::Char('r') if group == DashboardGroup::Projects => {
@@ -1383,6 +1548,13 @@ impl App {
                         view.board.project_id.clone(),
                         view.board.project_name.clone(),
                     ));
+                }
+            }
+            KeyCode::Char('i') => {
+                if let Some(view) = self.kanban.as_ref() {
+                    let project = view.board.project_id.clone();
+                    let result = self.open_interactions(project, Screen::Kanban);
+                    self.apply_result(result);
                 }
             }
             KeyCode::Left | KeyCode::Char('h') => {
@@ -1823,6 +1995,293 @@ impl App {
             frame.render_widget(
                 Paragraph::new("No populate screen loaded. Esc goes back.")
                     .block(self.block("Populate")),
+                area,
+            );
+        }
+    }
+
+    fn open_selected_project_interactions(&mut self) -> Result<(), AppError> {
+        let project = self
+            .selected_project()
+            .map(|project| project.id.clone())
+            .ok_or_else(|| AppError::Precondition {
+                problem: "no project is selected.".to_owned(),
+                hint: "Move the selection or create a project.".to_owned(),
+            })?;
+        self.open_interactions(project, Screen::Group(DashboardGroup::Projects))
+    }
+
+    fn open_interactions(&mut self, project: ProjectId, return_to: Screen) -> Result<(), AppError> {
+        let view = interactions::InteractionView::load(&self.db, &project)?;
+        self.interactions = Some(view);
+        self.interactions_return = return_to;
+        self.screen = Screen::Interactions;
+        self.status = None;
+        Ok(())
+    }
+
+    fn close_interactions(&mut self) {
+        self.interactions = None;
+        self.screen = self.interactions_return;
+        self.status = None;
+        self.reload();
+    }
+
+    fn handle_interactions(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('q') => self.quit = true,
+            KeyCode::Esc => self.close_interactions(),
+            KeyCode::Char('?') => self.mode = Mode::Help,
+            KeyCode::Char('r') => {
+                if let Some(view) = self.interactions.as_mut() {
+                    view.reload(&self.db);
+                }
+                self.status = Some("Interactions reloaded.".to_owned());
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(view) = self.interactions.as_mut() {
+                    view.move_selection(-1);
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Some(view) = self.interactions.as_mut() {
+                    view.move_selection(1);
+                }
+            }
+            KeyCode::PageUp => {
+                if let Some(view) = self.interactions.as_mut() {
+                    view.page(-1);
+                }
+            }
+            KeyCode::PageDown => {
+                if let Some(view) = self.interactions.as_mut() {
+                    view.page(1);
+                }
+            }
+            KeyCode::Home | KeyCode::Char('g') => {
+                if let Some(view) = self.interactions.as_mut() {
+                    view.first();
+                }
+            }
+            KeyCode::End | KeyCode::Char('G') => {
+                if let Some(view) = self.interactions.as_mut() {
+                    view.last();
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(entry) = self
+                    .interactions
+                    .as_ref()
+                    .and_then(interactions::InteractionView::selected_entry)
+                    .cloned()
+                {
+                    self.mode = Mode::InteractionDetail { entry, scroll: 0 };
+                } else {
+                    self.status = Some("No interaction is selected.".to_owned());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn render_interactions(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        let status = self.status.as_deref();
+        if let Some(view) = self.interactions.as_mut() {
+            interactions::render(frame, area, self.theme, view, status);
+        } else {
+            frame.render_widget(
+                Paragraph::new("No interaction history loaded. Esc goes back.")
+                    .block(self.block("Project interactions")),
+                area,
+            );
+        }
+    }
+
+    fn open_selected_project_schedules(&mut self) -> Result<(), AppError> {
+        let project = self
+            .selected_project()
+            .map(|project| project.id.clone())
+            .ok_or_else(|| AppError::Precondition {
+                problem: "no project is selected.".to_owned(),
+                hint: "Move the selection or create a project.".to_owned(),
+            })?;
+        let view = schedules::ScheduleView::load(&self.db, &project)?;
+        self.schedules = Some(view);
+        self.screen = Screen::Schedules;
+        self.status = None;
+        Ok(())
+    }
+
+    fn close_schedules(&mut self) {
+        self.schedules = None;
+        self.screen = Screen::Group(DashboardGroup::Projects);
+        self.status = None;
+        self.reload();
+    }
+
+    fn handle_schedules(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('q') => self.quit = true,
+            KeyCode::Esc => self.close_schedules(),
+            KeyCode::Char('?') => self.mode = Mode::Help,
+            KeyCode::Char('r') => {
+                if let Some(view) = self.schedules.as_mut() {
+                    view.reload(&self.db);
+                }
+                self.status = Some("Schedules reloaded.".to_owned());
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(view) = self.schedules.as_mut() {
+                    view.move_selection(-1);
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Some(view) = self.schedules.as_mut() {
+                    view.move_selection(1);
+                }
+            }
+            KeyCode::PageUp => {
+                if let Some(view) = self.schedules.as_mut() {
+                    view.page(-1);
+                }
+            }
+            KeyCode::PageDown => {
+                if let Some(view) = self.schedules.as_mut() {
+                    view.page(1);
+                }
+            }
+            KeyCode::Home | KeyCode::Char('g') => {
+                if let Some(view) = self.schedules.as_mut() {
+                    view.first();
+                }
+            }
+            KeyCode::End | KeyCode::Char('G') => {
+                if let Some(view) = self.schedules.as_mut() {
+                    view.last();
+                }
+            }
+            KeyCode::Char('n') => {
+                if let Some(view) = self.schedules.as_ref() {
+                    if view.members.is_empty() {
+                        self.status =
+                            Some("No active laboratory member to own a schedule.".to_owned());
+                    } else {
+                        self.mode = Mode::Form(Form::schedule_new(
+                            view.project_id.clone(),
+                            view.members.clone(),
+                        ));
+                    }
+                }
+            }
+            KeyCode::Char('p') => {
+                let Some(view) = self.schedules.as_ref() else {
+                    return;
+                };
+                let Some(schedule) = view.selected_schedule() else {
+                    self.status = Some("No schedule is selected.".to_owned());
+                    return;
+                };
+                let id = schedule.id.clone();
+                let enabled = !schedule.enabled;
+                let title = schedule.title.as_str().to_owned();
+                match crate::app::schedules::set_enabled(&self.db, &self.db, id.as_str(), enabled) {
+                    Ok(_) => {
+                        record_event(
+                            &mut self.db,
+                            self.run_id,
+                            EventKind::ScheduleUpdated,
+                            EntityType::Schedule,
+                            id.as_str(),
+                        );
+                        if let Some(view) = self.schedules.as_mut() {
+                            view.reload(&self.db);
+                        }
+                        self.status = Some(format!(
+                            "Schedule {title} {}.",
+                            if enabled { "resumed" } else { "paused" }
+                        ));
+                    }
+                    Err(error) => self.show_error(error),
+                }
+            }
+            KeyCode::Char('d') => {
+                if let Some(schedule) = self
+                    .schedules
+                    .as_ref()
+                    .and_then(schedules::ScheduleView::selected_schedule)
+                {
+                    self.mode = Mode::Confirm(ConfirmAction::Schedule {
+                        id: schedule.id.clone(),
+                        title: schedule.title.as_str().to_owned(),
+                    });
+                } else {
+                    self.status = Some("No schedule is selected.".to_owned());
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(view) = self.schedules.as_ref()
+                    && let Some(schedule) = view.selected_schedule()
+                {
+                    self.mode = Mode::ScheduleDetail {
+                        schedule: schedule.clone(),
+                        owner: view.owner_label(&schedule.agent_id),
+                        scroll: 0,
+                    };
+                } else {
+                    self.status = Some("No schedule is selected.".to_owned());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn create_schedule(
+        &mut self,
+        project: &ProjectId,
+        agents: &[(AgentId, String)],
+        title: &str,
+        request: &str,
+        interval: &str,
+        agent_label: &str,
+    ) -> Result<(), AppError> {
+        let interval =
+            crate::domain::schedule::ScheduleInterval::parse(interval).map_err(|error| {
+                AppError::Usage {
+                    message: error.to_string(),
+                }
+            })?;
+        let agent = agents
+            .iter()
+            .find(|(_, label)| label == agent_label)
+            .map(|(id, _)| id.clone())
+            .ok_or_else(|| AppError::Usage {
+                message: "choose an active laboratory member for the schedule.".to_owned(),
+            })?;
+        let schedule = crate::app::schedules::create(
+            &self.db, &self.db, project, &agent, title, request, interval,
+        )?;
+        record_event(
+            &mut self.db,
+            self.run_id,
+            EventKind::ScheduleCreated,
+            EntityType::Schedule,
+            schedule.id.as_str(),
+        );
+        if let Some(view) = self.schedules.as_mut() {
+            view.reload(&self.db);
+        }
+        self.status = Some(format!("Schedule {} created.", schedule.id));
+        Ok(())
+    }
+
+    fn render_schedules(&mut self, frame: &mut Frame<'_>, area: Rect) {
+        let status = self.status.as_deref();
+        if let Some(view) = self.schedules.as_mut() {
+            schedules::render(frame, area, self.theme, view, status);
+        } else {
+            frame.render_widget(
+                Paragraph::new("No schedules loaded. Esc goes back.")
+                    .block(self.block("Scheduled tasks")),
                 area,
             );
         }
@@ -2274,7 +2733,9 @@ impl App {
             | Screen::Floor
             | Screen::Memories
             | Screen::Metrics
-            | Screen::Populate => {
+            | Screen::Populate
+            | Screen::Interactions
+            | Screen::Schedules => {
                 self.status = Some("This group has no delete action.".to_owned());
             }
         }
@@ -2338,6 +2799,17 @@ impl App {
             }
             ConfirmAction::DiscardPopulate => {
                 self.close_populate();
+            }
+            ConfirmAction::Schedule { id, title } => {
+                crate::app::schedules::delete(&self.db, &self.db, id.as_str())?;
+                record_event(
+                    &mut self.db,
+                    self.run_id,
+                    EventKind::ScheduleDeleted,
+                    EntityType::Schedule,
+                    id.as_str(),
+                );
+                self.status = Some(format!("Schedule {title} deleted."));
             }
         }
         self.reload();
@@ -2516,6 +2988,43 @@ impl App {
         Ok(())
     }
 
+    fn duplicate_agent(
+        &mut self,
+        source: &AgentId,
+        name: &str,
+        preserve_memory: bool,
+    ) -> Result<(), AppError> {
+        let secret = self.secret();
+        let report =
+            agents::duplicate_agent(&self.db, source, name, preserve_memory, secret.as_deref())?;
+        record_event(
+            &mut self.db,
+            self.run_id,
+            EventKind::AgentCreated,
+            EntityType::Agent,
+            report.profile.id.as_str(),
+        );
+        let mut status = format!("Agent {source} duplicated as {}.", report.profile.id);
+        if !report.memberships.is_empty() {
+            status.push_str(&format!(
+                " Memberships copied: {}.",
+                report.memberships.len()
+            ));
+        }
+        if report.skipped_memberships > 0 {
+            status.push_str(&format!(
+                " Memberships skipped (Tech Lead conflict): {}.",
+                report.skipped_memberships
+            ));
+        }
+        if preserve_memory {
+            status.push_str(&format!(" Memories copied: {}.", report.memories));
+        }
+        self.reload();
+        self.status = Some(status);
+        Ok(())
+    }
+
     fn assign_agent(&mut self, agent_id: &str) -> Result<(), AppError> {
         let project = projects::assign_agent(&self.db, &self.db, agent_id)?;
         self.reload();
@@ -2579,6 +3088,14 @@ impl App {
             FormKind::ProjectNew => {
                 let (name, kind, source) = form.project_values();
                 self.create_project(&name, &kind, &source)
+            }
+            FormKind::ScheduleNew { project, agents } => {
+                let (title, request, interval, agent) = form.schedule_values();
+                self.create_schedule(project, agents, &title, &request, &interval, &agent)
+            }
+            FormKind::AgentDuplicate { source } => {
+                let (name, preserve) = form.duplicate_values();
+                self.duplicate_agent(source, &name, preserve)
             }
             FormKind::ProjectEdit(id) => self.rename_project(id, &name),
         }
@@ -2694,6 +3211,8 @@ impl App {
             Screen::Memories => self.render_memories(frame, area),
             Screen::Metrics => self.render_metrics(frame, area),
             Screen::Populate => self.render_populate(frame, area),
+            Screen::Interactions => self.render_interactions(frame, area),
+            Screen::Schedules => self.render_schedules(frame, area),
         }
         match &self.mode {
             Mode::Browse => {}
@@ -2712,6 +3231,23 @@ impl App {
                 let theme = self.theme;
                 if let Mode::MemoryDetail { record, scroll } = &mut self.mode {
                     memory::render_detail(frame, area, theme, record, scroll);
+                }
+            }
+            Mode::InteractionDetail { .. } => {
+                let theme = self.theme;
+                if let Mode::InteractionDetail { entry, scroll } = &mut self.mode {
+                    interactions::render_detail(frame, area, theme, entry, scroll);
+                }
+            }
+            Mode::ScheduleDetail { .. } => {
+                let theme = self.theme;
+                if let Mode::ScheduleDetail {
+                    schedule,
+                    owner,
+                    scroll,
+                } = &mut self.mode
+                {
+                    schedules::render_detail(frame, area, theme, schedule, owner, scroll);
                 }
             }
             _ => self.render_modal(frame, area),
@@ -3506,6 +4042,10 @@ impl App {
                     memory::help_lines()
                 } else if self.screen == Screen::Populate {
                     populate_help_lines()
+                } else if self.screen == Screen::Interactions {
+                    interaction_help_lines()
+                } else if self.screen == Screen::Schedules {
+                    schedule_help_lines()
                 } else {
                     help_lines()
                 },
@@ -3539,9 +4079,11 @@ impl App {
             | Mode::Story { .. }
             | Mode::Prompt(_)
             | Mode::MemoryEditor(_)
-            | Mode::MemoryDetail { .. } => return,
+            | Mode::MemoryDetail { .. }
+            | Mode::InteractionDetail { .. }
+            | Mode::ScheduleDetail { .. } => return,
         };
-        let rect = centered_rect(78, 60, area);
+        let rect = centered_rect(78, 80, area);
         frame.render_widget(Clear, rect);
         frame.render_widget(
             Paragraph::new(lines.join("\n"))
@@ -3751,6 +4293,8 @@ fn action_items(group: DashboardGroup) -> Vec<(&'static str, &'static str)> {
             ("[Enter]", "Open"),
             ("[a]", "Assign"),
             ("[v]", "Kanban"),
+            ("[i]", "Interactions"),
+            ("[s]", "Schedules"),
             ("[d]", "Delete"),
             ("[/]", "Filter"),
             ("[?]", "Help"),
@@ -3759,6 +4303,7 @@ fn action_items(group: DashboardGroup) -> Vec<(&'static str, &'static str)> {
         ],
         DashboardGroup::Agents => vec![
             ("[n]", "New"),
+            ("[c]", "Duplicate"),
             ("[Enter]", "Detail"),
             ("[a]", "Assign"),
             ("[d]", "Archive"),
@@ -3780,12 +4325,13 @@ fn action_items(group: DashboardGroup) -> Vec<(&'static str, &'static str)> {
     }
 }
 
-const KANBAN_ACTIONS: [(&str, &str); 9] = [
+const KANBAN_ACTIONS: [(&str, &str); 10] = [
     ("[n]", "Request"),
     ("[←/→]", "List"),
     ("[↑/↓]", "Card"),
     ("[PgUp/Dn]", "Scroll"),
     ("[Enter]", "Detail"),
+    ("[i]", "Interactions"),
     ("[r]", "Reload"),
     ("[?]", "Help"),
     ("[Esc]", "Back"),
@@ -4201,6 +4747,9 @@ fn confirm_label(action: &ConfirmAction) -> String {
         ConfirmAction::DiscardPopulate => {
             "Discard the unsaved laboratory membership changes?".to_owned()
         }
+        ConfirmAction::Schedule { id, title } => {
+            format!("Delete schedule {id} — {}?", clean(title))
+        }
     }
 }
 
@@ -4287,6 +4836,40 @@ fn kanban_help_lines() -> Vec<String> {
     ]
 }
 
+fn schedule_help_lines() -> Vec<String> {
+    vec![
+        "j/k or ↑/↓  previous/next schedule".to_owned(),
+        "PgUp/PgDn   move by one page".to_owned(),
+        "g/G         first/last schedule".to_owned(),
+        "n           create a schedule".to_owned(),
+        "p           pause or resume the selected schedule".to_owned(),
+        "d           delete the selected schedule".to_owned(),
+        "Enter       schedule detail".to_owned(),
+        "r           reload the list".to_owned(),
+        "?           this help".to_owned(),
+        "Esc         back to projects".to_owned(),
+        "q           quit".to_owned(),
+        String::new(),
+        "Due schedules create bounded requests when VLab starts.".to_owned(),
+    ]
+}
+
+fn interaction_help_lines() -> Vec<String> {
+    vec![
+        "j/k or ↑/↓  previous/next interaction".to_owned(),
+        "PgUp/PgDn   move by one page".to_owned(),
+        "g/G         first/last interaction".to_owned(),
+        "Enter       full recap and details".to_owned(),
+        "r           reload the history".to_owned(),
+        "?           this help".to_owned(),
+        "Esc         back to the previous screen".to_owned(),
+        "q           quit".to_owned(),
+        String::new(),
+        "The history shows planning, work, and review events.".to_owned(),
+        "It is read-only and never calls the provider.".to_owned(),
+    ]
+}
+
 fn populate_help_lines() -> Vec<String> {
     vec![
         "Tab or ←/→  switch pane".to_owned(),
@@ -4331,9 +4914,12 @@ fn help_lines() -> Vec<String> {
         "g/G         first/last page".to_owned(),
         "Enter       open/confirm selection".to_owned(),
         "n           new item in this group".to_owned(),
+        "c           duplicate the selected agent".to_owned(),
         "e           edit the selected item".to_owned(),
         "r           new request for the selected project".to_owned(),
         "v           project Kanban board".to_owned(),
+        "i           project interaction history".to_owned(),
+        "s           project scheduled tasks".to_owned(),
         "a           set active or assign".to_owned(),
         "o           populate the selected laboratory".to_owned(),
         "d           delete with confirmation".to_owned(),
@@ -4356,7 +4942,7 @@ fn fixed_rect(width: u16, height: u16, area: Rect) -> Rect {
 }
 
 fn form_field_line(field: &FormField, focused: bool, theme: Theme) -> Line<'static> {
-    if let FormFieldKind::Choice { options } = field.kind {
+    if let FormFieldKind::Choice { options } = &field.kind {
         let mut spans = Vec::new();
         for (index, option) in options.iter().enumerate() {
             if index > 0 {
@@ -4575,6 +5161,8 @@ mod tests {
     use crate::app::memories::MemoryStore;
     use crate::app::projects::ProjectStore;
     use crate::domain::agent::{AgentProfile, Description, Role};
+    use crate::domain::ids::{LabId, MemoryId};
+    use crate::domain::memory::{Memory, MemoryScope};
     use crate::domain::name::Name;
     use crate::domain::settings::{ModelId, ProviderId, Settings};
     use crate::domain::skills;
@@ -4633,6 +5221,9 @@ mod tests {
             metrics_error: None,
             populate: None,
             populate_return: Screen::Group(DashboardGroup::Labs),
+            interactions: None,
+            interactions_return: Screen::Group(DashboardGroup::Projects),
+            schedules: None,
             pending_request: None,
         };
         (app, dir)
@@ -5361,6 +5952,205 @@ mod tests {
         assert!(
             lines.iter().any(|line| line.contains("rust, api")),
             "{lines:?}"
+        );
+    }
+
+    fn seed_interaction_history(app: &mut App) {
+        for (id, name, role) in [
+            ("10000001", "Klaus", Role::Lead),
+            ("10000002", "Bram", Role::Dev),
+            ("10000003", "Trevor", Role::Qa),
+        ] {
+            app.db
+                .insert_agent(
+                    &AgentProfile::new(
+                        AgentId::parse(id).unwrap(),
+                        Name::parse(name).unwrap(),
+                        role,
+                        Description::parse("Works").unwrap(),
+                        skills::parse_list("rust").unwrap(),
+                        ProviderId::DeepSeek,
+                        ModelId::parse("deepseek-chat").unwrap(),
+                        None,
+                    )
+                    .unwrap(),
+                    &[],
+                )
+                .unwrap();
+        }
+        app.db
+            .execute(
+                "INSERT INTO requests (id, project_id, content, status, planned_by_agent_id, created_at, updated_at) \
+                 VALUES ('3e4f5061', '0b1c2d3e', 'Add a reset flow', 'PLANNED', '10000001', \
+                 '2026-01-01T10:00:00Z', '2026-01-01T10:00:00Z')",
+            )
+            .unwrap();
+        app.db
+            .execute(
+                "INSERT INTO stories (id, project_id, request_id, title, description, \
+                 acceptance_criteria_json, priority, complexity, required_skills_json, \
+                 assigned_agent_id, assignment_rationale, state, due_date, created_at, updated_at) \
+                 VALUES ('4f506172', '0b1c2d3e', '3e4f5061', 'Reset link', 'Send a link', \
+                 '[]', 'high', 'small', '[\"rust\"]', '10000002', 'Best fit', 'DONE', \
+                 '2026-01-03', '2026-01-01T10:01:00Z', '2026-01-01T10:05:00Z')",
+            )
+            .unwrap();
+        app.db
+            .execute(
+                "INSERT INTO story_outcomes (story_id, work_outcome, review_outcome, \
+                 reviewer_agent_id, review_accepted, completed_at) \
+                 VALUES ('4f506172', 'Added the reset link and tests.', \
+                 'The link expires and tests pass.', '10000003', 1, '2026-01-01T10:05:00Z')",
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn the_projects_dashboard_opens_the_interaction_history() {
+        let (mut app, _dir) = seeded();
+        seed_interaction_history(&mut app);
+        app.screen = Screen::Group(DashboardGroup::Projects);
+        app.reload();
+        app.handle_key(key(KeyCode::Char('i')));
+        assert_eq!(app.screen, Screen::Interactions);
+        let screen = rendered(&mut app);
+        for text in [
+            "Project interactions",
+            "PLANNING",
+            "WORK",
+            "REVIEW",
+            "4f506172",
+        ] {
+            assert!(screen.contains(text), "{text}: {screen}");
+        }
+        app.handle_key(key(KeyCode::Enter));
+        assert!(
+            matches!(app.mode, Mode::InteractionDetail { .. }),
+            "{:?}",
+            app.mode
+        );
+        let screen = rendered(&mut app);
+        assert!(
+            screen.contains("The link expires and tests pass."),
+            "{screen}"
+        );
+        app.handle_key(key(KeyCode::Esc));
+        assert!(matches!(app.mode, Mode::Browse));
+        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(app.screen, Screen::Group(DashboardGroup::Projects));
+    }
+
+    #[test]
+    fn the_agents_dashboard_duplicates_an_agent_with_memory() {
+        let (mut app, _dir) = seeded();
+        let lab = LabId::parse("a3f91c07").unwrap();
+        let source = AgentId::parse("10000001").unwrap();
+        app.db
+            .insert_agent(
+                &AgentProfile::new(
+                    source.clone(),
+                    Name::parse("Ada").unwrap(),
+                    Role::Dev,
+                    Description::parse("Backend developer").unwrap(),
+                    skills::parse_list("rust, api").unwrap(),
+                    ProviderId::DeepSeek,
+                    ModelId::parse("deepseek-chat").unwrap(),
+                    None,
+                )
+                .unwrap(),
+                std::slice::from_ref(&lab),
+            )
+            .unwrap();
+        app.db
+            .insert_memory(
+                &Memory::new(
+                    MemoryId::parse("20000001").unwrap(),
+                    MemoryScope::Agent(source),
+                    "Keep tests green.",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        app.screen = Screen::Group(DashboardGroup::Agents);
+        app.reload();
+        app.handle_key(key(KeyCode::Char('c')));
+        assert!(matches!(app.mode, Mode::Form(_)), "{:?}", app.mode);
+        app.handle_key(key(KeyCode::Tab));
+        app.handle_key(key(KeyCode::Right));
+        app.handle_key(key(KeyCode::Enter));
+        assert!(matches!(app.mode, Mode::Browse), "{:?}", app.mode);
+        assert!(
+            app.status
+                .as_deref()
+                .unwrap_or_default()
+                .contains("duplicated"),
+            "{:?}",
+            app.status
+        );
+        let copy = app
+            .agents
+            .iter()
+            .find(|agent| agent.record.name == "Ada copy")
+            .expect("copy");
+        let memories = app
+            .db
+            .memories(&MemoryScope::Agent(copy.record.id.clone()))
+            .unwrap();
+        assert_eq!(memories.len(), 1);
+        assert_eq!(memories[0].memory.content, "Keep tests green.");
+    }
+
+    #[test]
+    fn the_projects_dashboard_creates_pauses_and_deletes_a_schedule() {
+        let (mut app, _dir) = seeded();
+        let lab = LabId::parse("a3f91c07").unwrap();
+        app.db
+            .insert_agent(
+                &AgentProfile::new(
+                    AgentId::parse("10000001").unwrap(),
+                    Name::parse("Klaus").unwrap(),
+                    Role::Lead,
+                    Description::parse("Leads").unwrap(),
+                    skills::parse_list("planning").unwrap(),
+                    ProviderId::DeepSeek,
+                    ModelId::parse("deepseek-chat").unwrap(),
+                    None,
+                )
+                .unwrap(),
+                std::slice::from_ref(&lab),
+            )
+            .unwrap();
+        app.screen = Screen::Group(DashboardGroup::Projects);
+        app.reload();
+        app.handle_key(key(KeyCode::Char('s')));
+        assert_eq!(app.screen, Screen::Schedules);
+        app.handle_key(key(KeyCode::Char('n')));
+        assert!(matches!(app.mode, Mode::Form(_)), "{:?}", app.mode);
+        for ch in "Weekly security review".chars() {
+            app.handle_key(key(KeyCode::Char(ch)));
+        }
+        app.handle_key(key(KeyCode::Tab));
+        for ch in "Review dependencies and auth boundaries.".chars() {
+            app.handle_key(key(KeyCode::Char(ch)));
+        }
+        app.handle_key(key(KeyCode::Tab));
+        app.handle_key(key(KeyCode::Tab));
+        app.handle_key(key(KeyCode::Enter));
+        assert!(matches!(app.mode, Mode::Browse), "{:?}", app.mode);
+        let view = app.schedules.as_ref().unwrap();
+        assert_eq!(view.schedules.len(), 1);
+        assert_eq!(view.schedules[0].title.as_str(), "Weekly security review");
+        assert!(view.schedules[0].enabled);
+
+        app.handle_key(key(KeyCode::Char('p')));
+        assert!(!app.schedules.as_ref().unwrap().schedules[0].enabled);
+        app.handle_key(key(KeyCode::Char('d')));
+        assert!(matches!(app.mode, Mode::Confirm(_)), "{:?}", app.mode);
+        app.handle_key(key(KeyCode::Char('y')));
+        assert!(
+            app.schedules.as_ref().unwrap().schedules.is_empty(),
+            "{:?}",
+            app.schedules
         );
     }
 

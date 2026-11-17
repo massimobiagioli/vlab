@@ -141,6 +141,7 @@ pub enum EntityKind {
     Request,
     Story,
     Memory,
+    Schedule,
 }
 
 impl EntityKind {
@@ -150,6 +151,7 @@ impl EntityKind {
             Self::Agent => "Run `vlab --list-agents` to see agents in the active laboratory.",
             Self::Project => "Run `vlab --list-projects` to see projects in the active laboratory.",
             Self::Memory => "Run `vlab --list-memories` with a scope selector to see memories.",
+            Self::Schedule => "Open the project Schedules page to see the available schedules.",
             Self::Request | Self::Story => {
                 "Run `vlab --show-project-kanban <project-id>` to see the project's work."
             }
@@ -166,6 +168,7 @@ impl fmt::Display for EntityKind {
             Self::Request => "request",
             Self::Story => "story",
             Self::Memory => "memory",
+            Self::Schedule => "schedule",
         })
     }
 }

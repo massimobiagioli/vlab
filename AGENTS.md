@@ -106,6 +106,11 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0053.md`](.docs/adr/adr-0053.md) | Laboratory populate screen with a two-pane agent transfer. |
 | [`.docs/adr/adr-0054.md`](.docs/adr/adr-0054.md) | Project source types and isolated folder import. |
 | [`.docs/adr/adr-0055.md`](.docs/adr/adr-0055.md) | Larger preset catalog and populate profile preview. |
+| [`.docs/adr/adr-0056.md`](.docs/adr/adr-0056.md) | Project interaction history with recaps. |
+| [`.docs/adr/adr-0057.md`](.docs/adr/adr-0057.md) | Recurring project task schedules. |
+| [`.docs/adr/adr-0058.md`](.docs/adr/adr-0058.md) | Agent duplication with optional memory preservation. |
+| [`.docs/adr/adr-0059.md`](.docs/adr/adr-0059.md) | Markdown file store for memories and documents. |
+| [`.docs/adr/adr-0060.md`](.docs/adr/adr-0060.md) | Agent definitions from markdown files. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
 | [`.project/features/`](.project/features/) | Tracked feature plans with task checklists (ADR-0037). |
 
@@ -174,6 +179,7 @@ work.
 
 | Skill | Path | Use when |
 |---|---|---|
+| `vlab-tech-lead` | [`.agents/skills/vlab-tech-lead/SKILL.md`](.agents/skills/vlab-tech-lead/SKILL.md) | Planning or reviewing a feature end to end; understanding the project, invariants, ADRs, feature plans, and delivery gates. |
 | `vlab-adr` | [`.agents/skills/vlab-adr/SKILL.md`](.agents/skills/vlab-adr/SKILL.md) | Making, revising, or superseding a technical decision; maintaining the registry. |
 | `vlab-rust-tdd` | [`.agents/skills/vlab-rust-tdd/SKILL.md`](.agents/skills/vlab-rust-tdd/SKILL.md) | Implementing or fixing any Rust behavior, domain rule, or test. |
 | `vlab-cli-contract` | [`.agents/skills/vlab-cli-contract/SKILL.md`](.agents/skills/vlab-cli-contract/SKILL.md) | Adding or changing commands, flags, help, output, exit codes, or confirmations. |
@@ -304,6 +310,7 @@ Makefile                        developer tasks; `make` lists them (ADR-0014)
 assets/                         tracked preset data; agents.yaml is the catalog
 .project/                        tracked planning, feature plans, and delivery notes (ADR-0040)
 .data/settings.example.yaml     tracked settings placeholder; other data ignored
+.data/memories, .data/documents tracked .gitkeep skeleton; contents ignored (ADR-0059)
 Cargo.toml, Cargo.lock          crate manifest and committed lockfile
 rust-toolchain.toml             pinned toolchain (ADR-0008)
 deny.toml                       cargo-deny policy (ADR-0012, ADR-0013)

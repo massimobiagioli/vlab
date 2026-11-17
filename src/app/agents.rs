@@ -4,9 +4,15 @@ pub mod wizard;
 
 use crate::app::AppError;
 use crate::app::directory::{AgentRecord, Directory, LabOverview};
-use crate::app::storage::AppStateStore;
+use crate::app::memories::MemoryStore;
+use crate::app::storage::{AppStateStore, StorageError};
 use crate::domain::agent::AgentProfile;
-use crate::domain::ids::AgentId;
+use crate::domain::ids::{AgentId, LabId, MemoryId, UniqueIdError, unique_short_id};
+use crate::domain::lab::ensure_can_join;
+use crate::domain::memory::{MEMORY_MAX_PER_SCOPE, Memory, MemoryScope};
+use crate::domain::name::Name;
+use crate::domain::preset::PresetAgent;
+use crate::domain::settings::Settings;
 
 /// A validated agent together with its memberships.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,6 +90,201 @@ pub fn parse_agent_id(raw: &str) -> Result<AgentId, AppError> {
     AgentId::parse(raw).ok_or_else(|| AppError::Usage {
         message: "an agent identifier must be 8 lowercase hexadecimal characters.".to_owned(),
     })
+}
+
+/// Atomic persistence for a duplicated profile, its compatible memberships,
+/// and its optional agent-scope memories (ADR-0058).
+pub trait AgentCopyStore {
+    fn insert_agent_copy(
+        &self,
+        profile: &AgentProfile,
+        memberships: &[LabId],
+        memories: &[Memory],
+    ) -> Result<(), StorageError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DuplicateReport {
+    pub profile: AgentProfile,
+    pub memberships: Vec<LabId>,
+    pub skipped_memberships: usize,
+    pub memories: usize,
+}
+
+/// Duplicates an agent profile with a new identifier and name.
+///
+/// Memberships are copied only where the one-Tech-Lead rule allows them. When
+/// `preserve_memory` is set, agent-scope memories are copied with new
+/// identifiers and the duplicate's creation time, after the credential and
+/// memory bounds are checked.
+pub fn duplicate_agent(
+    store: &(impl Directory + MemoryStore + AgentCopyStore),
+    source: &AgentId,
+    raw_name: &str,
+    preserve_memory: bool,
+    secret: Option<&str>,
+) -> Result<DuplicateReport, AppError> {
+    let record = store.agent(source)?.ok_or_else(|| AppError::NotFound {
+        entity: crate::app::EntityKind::Agent,
+        id: source.to_string(),
+    })?;
+    let source_profile = record.profile().map_err(|field| AppError::Precondition {
+        problem: format!("agent `{source}` has invalid stored data: {field}."),
+        hint: "Restore the agent from a valid profile or recreate it.".to_owned(),
+    })?;
+    let name = Name::parse(raw_name).map_err(|error| AppError::Validation {
+        problem: error.to_string(),
+        hint: "Use a non-empty, single-line name of at most 100 characters.".to_owned(),
+    })?;
+
+    let mut memberships = Vec::new();
+    let mut skipped_memberships = 0;
+    for lab in store.agent_memberships(source)? {
+        let existing = store.lab_agents(&lab.id)?;
+        let roles = existing
+            .iter()
+            .filter(|member| !member.archived)
+            .filter_map(|member| member.role().ok());
+        if ensure_can_join(roles, source_profile.role).is_ok() {
+            memberships.push(lab.id);
+        } else {
+            skipped_memberships += 1;
+        }
+    }
+
+    let generated = unique_short_id(|candidate| match AgentId::parse(candidate) {
+        Some(id) => store.agent_exists(&id),
+        None => Ok(true),
+    })
+    .map_err(map_unique)?;
+    let new_id = AgentId::parse(&generated).ok_or(AppError::Internal)?;
+    let profile = AgentProfile::new(
+        new_id.clone(),
+        name,
+        source_profile.role,
+        source_profile.description.clone(),
+        source_profile.skills.clone(),
+        source_profile.provider,
+        source_profile.model.clone(),
+        source_profile.cv.clone(),
+    )
+    .map_err(|error| AppError::Validation {
+        problem: error.to_string(),
+        hint: "Correct the source profile and retry.".to_owned(),
+    })?;
+
+    let mut memories = Vec::new();
+    if preserve_memory {
+        for record in store
+            .memories(&MemoryScope::Agent(source.clone()))?
+            .into_iter()
+            .take(MEMORY_MAX_PER_SCOPE)
+        {
+            if secret
+                .is_some_and(|secret| !secret.is_empty() && record.memory.content.contains(secret))
+            {
+                return Err(AppError::Validation {
+                    problem:
+                        "a source memory contains a value that looks like the provider credential."
+                            .to_owned(),
+                    hint: "Remove the credential from the source memory before duplicating."
+                        .to_owned(),
+                });
+            }
+            let generated = unique_short_id(|candidate| match MemoryId::parse(candidate) {
+                Some(id) => Ok(store.memory(&id)?.is_some()),
+                None => Ok(true),
+            })
+            .map_err(map_unique)?;
+            let id = MemoryId::parse(&generated).ok_or(AppError::Internal)?;
+            let memory = Memory::new(
+                id,
+                MemoryScope::Agent(new_id.clone()),
+                &record.memory.content,
+            )
+            .map_err(|error| AppError::Validation {
+                problem: error.to_string(),
+                hint: "Correct the source memory and retry.".to_owned(),
+            })?;
+            memories.push(memory);
+        }
+    }
+
+    store.insert_agent_copy(&profile, &memberships, &memories)?;
+    Ok(DuplicateReport {
+        profile,
+        memberships,
+        skipped_memberships,
+        memories: memories.len(),
+    })
+}
+
+/// The result of creating an agent from a markdown definition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreatedDefinitionAgent {
+    pub profile: AgentProfile,
+    pub memberships: Vec<LabId>,
+}
+
+/// Creates an agent from a validated markdown definition.
+///
+/// The active laboratory is joined when it still exists; a second lead is
+/// rejected. Without a usable active laboratory the profile is catalog-only.
+pub fn create_from_definition(
+    store: &impl Directory,
+    state: &impl AppStateStore,
+    definition: &PresetAgent,
+    settings: &Settings,
+) -> Result<CreatedDefinitionAgent, AppError> {
+    let target = match crate::app::context::active_lab(state)? {
+        crate::app::context::ActiveLab::Selected(id) if store.lab(&id)?.is_some() => Some(id),
+        _ => None,
+    };
+    let mut memberships = Vec::new();
+    if let Some(lab) = target {
+        let existing = store.lab_agents(&lab)?;
+        let roles = existing
+            .iter()
+            .filter(|member| !member.archived)
+            .filter_map(|member| member.role().ok());
+        ensure_can_join(roles, definition.role).map_err(|error| AppError::Validation {
+            problem: format!("{error} Laboratory: {lab}."),
+            hint: "Choose a different role or edit the existing Tech Lead.".to_owned(),
+        })?;
+        memberships.push(lab);
+    }
+    let generated = unique_short_id(|candidate| match AgentId::parse(candidate) {
+        Some(id) => store.agent_exists(&id),
+        None => Ok(true),
+    })
+    .map_err(map_unique)?;
+    let id = AgentId::parse(&generated).ok_or(AppError::Internal)?;
+    let profile = AgentProfile::new(
+        id,
+        definition.name.clone(),
+        definition.role,
+        definition.description.clone(),
+        definition.skills.clone(),
+        settings.provider,
+        settings.model.clone(),
+        definition.cv.clone(),
+    )
+    .map_err(|error| AppError::Validation {
+        problem: error.to_string(),
+        hint: "Fix the markdown definition and retry.".to_owned(),
+    })?;
+    store.insert_agent(&profile, &memberships)?;
+    Ok(CreatedDefinitionAgent {
+        profile,
+        memberships,
+    })
+}
+
+fn map_unique(error: UniqueIdError<StorageError>) -> AppError {
+    match error {
+        UniqueIdError::Lookup(storage) => AppError::from(storage),
+        UniqueIdError::Exhausted => AppError::Internal,
+    }
 }
 
 #[cfg(test)]

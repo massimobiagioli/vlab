@@ -96,6 +96,21 @@ Create the **Tech Lead** first (role `lead`), then at least one `dev`,
 `analyst`, or `qa` agent with one or more skills. The active laboratory is
 pre-filled; press Enter to accept it.
 
+To reuse a profile, open **Agents**, select it and press `c`. The form asks for
+a new name and whether to `Preserve memory`; copied memories are bounded by the
+normal agent-memory limits. A duplicated Tech Lead is created without
+memberships because the source laboratory already has a lead.
+
+To create one agent from a markdown definition:
+
+```sh
+make agent-create-from-file SRC=agents/example.md
+```
+
+The file has strict YAML frontmatter (`name`, `role`, `description`, `skills`);
+the markdown body becomes the CV. The active laboratory is joined when
+available, otherwise the profile is created in the catalog.
+
 Faster route: load the tracked fictional catalog, then populate a laboratory
 from the Laboratories dashboard.
 
@@ -219,6 +234,43 @@ with assignee, priority, due date, counts, and pending intake. It is read-only;
 states are changed only by the application workflow. Open a `DONE` card with
 `Enter` to read its work summary, review, reviewer, branch, worktree, commit,
 and completion time. VLab never merges the branch automatically.
+
+### Interactions
+
+In **Projects** select a project and press `i`, or press `i` on its Kanban
+board. The read-only page lists planning, work, and review entries newest
+first, with time, participants, reference, outcome, and a recap. `Enter` opens
+the full scrollable recap, `r` reloads, and `Esc` returns. The page never calls
+the provider or changes a story.
+
+### Schedules
+
+In **Projects** select a project and press `s`. Use `n` to create a recurring
+task: title, single-line request, interval (daily/weekly/monthly), and owner
+agent. `p` pauses/resumes, `d` deletes after confirmation, and `Enter` opens the
+full task. Due schedules run when the dashboard starts or with:
+
+```sh
+make run-schedules
+```
+
+Each due schedule creates a normal bounded request; the Tech Lead still assigns
+the work. VLab is not a background daemon.
+
+## 9.1 Import a document
+
+Memories and documents are markdown files under `data/memories` and
+`data/documents`. Import a document into a lab, project, or agent folder:
+
+```sh
+make import SRC=notes/security.md INTO=lab/Payments
+make import SRC=notes/design.md INTO=project/Portal
+make import SRC=notes/profile.md INTO=agent AGENT=Klaus
+```
+
+The source must be a regular UTF-8 `.md` file. The command copies it into the
+matching folder, stores only the relative reference, and records a
+`document_imported` event.
 
 ## 10. Ask a question
 

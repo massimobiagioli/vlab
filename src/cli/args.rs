@@ -18,7 +18,8 @@ use crate::app::AppError;
         "show_settings", "edit_settings",
         "list_labs", "new_lab", "open_lab", "delete_lab", "check_lab",
         "list_projects", "new_project", "open_project", "show_project_kanban",
-        "delete_project", "new_request", "assign_agent", "logs",
+        "delete_project", "new_request", "assign_agent", "run_schedules", "import_files",
+        "agent_create_from_file", "logs",
         "list_agents", "new_agent", "load_preset", "delete_agent", "show_agent_detail", "ask",
     ])),
 )]
@@ -113,6 +114,35 @@ pub struct Cli {
     #[arg(hide = true, long, value_name = "agent-id", help_heading = "Projects")]
     assign_agent: Option<String>,
 
+    /// Run due project schedules
+    #[arg(hide = true, long, help_heading = "Projects")]
+    run_schedules: bool,
+
+    /// Import a markdown document into the data file store
+    #[arg(hide = true, long = "import", help_heading = "Projects")]
+    import_files: bool,
+
+    /// Import an agent definition from a markdown file
+    #[arg(
+        hide = true,
+        long = "create-agent-from-file",
+        value_name = "file",
+        help_heading = "Agents"
+    )]
+    agent_create_from_file: Option<String>,
+
+    /// Source markdown file for --import
+    #[arg(hide = true, long, value_name = "path", help_heading = "Projects")]
+    src: Option<String>,
+
+    /// Destination for --import: agent, lab/<name>, or project/<name>
+    #[arg(hide = true, long, value_name = "dest", help_heading = "Projects")]
+    into: Option<String>,
+
+    /// Agent name or identifier when --into=agent
+    #[arg(hide = true, long, value_name = "agent", help_heading = "Projects")]
+    agent: Option<String>,
+
     /// Show the recent application audit log
     #[arg(hide = true, long, help_heading = "Diagnostics")]
     logs: bool,
@@ -199,6 +229,15 @@ pub enum Action {
     AssignAgent {
         agent_id: String,
     },
+    RunSchedules,
+    ImportDocument {
+        src: String,
+        into: String,
+        agent: Option<String>,
+    },
+    CreateAgentFromFile {
+        path: String,
+    },
     Logs,
     ListAgents,
     NewAgent,
@@ -236,6 +275,9 @@ impl Action {
             Self::DeleteProject { .. } => "--delete-project",
             Self::NewRequest { .. } => "--new-request",
             Self::AssignAgent { .. } => "--assign-agent",
+            Self::RunSchedules => "--run-schedules",
+            Self::ImportDocument { .. } => "--import",
+            Self::CreateAgentFromFile { .. } => "--create-agent-from-file",
             Self::Logs => "--logs",
             Self::ListAgents => "--list-agents",
             Self::NewAgent => "--new-agent",
@@ -267,6 +309,17 @@ impl Cli {
         if self.folder_source.is_some() && self.new_project.is_none() {
             return Err(modifier_error(
                 "`--folder-source` can only be used with `--new-project`.",
+            ));
+        }
+        if !self.import_files && (self.src.is_some() || self.into.is_some() || self.agent.is_some())
+        {
+            return Err(modifier_error(
+                "`--src`, `--into`, and `--agent` can only be used with `--import`.",
+            ));
+        }
+        if self.import_files && (self.src.is_none() || self.into.is_none()) {
+            return Err(modifier_error(
+                "`--import` requires both `--src` and `--into`.",
             ));
         }
         if self.github_source.is_some() && self.folder_source.is_some() {
@@ -315,6 +368,16 @@ impl Cli {
             }
         } else if let Some(agent_id) = self.assign_agent {
             Action::AssignAgent { agent_id }
+        } else if self.run_schedules {
+            Action::RunSchedules
+        } else if self.import_files {
+            Action::ImportDocument {
+                src: self.src.ok_or(AppError::Internal)?,
+                into: self.into.ok_or(AppError::Internal)?,
+                agent: self.agent,
+            }
+        } else if let Some(path) = self.agent_create_from_file {
+            Action::CreateAgentFromFile { path }
         } else if self.logs {
             Action::Logs
         } else if self.list_agents {
@@ -429,6 +492,7 @@ mod tests {
                 path: "assets/agents.yaml".into()
             })
         );
+        assert_eq!(parse(&["--run-schedules"]), Some(Action::RunSchedules));
     }
 
     #[test]

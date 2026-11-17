@@ -24,13 +24,55 @@ DEV_ENV := VLAB_CONFIG_DIR="$(DATA_DIR)" VLAB_DATA_DIR="$(DATA_DIR)"
 # Arguments for `make run`, for example: make run ARGS="--list-labs"
 ARGS ?= --help
 
-.PHONY: help build-debug build-release run load-preset test lint fmt fmt-check clippy \
-	audit deny check tools snapshot clean clean-data clean-workspace
+.PHONY: help build-debug build-release run load-preset run-schedules import agent-create-from-file \
+	test lint fmt fmt-check clippy audit deny check tools snapshot clean clean-data clean-workspace
 
 help: ## Show this help
-	@echo "Usage: make <target> [ARGS=\"<vlab arguments>\"]"
-	@echo
-	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@color=$$(if [ -t 1 ] && [ -z "$${NO_COLOR:-}" ]; then echo yes; else echo no; fi); \
+	awk -v color="$$color" ' \
+	BEGIN { \
+		FS = ":.*## "; \
+		groups[1] = "Build and run"; \
+		groups[2] = "Data and imports"; \
+		groups[3] = "Quality gates"; \
+		groups[4] = "Maintenance"; \
+	} \
+	/^[a-z-]+:.*## / { \
+		n++; target[n] = $$1; desc[$$1] = $$2; \
+	} \
+	function group(name) { \
+		if (name == "help" || name == "build-debug" || name == "build-release" || name == "run") return 1; \
+		if (name == "load-preset" || name == "run-schedules" || name == "import" || name == "agent-create-from-file") return 2; \
+		if (name == "test" || name == "lint" || name == "fmt" || name == "fmt-check" || name == "clippy" || name == "audit" || name == "deny" || name == "check") return 3; \
+		if (name == "tools" || name == "snapshot" || name == "clean" || name == "clean-data" || name == "clean-workspace") return 4; \
+		return 5; \
+	} \
+	END { \
+		if (color == "yes") { esc = sprintf("%c", 27); bold = esc "[1m"; cyan = esc "[36m"; yellow = esc "[33m"; dim = esc "[2m"; reset = esc "[0m" } \
+		else { bold = ""; cyan = ""; yellow = ""; dim = ""; reset = "" } \
+		max = 0; \
+		for (i = 1; i <= n; i++) if (length(target[i]) > max) max = length(target[i]); \
+		printf "%sVLab developer tasks%s\n", bold, reset; \
+		printf "%sUsage:%s make <target> [ARGS=\"<vlab arguments>\"]\n\n", bold, reset; \
+		for (g = 1; g <= 4; g++) { \
+			count = 0; \
+			for (i = 1; i <= n; i++) if (group(target[i]) == g) count++; \
+			if (count == 0) continue; \
+			printf "%s%s%s\n", bold, groups[g], reset; \
+			for (i = 1; i <= n; i++) if (group(target[i]) == g) { \
+				pad = sprintf("%-" max "s", target[i]); \
+				printf "  %s%s%s  %s\n", cyan, pad, reset, desc[target[i]]; \
+			} \
+			printf "\n"; \
+		} \
+		printf "%sExamples%s\n", bold, reset; \
+		printf "  %smake%s                         show this help\n", cyan, reset; \
+		printf "  %smake run%s ARGS=\"--list-labs\"   run a command with .data/ storage\n", cyan, reset; \
+		printf "  %smake load-preset%s             load the fictional agent catalog\n", cyan, reset; \
+		printf "  %smake import%s SRC=notes/security.md INTO=lab/Payments\n", cyan, reset; \
+		printf "  %smake agent-create-from-file%s SRC=agents/example.md\n", cyan, reset; \
+		printf "  %smake check%s                   run every quality gate\n", cyan, reset; \
+	}' $(MAKEFILE_LIST)
 
 build-debug: ## Build the debug binary (target/debug/vlab)
 	$(CARGO) build --locked
@@ -45,6 +87,21 @@ run: build-debug ## Run vlab with data in .data/ (ARGS="..." for arguments)
 load-preset: build-debug ## Load assets/agents.yaml into the .data/ database
 	@mkdir -p "$(DATA_DIR)" && chmod 700 "$(DATA_DIR)"
 	@$(DEV_ENV) ./target/debug/vlab --load-preset "$(PRESET_FILE)"
+
+run-schedules: build-debug ## Run due schedules for the current project in .data/
+	@mkdir -p "$(DATA_DIR)" && chmod 700 "$(DATA_DIR)"
+	@$(DEV_ENV) ./target/debug/vlab --run-schedules
+
+import: build-debug ## Import a markdown document (SRC=file.md INTO=lab/<name>|project/<name>|agent [AGENT=...])
+	@test -n "$(SRC)" || { echo "Usage: make import SRC=<file.md> INTO=<lab/name|project/name|agent> [AGENT=<name-or-id>]"; exit 2; }
+	@test -n "$(INTO)" || { echo "Usage: make import SRC=<file.md> INTO=<lab/name|project/name|agent> [AGENT=<name-or-id>]"; exit 2; }
+	@mkdir -p "$(DATA_DIR)" && chmod 700 "$(DATA_DIR)"
+	@$(DEV_ENV) ./target/debug/vlab --import --src "$(SRC)" --into "$(INTO)" $(if $(AGENT),--agent "$(AGENT)",)
+
+agent-create-from-file: build-debug ## Create an agent from a markdown frontmatter definition (SRC=file.md)
+	@test -n "$(SRC)" || { echo "Usage: make agent-create-from-file SRC=<file.md>"; exit 2; }
+	@mkdir -p "$(DATA_DIR)" && chmod 700 "$(DATA_DIR)"
+	@$(DEV_ENV) ./target/debug/vlab --create-agent-from-file "$(SRC)"
 
 test: ## Run all tests
 	$(CARGO) test --locked

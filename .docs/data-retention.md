@@ -161,6 +161,23 @@ WP-4 adds these tables ([ADR-0023](adr/adr-0023.md), [ADR-0022](adr/adr-0022.md)
 | `questions_json` | Bounded clarification questions | Shown when planning needs clarification. |
 | `error_code`, `error_message` | Stable code and a sanitized explanation | Explains a failed planning attempt without storing prompts or provider bodies. |
 | `planning_started_at` | RFC 3339 UTC timestamp or `NULL` | Detects an active or stale planning lease. |
+| `planned_by_agent_id` | Agent identifier or `NULL` (added by schema v13, ADR-0056) | Attributes the planning interaction to the actual Tech Lead even if the lead changes later. |
+| `created_at`, `updated_at` | RFC 3339 UTC timestamps | Ordering and diagnosis. |
+
+#### `schedules` (schema v14, ADR-0057)
+
+| Column | Contents | Why it is stored |
+|---|---|---|
+| `id` | 8-character identifier | Primary key and page operand. |
+| `project_id` | Owning project | Scopes the schedule and cascades on project deletion. |
+| `agent_id` | Owner agent | Names the intended task owner; the Tech Lead still assigns resulting stories. |
+| `title` | Short task title | Displayed in the page and included in the generated request. |
+| `request_text` | Operator-provided single-line task request, 1–2,000 characters | Becomes the normal bounded request when due. |
+| `interval_seconds` | 86400, 604800, or 2592000 | Daily, weekly, or monthly recurrence. |
+| `enabled` | Boolean | Pause/resume without deleting the schedule. |
+| `next_run_at`, `last_run_at` | RFC 3339 UTC timestamps or `NULL` | Due selection and last-run display. |
+| `last_request_id` | Request identifier or `NULL` | Links the last generated request; set to `NULL` if that request is deleted. |
+| `last_error_code` | Stable code or `NULL` | Shows the last failed execution class without free text. |
 | `created_at`, `updated_at` | RFC 3339 UTC timestamps | Ordering and diagnosis. |
 
 #### `stories`
@@ -208,8 +225,39 @@ WP-4 adds the `memories` table ([ADR-0022](adr/adr-0022.md)).
 | `id` | 8-character identifier | Primary key and command operand. |
 | `scope_type` | `lab`, `project`, or `agent` | Selects the owner kind. |
 | `lab_id`, `project_id`, `agent_id` | Exactly one non-null foreign key | Identifies the owner and enables cascade deletion. |
-| `content` | Bounded application-managed text | Deterministic structural facts or a planning summary; untrusted prompt context. |
+| `path` | Relative markdown path under `data/memories/` (schema v15, ADR-0059) | The database stores only the reference; content is in the file. |
+| `content` | Legacy column, always empty after materialization | Kept for migration compatibility; a future schema can drop it. |
 | `created_at` | RFC 3339 UTC timestamp | Ordering and diagnosis. |
+
+Agent duplication may copy agent-scope memories into a new agent scope. The
+copied files get new identifiers and creation times and follow the same
+retention as any other memory (ADR-0058).
+
+#### Markdown file store (ADR-0059)
+
+`data/memories/` and `data/documents/` contain `agents/`, `projects/`, and
+`lab/` subfolders. Files are UTF-8 markdown, bounded to 8 KiB for memories and
+1 MiB for documents. The data directory is private. The repository tracks only
+`.data/memories/.gitkeep` and `.data/documents/.gitkeep`; all generated content
+is ignored by git. VLab does not back up or encrypt these files.
+
+#### `documents` (schema v15)
+
+| Column | Contents | Why it is stored |
+|---|---|---|
+| `id` | 8-character identifier | Primary key and event entity. |
+| `scope_type` | `agent`, `project`, or `lab` | Selects the owner kind. |
+| `agent_id`, `project_id`, `lab_id` | Exactly one non-null foreign key | Identifies the owner and enables cascade deletion. |
+| `path` | Relative markdown path under `data/documents/` | The reference; content remains in the file. |
+| `title` | Sanitized source title | Display metadata. |
+| `created_at`, `updated_at` | RFC 3339 UTC timestamps | Ordering and diagnosis. |
+
+#### `entity_folders` (schema v15)
+
+| Column | Contents | Why it is stored |
+|---|---|---|
+| `kind`, `entity_id` | Owner kind and identifier | Stable folder mapping per entity. |
+| `folder` | Sanitized unique folder name | Readable path segment; collision-safe with a unique constraint. |
 
 Memories are application-managed. Laboratory and project content can be
 created, viewed, edited, and deleted from the Lab floor (ADR-0046); agent

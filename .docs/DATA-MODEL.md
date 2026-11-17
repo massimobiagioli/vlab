@@ -34,8 +34,10 @@ skills, a provider/model pair copied from settings at creation time, an
 optional CV, and an archive timestamp. An agent can belong to several
 laboratories through memberships. A profile may exist without memberships; the
 preset catalog uses this to keep profiles available for later laboratory
-population. Archiving removes memberships and preserves the profile and
-historical story references.
+population. Duplicating a profile creates an independent active profile with a
+new identifier and optional copies of the source agent-scope memories; the
+source is never modified (ADR-0058). Archiving removes memberships and preserves
+the profile and historical story references.
 
 ### Membership
 
@@ -64,8 +66,24 @@ workspace and are not stored in the database.
 An accepted natural-language request for one project. It records the original
 content, a status (`TODO`, `PLANNING`, `PLANNED`, `NEEDS_CLARIFICATION`,
 `FAILED`), optional bounded clarification questions, a stable failure code and
-sanitized explanation, and the planning-lease start. The request is preserved
-even when planning fails.
+sanitized explanation, the planning-lease start, and the agent that planned it
+(`planned_by_agent_id`, schema v13). The request is preserved even when planning
+fails.
+
+### Project interaction history
+
+A read model over requests, stories, story outcomes, and agents. It produces
+`planning`, `work`, and `review` entries with participants, reference, outcome,
+time, and a bounded recap. It stores no duplicate content and is not a
+free-form agent chat (ADR-0056).
+
+### Schedule
+
+A recurring project task owned by one active laboratory member. It records a
+title, a single-line task request, a daily/weekly/monthly interval, an enabled
+flag, `next_run_at`, `last_run_at`, an optional last request, and an optional
+stable error code. A due schedule creates a normal bounded request; it never
+executes model-chosen commands directly (ADR-0057).
 
 ### Story
 
@@ -92,14 +110,28 @@ Application-managed context attached to exactly one scope:
 - a project;
 - an agent profile.
 
-A memory has bounded text and a creation timestamp. Its scope and creation time
-are immutable; laboratory and project content may be edited from the floor
-(ADR-0046). Structural memories are deterministic facts written when a
-laboratory, agent, or project is created; a successful plan adds one bounded
-model-generated summary.
-Memories are untrusted data: they are selected and delimitated for prompts,
-never executed and never treated as permission. Agent memories survive
-archival but are excluded from prompts while the agent is archived.
+A memory has a bounded markdown file, a relative path in the data directory,
+and a creation timestamp. The database stores only the path and scope. Its
+scope and creation time are immutable; laboratory and project content may be
+edited from the floor (ADR-0046). Structural memories are deterministic facts
+written when a laboratory, agent, or project is created; a successful plan adds
+one bounded model-generated summary. Memories are untrusted data: they are
+selected and delimitated for prompts, never executed and never treated as
+permission. Agent memories survive archival but are excluded from prompts while
+the agent is archived.
+
+### Document
+
+A markdown file under `data/documents/<scope>/<folder>/<document-id>.md` with a
+database reference containing its scope, title, and relative path. Documents are
+imported with `make import`; they are project data and are never executed.
+Deleting the owning lab or project cascades the reference.
+
+### Entity folder
+
+A stable, unique folder name for one lab, project, or agent under both the
+memories and documents trees. The name is a sanitized entity name, suffixed with
+the entity identifier on collision. The mapping is stored in `entity_folders`.
 
 ### Event
 

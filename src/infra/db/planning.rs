@@ -2,7 +2,7 @@
 
 use crate::app::planning::{PlannedStoryRow, PlanningStore};
 use crate::app::storage::StorageError;
-use crate::domain::ids::{ProjectId, RequestId};
+use crate::domain::ids::{AgentId, ProjectId, RequestId};
 use crate::domain::skills;
 use crate::infra::db::{Database, map_sqlx_error};
 
@@ -11,7 +11,7 @@ INSERT INTO requests (id, project_id, content, status, created_at, updated_at) \
 VALUES (?1, ?2, ?3, 'TODO', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))";
 
 const MARK_PLANNING: &str = "\
-UPDATE requests SET status = 'PLANNING', \
+UPDATE requests SET status = 'PLANNING', planned_by_agent_id = ?2, \
 planning_started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), \
 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?1";
 
@@ -73,8 +73,21 @@ impl Database {
         })
     }
 
-    pub fn mark_planning(&self, id: &RequestId) -> Result<(), StorageError> {
-        self.update(MARK_PLANNING, id, None, None)
+    pub fn mark_planning(&self, id: &RequestId, planner: &AgentId) -> Result<(), StorageError> {
+        self.block_on(async {
+            let mut connection = self
+                .pool()
+                .acquire()
+                .await
+                .map_err(|error| map_sqlx_error(self.path(), &error))?;
+            sqlx::query(MARK_PLANNING)
+                .bind(id.as_str())
+                .bind(planner.as_str())
+                .execute(&mut *connection)
+                .await
+                .map(|_| ())
+                .map_err(|error| map_sqlx_error(self.path(), &error))
+        })
     }
 
     pub fn finish_planned(
@@ -211,8 +224,8 @@ impl PlanningStore for Database {
         Database::request_created_at(self, id)
     }
 
-    fn mark_planning(&self, id: &RequestId) -> Result<(), StorageError> {
-        Database::mark_planning(self, id)
+    fn mark_planning(&self, id: &RequestId, planner: &AgentId) -> Result<(), StorageError> {
+        Database::mark_planning(self, id, planner)
     }
 
     fn finish_planned(

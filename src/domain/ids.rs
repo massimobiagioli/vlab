@@ -84,6 +84,8 @@ short_id!(ProjectId);
 short_id!(RequestId);
 short_id!(StoryId);
 short_id!(MemoryId);
+short_id!(ScheduleId);
+short_id!(DocumentId);
 
 #[cfg(test)]
 mod tests {
@@ -110,6 +112,8 @@ mod tests {
             assert!(RequestId::parse(bad).is_none(), "{bad:?}");
             assert!(StoryId::parse(bad).is_none(), "{bad:?}");
             assert!(MemoryId::parse(bad).is_none(), "{bad:?}");
+            assert!(ScheduleId::parse(bad).is_none(), "{bad:?}");
+            assert!(DocumentId::parse(bad).is_none(), "{bad:?}");
         }
     }
 
@@ -142,6 +146,16 @@ mod tests {
         assert_eq!(StoryId::parse(&story.to_string()).as_ref(), Some(&story));
         let memory = MemoryId::generate();
         assert_eq!(MemoryId::parse(&memory.to_string()).as_ref(), Some(&memory));
+        let schedule = ScheduleId::generate();
+        assert_eq!(
+            ScheduleId::parse(&schedule.to_string()).as_ref(),
+            Some(&schedule)
+        );
+        let document = DocumentId::generate();
+        assert_eq!(
+            DocumentId::parse(&document.to_string()).as_ref(),
+            Some(&document)
+        );
     }
 
     #[test]

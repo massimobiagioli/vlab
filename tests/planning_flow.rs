@@ -266,15 +266,15 @@ fn a_successful_plan_stores_a_model_summary_memory() {
     ]);
     let outcome = run(&fixture, &provider, "Add password reset");
     assert!(matches!(outcome, PlanningOutcome::Planned { .. }));
-    let content: Vec<String> = fixture.db.block_on(async {
-        sqlx::query_scalar("SELECT content FROM memories WHERE scope_type = 'project'")
+    let paths: Vec<String> = fixture.db.block_on(async {
+        sqlx::query_scalar("SELECT path FROM memories WHERE scope_type = 'project'")
             .fetch_all(fixture.db.pool())
             .await
             .unwrap()
     });
-    assert_eq!(content.len(), 1);
+    assert_eq!(paths.len(), 1);
     assert_eq!(
-        content[0],
+        std::fs::read_to_string(fixture.db.files().base().join(&paths[0])).unwrap(),
         "Planning summary: The team will add a password reset flow."
     );
 }

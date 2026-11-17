@@ -289,7 +289,7 @@ fn agent_counts_track_assigned_stories_and_projects() {
 }
 
 #[test]
-fn migration_from_v3_adds_the_github_source_column() {
+fn migration_from_v3_preserves_data_and_adds_later_columns() {
     let dir = support::private_tempdir();
     let db = Database::open(dir.path().join("vlab.db")).unwrap();
     let v3_only = support::private_tempdir();
@@ -322,6 +322,12 @@ fn migration_from_v3_adds_the_github_source_column() {
          VALUES ('0b1c2d3e', 'a3f91c07', 'Portal', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
     )
     .unwrap();
+    db.execute(
+        "INSERT INTO requests (id, project_id, content, status, created_at, updated_at) \
+         VALUES ('3e4f5061', '0b1c2d3e', 'R', 'TODO', \
+         '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+    )
+    .unwrap();
 
     let report = db.migrate(vlab::obs::RunId::generate()).unwrap();
     assert_eq!(report.to, SUPPORTED_SCHEMA_VERSION);
@@ -329,6 +335,13 @@ fn migration_from_v3_adds_the_github_source_column() {
     assert_eq!(stored.len(), 1);
     assert_eq!(stored[0].github_source, None);
     assert_eq!(stored[0].folder_source, None);
+    let planned_by: Option<String> = db
+        .block_on(
+            sqlx::query_scalar("SELECT planned_by_agent_id FROM requests WHERE id = '3e4f5061'")
+                .fetch_one(db.pool()),
+        )
+        .unwrap();
+    assert_eq!(planned_by, None);
 }
 
 #[test]

@@ -84,6 +84,11 @@ revises a technical decision must keep it current.
 | ADR-0053 | Laboratory populate screen with a two-pane agent transfer | Accepted | 2026-11-16 | — | [adr-0053.md](adr-0053.md) |
 | ADR-0054 | Project source types and isolated folder import | Accepted | 2026-11-16 | — | [adr-0054.md](adr-0054.md) |
 | ADR-0055 | Larger preset catalog and populate profile preview | Accepted | 2026-11-16 | — | [adr-0055.md](adr-0055.md) |
+| ADR-0056 | Project interaction history with recaps | Accepted | 2026-11-16 | — | [adr-0056.md](adr-0056.md) |
+| ADR-0057 | Recurring project task schedules | Accepted | 2026-11-16 | — | [adr-0057.md](adr-0057.md) |
+| ADR-0058 | Agent duplication with optional memory preservation | Accepted | 2026-11-17 | — | [adr-0058.md](adr-0058.md) |
+| ADR-0059 | Markdown file store for memories and documents | Accepted | 2026-11-17 | — | [adr-0059.md](adr-0059.md) |
+| ADR-0060 | Agent definitions from markdown files | Accepted | 2026-11-17 | — | [adr-0060.md](adr-0060.md) |
 
 ## Supersession map
 

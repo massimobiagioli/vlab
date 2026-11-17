@@ -33,6 +33,9 @@ own prints the list.
 | `make build-release` | Build the optimized binary in `target/release/vlab`. |
 | `make run ARGS="..."` | Build, then run `vlab` with its settings and database in `.data/` (see below). Without `ARGS`, shows `--help`. |
 | `make load-preset` | Build, then load the fictional agent catalog in `assets/agents.yaml` into the `.data/` database. |
+| `make run-schedules` | Build, then run due project schedules for the current project in `.data/`. |
+| `make import SRC=<file.md> INTO=<dest> [AGENT=<name-or-id>]` | Copy a markdown document into `data/documents` for a lab, project, or agent. |
+| `make agent-create-from-file SRC=<file.md>` | Create an agent from a markdown definition with YAML frontmatter and a CV body. |
 | `make test` | Run all tests. |
 | `make lint` | Check formatting and run clippy with warnings as errors. |
 | `make fmt` | Format the code. |
@@ -76,6 +79,8 @@ VLab never writes to the current working directory by default.
 | Data | `<per-user data dir>/vlab/` | `VLAB_DATA_DIR` |
 | Database | `<per-user data dir>/vlab/vlab.db`, or `$VLAB_DATA_DIR/vlab.db` when that override is set | `VLAB_DB_PATH` |
 | Project checkouts | `<repo>/.workspace/` for the repository debug layout, otherwise `<data dir>/workspace/` | — |
+| Memory markdown | `<data dir>/memories/{agents,projects,lab}/` | — |
+| Document markdown | `<data dir>/documents/{agents,projects,lab}/` | — |
 
 The per-user directories are `~/Library/Application Support` on macOS and
 `$XDG_CONFIG_HOME` (default `~/.config`) and `$XDG_DATA_HOME` (default
@@ -116,6 +121,13 @@ Trello-style Kanban board with `v`: lists side by side, cards with the short
 description only, independent scrolling per list, and `Enter` for a dialog
 with the full story. Press `r` on a project (or `n` on its board) to submit a
 new request in a simple prompt dialog; the Tech Lead plans it into stories.
+Press `i` on a project (or on its board) to open the read-only interaction
+history: planning, work, and review entries with participants, outcome, and a
+recap. `Enter` opens the full recap, `r` reloads, and `Esc` returns. Press `s`
+on a project for **Schedules**: create a recurring task with `n`, pause/resume
+with `p`, delete with `d`, and open its full request with `Enter`. Due schedules
+run on dashboard startup and with `make run-schedules`; the page never calls the
+provider.
 
 The **Lab floor** is a deterministic MSX-style 2D laboratory scene: a tiled
 floor, accent-colored project pods, two-line block sprites at wide sizes,
@@ -124,8 +136,11 @@ bubbles for two working agents of different roles, and an isolated `focus desk`
 with `(///)` when an agent has several open stories. Press `o` to populate the
 active laboratory, or `m` to manage laboratory and project memories: `n`
 creates, `Enter` views, `e` edits, and `d` deletes after confirmation. Agent
-memories remain automatic. The floor scene stays read-only. In a non-TTY stream
-VLab prints help instead of blocking.
+memories remain automatic and are stored as markdown files under
+`data/memories`; documents imported with `make import` live under
+`data/documents`. In the **Agents** dashboard, `c` duplicates the selected
+profile with a new name and an optional `Preserve memory` choice. The floor
+scene stays read-only. In a non-TTY stream VLab prints help instead of blocking.
 
 The **Metrics** entry (or `6`) shows the active laboratory at a glance:
 project count, `TODO`/in progress/in review/blocked/done counts, open, closed,
@@ -160,6 +175,9 @@ vlab --check-lab <lab-id>
 # Create the Tech Lead, then other agents. The active laboratory is pre-filled.
 vlab --new-agent
 vlab --new-agent
+
+# Or create one from a markdown definition with YAML frontmatter.
+make agent-create-from-file SRC=agents/example.md
 
 # Inspect the members of the active laboratory and one profile in detail.
 vlab --list-agents

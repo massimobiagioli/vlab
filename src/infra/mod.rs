@@ -4,9 +4,11 @@
 //! May depend on: `domain`, and the port traits and error types of `app`.
 //! Must not depend on: `cli`, or `app` use-case logic.
 
+pub mod agent_definition;
 pub mod config;
 pub mod db;
 pub mod execution;
+pub mod files;
 pub mod paths;
 pub mod presets;
 pub mod provider;

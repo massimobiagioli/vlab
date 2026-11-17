@@ -5,7 +5,7 @@ pub mod rules;
 pub mod schema;
 
 use crate::app::storage::StorageError;
-use crate::domain::ids::{ProjectId, RequestId, StoryId};
+use crate::domain::ids::{AgentId, ProjectId, RequestId, StoryId};
 use crate::obs::events::AuditEvent;
 
 /// A story ready for persistence after local validation.
@@ -46,7 +46,7 @@ pub trait PlanningStore {
 
     fn request_created_at(&self, id: &RequestId) -> Result<Option<String>, StorageError>;
 
-    fn mark_planning(&self, id: &RequestId) -> Result<(), StorageError>;
+    fn mark_planning(&self, id: &RequestId, planner: &AgentId) -> Result<(), StorageError>;
 
     fn finish_planned(
         &self,

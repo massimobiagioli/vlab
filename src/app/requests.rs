@@ -48,6 +48,17 @@ pub enum PlanningOutcome {
     },
 }
 
+impl PlanningOutcome {
+    pub fn request_id(&self) -> &RequestId {
+        match self {
+            Self::Planned { request_id, .. }
+            | Self::NeedsClarification { request_id, .. }
+            | Self::Failed { request_id, .. }
+            | Self::Cancelled { request_id } => request_id,
+        }
+    }
+}
+
 /// Runs one bounded planning operation. The request row is written before the
 /// provider is called and is always preserved.
 #[allow(clippy::too_many_arguments)]
@@ -139,7 +150,7 @@ pub fn plan(
 
     let request_id = RequestId::generate();
     store.insert_request(&request_id, project_id, request_text)?;
-    store.mark_planning(&request_id)?;
+    store.mark_planning(&request_id, &lead.id)?;
     record(
         store,
         run_id,

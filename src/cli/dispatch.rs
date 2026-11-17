@@ -185,6 +185,107 @@ pub fn dispatch(
             }
             render_plan_outcome(stdout, stderr, &db, &outcome)
         }
+        Action::RunSchedules => {
+            let db = open_database(run_id)?;
+            let project = context::active_project(&db)?.require()?;
+            let settings = settings::show(&settings_file()?)?.settings;
+            let limits = ExecutionLimits::default();
+            let provider = provider_from_settings(&settings, limits)?;
+            let cancel = CancelToken::default();
+            let handler = cancel.clone();
+            let _ = ctrlc::set_handler(move || handler.cancel());
+            let environment = WorkspaceEnvironment::new(Paths::from_environment()?.workspace_dir());
+            let report = crate::app::schedules::run_due(
+                &db,
+                &db,
+                &project,
+                &settings,
+                &provider,
+                &environment,
+                limits,
+                &crate::domain::clock::SystemClock,
+                cancel,
+                run_id,
+            )?;
+            write_stdout(
+                stdout,
+                &format!(
+                    "Scheduled tasks: {} run, {} failed, {} remaining.\n",
+                    report.ran, report.failed, report.remaining
+                ),
+            )
+        }
+        Action::ImportDocument { src, into, agent } => {
+            let mut db = open_database(run_id)?;
+            let files = db.files().clone();
+            let document = crate::app::documents::import(
+                &db,
+                &files,
+                std::path::Path::new(&src),
+                &into,
+                agent.as_deref(),
+            )?;
+            record_event(
+                &mut db,
+                run_id,
+                EventKind::DocumentImported,
+                EntityType::Document,
+                document.id.as_str(),
+            );
+            write_stdout(
+                stdout,
+                &format!(
+                    "Document imported.\nID:   {}\nPath: {}\n",
+                    document.id,
+                    sanitize(&document.path)
+                ),
+            )
+        }
+        Action::CreateAgentFromFile { path } => {
+            let definition =
+                crate::infra::agent_definition::load_agent_definition(std::path::Path::new(&path))?;
+            let settings = settings::show(&settings_file()?)?.settings;
+            let mut db = open_database(run_id)?;
+            let created =
+                crate::app::agents::create_from_definition(&db, &db, &definition, &settings)?;
+            if let Some(memory) = memories::remember(
+                &db,
+                &db,
+                MemoryScope::Agent(created.profile.id.clone()),
+                &memories::agent_created_content(&created.profile, &created.memberships),
+                settings.credentials.deepseek_api_key.as_deref(),
+            ) {
+                record_event(
+                    &mut db,
+                    run_id,
+                    EventKind::MemoryCreated,
+                    EntityType::Memory,
+                    memory.id.as_str(),
+                );
+            }
+            record_event(
+                &mut db,
+                run_id,
+                EventKind::AgentCreated,
+                EntityType::Agent,
+                created.profile.id.as_str(),
+            );
+            let membership = created
+                .memberships
+                .first()
+                .map(|lab| lab.to_string())
+                .unwrap_or_else(|| "none (catalog profile)".to_owned());
+            write_stdout(
+                stdout,
+                &format!(
+                    "Agent created from definition.\nID:         {}\nName:       {}\nRole:       {}\nLaboratory: {}\n",
+                    created.profile.id,
+                    sanitize(created.profile.name.as_str()),
+                    created.profile.role.as_str(),
+                    membership
+                ),
+            )
+        }
         Action::Logs => {
             let db = open_database(run_id)?;
             let entries = crate::infra::db::events::recent(&db, 100)?;
@@ -527,12 +628,13 @@ fn settings_file() -> Result<SettingsFile, AppError> {
     Ok(SettingsFile::new(paths.config_dir(), paths.settings_file()))
 }
 
-/// Resumes pending story execution when the interactive application starts.
+/// Runs due schedules and resumes pending story execution when the interactive
+/// application starts.
 ///
-/// Startup is not a navigation action: it runs the same bounded workflow as a
-/// planning run, once, for the current project. Missing context or settings
-/// simply skip the resume; every failure is reported as a warning and never
-/// prevents the dashboard from opening.
+/// Startup is not a navigation action: due schedules create bounded requests
+/// and the same bounded workflow as a planning run runs once for the current
+/// project. Missing context or settings simply skip both; every failure is
+/// reported as a warning and never prevents the dashboard from opening.
 pub(crate) fn resume_pending_workflow(stderr: &mut dyn Write, run_id: RunId) {
     let db = match open_database(run_id) {
         Ok(db) => db,
@@ -550,12 +652,6 @@ pub(crate) fn resume_pending_workflow(stderr: &mut dyn Write, run_id: RunId) {
     else {
         return;
     };
-    if !db
-        .in_progress_stories(&project)
-        .is_ok_and(|stories| !stories.is_empty())
-    {
-        return;
-    }
     let file = match settings_file() {
         Ok(file) => file,
         Err(error) => {
@@ -589,6 +685,45 @@ pub(crate) fn resume_pending_workflow(stderr: &mut dyn Write, run_id: RunId) {
             return;
         }
     };
+    match crate::app::schedules::run_due(
+        &db,
+        &db,
+        &project,
+        &settings,
+        &provider,
+        &environment,
+        limits,
+        &crate::domain::clock::SystemClock,
+        cancel.clone(),
+        run_id,
+    ) {
+        Ok(report) if report.ran > 0 || report.failed > 0 || report.remaining > 0 => {
+            let _ = write_stderr(
+                stderr,
+                &format!(
+                    "Scheduled tasks: {} run, {} failed, {} remaining.\n",
+                    report.ran, report.failed, report.remaining
+                ),
+            );
+        }
+        Ok(_) => {}
+        Err(error) => {
+            let _ = write_stderr(
+                stderr,
+                &format!(
+                    "Warning: scheduled tasks skipped: {} {}\n",
+                    error,
+                    error.hint()
+                ),
+            );
+        }
+    }
+    if !db
+        .in_progress_stories(&project)
+        .is_ok_and(|stories| !stories.is_empty())
+    {
+        return;
+    }
     let _ = write_stderr(stderr, "Resuming pending workflow...\n");
     match workflow::run(
         &db,
@@ -656,7 +791,8 @@ fn render_logs(entries: &[crate::infra::db::events::LogEntry]) -> String {
 
 fn open_database(run_id: RunId) -> Result<Database, AppError> {
     let paths = Paths::from_environment()?;
-    let (database, _) = Database::open_and_migrate(paths.database_file(), run_id)?;
+    let (database, _) =
+        Database::open_and_migrate_with_data_dir(paths.database_file(), paths.data_dir(), run_id)?;
     Ok(database)
 }
 
