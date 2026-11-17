@@ -141,9 +141,10 @@ The **Lab floor** is a fixed three-room MSX laboratory: **Project Lab** for the
 active project and its task board, **War Room** for the Tech Lead and focused
 agents, and **Lounge** for idle agents, joined by a corridor with desks, a
 whiteboard, a coffee machine, a plant, and a couch. Agents move deterministically
-between desks and rooms; `⇅` marks an exchange, while faces and colors carry
-the agent state. Room interiors contain only titles, furniture, and icons;
-agent names appear in the status line and task text only in the `Enter` detail.
+between connected rooms through their doors; each agent has its name under the
+face and a state bubble above (`(zzz)`, `( ... )`, `(///)`, `(★)`, `(→)`).
+`⇅` marks an exchange. Room interiors contain titles, furniture, agent faces,
+names, and bubbles; task text appears only in the `Enter` detail.
 `Enter` opens the agent detail with its current tasks and `t` opens the selected
 task. Press `f` to open the active project's Kanban; `f` on the
 board returns to the floor, and `Esc` returns to the screen that opened the

@@ -62,11 +62,12 @@ laboratories staffed by AI agents.
   stories after the dashboard opens; startup never blocks on a pre-terminal
   message (ADR-0064).
 - **Floor:** the laboratory floor is a fixed top-down T-plan MSX scene
-  (Project Lab and Lounge above, War Room below) with furniture, deterministic
-  slow tours, and a bidirectional `f` link to the active project's Kanban
-  (ADR-0062). Room interiors contain only titles, furniture, icons, and compact
-  agent faces; names and task text live in the status line and the `Enter`
-  detail. It is read-only and never calls the provider.
+  (Project Lab and Lounge above, War Room below) with furniture, doors,
+  deterministic slow tours, and a bidirectional `f` link to the active
+  project's Kanban (ADR-0062). Room interiors contain titles, furniture, icons,
+  compact agent faces with names below and state bubbles above; longer task
+  text lives in the status line and the `Enter` detail. It is read-only and
+  never calls the provider.
 - **Automation:** recurring schedules create normal bounded requests during
   startup or `--run-schedules`; they do not create a timer or autonomous loop.
 

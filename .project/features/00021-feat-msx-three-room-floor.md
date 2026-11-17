@@ -26,10 +26,9 @@ context, and a two-way link with the active project's Kanban board.
 3. The Tech Lead is in the War Room, focused agents use focus desks, active
    project workers are in the Project Lab, and every other active agent is in
    the Lounge; each appears once and archived agents are counted.
-4. Room interiors contain only titles, furniture, icons, and agent faces.
-   Selecting an agent shows its name, role, and room in the status line;
-   `Enter` opens the detail with a `Working on` section; `t` opens the first
-   task's read-only story detail.
+4. Room interiors contain titles, furniture, icons, and each agent's face with
+   its name below and a state bubble above. Task titles stay in the `Enter`
+   detail; `t` opens the first task's read-only story detail.
 5. Agents move deterministically between room spots and along the corridor,
    with `(zzz)` idle, exchange markers, and no wall-clock or random input.
 6. `f` on the floor opens the active project's Kanban; `f` on the Kanban opens
@@ -69,9 +68,9 @@ context, and a two-way link with the active project's Kanban board.
 - `src/app/floor.rs` tests cover the active project, attached tasks, fixed room
   assignment, task detail, and empty states.
 - `src/cli/tui/floor.rs` tests cover the T plan and row fallback, three rooms,
-  furniture/decoration icons, task-state dots without room prose,
-  60×20/80×24/100×30, ASCII, deterministic slower movement, exchanges,
-  selection, empty states, and the selected task.
+  furniture/decoration icons, task-state dots, agent names and bubbles,
+  60×20/80×24/100×30, ASCII, deterministic slower movement through doors,
+  exchanges, selection, empty states, and the selected task.
 - `tests/db_tasks.rs` covers the project and agent open-task queries, ordering,
   state, and assignee.
 - `src/cli/tui/mod.rs` tests cover the bidirectional Kanban link, preserved

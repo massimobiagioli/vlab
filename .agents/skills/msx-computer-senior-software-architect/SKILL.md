@@ -150,13 +150,14 @@ and stories:
   productive activity. Idle agents may wander in the Lounge; working agents
   may move between their desk and the project board; coordination walks to the
   War Room are allowed when the Tech Lead is present.
-- Keep room interiors clean: titles, furniture, decorations, and compact face
-  sprites only. Agent names, roles, task titles, and other prose belong in the
-  status line and the `Enter` detail dialog, never mixed into the scene.
+- Keep room interiors clean: titles, furniture, decorations, compact faces
+  with the agent name directly below, and a short state bubble above
+  (`(zzz)`, `( ... )`, `(///)`, `(★)`, `(→)`). Task titles and longer prose
+  belong in the status line and the `Enter` detail dialog.
 - Draw interactions only between agents in the same room. Use a small `⇅`
   marker and the legend; never imply a live message trace.
-- Clip every sprite and label to its room or the screen. Do not let names,
-  bubbles, or wide glyphs spill into adjacent rooms.
+- Clip every sprite, name, and bubble to its room or the screen. Do not let
+  text or wide glyphs spill into adjacent rooms.
 - The floor and Kanban link both ways with `f`; `Esc` returns to the screen
   that opened the current one. If there is no active project, say so and offer
   the next action.

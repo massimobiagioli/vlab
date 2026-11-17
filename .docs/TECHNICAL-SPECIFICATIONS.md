@@ -1338,11 +1338,12 @@ fixed laboratory plan (ADR-0062):
   shows its name, role, and room. `Enter` opens the agent detail with a
   `Working on` section and task titles; `t` opens the selected agent's first
   task as the read-only story detail.
-- Room interiors contain only the room title, furniture, decorations, and agent
-  faces. Agent names, roles, and task text are not mixed into the scene; they
-  appear in the status line and the `Enter` detail. Two agents of different
-  roles in the same room show a `⇅` exchange marker. Two or more open stories
-  isolate an agent at a focus desk.
+- Room interiors contain the room title, furniture, decorations, and each
+  agent's compact face with its name directly below and a state bubble above:
+  `(zzz)` idle, `( ... )` working, `(///)` focused, `(★)` lead, `(→)` walking.
+  Task titles are not printed in the rooms; they appear in the `Enter` detail.
+  Two agents of different roles in the same room show a `⇅` exchange marker.
+  Two or more open stories isolate an agent at a focus desk.
 - Agents move deterministically between desks, the board, and the corridor
   according to stored state. The tick is presentation-only: no wall-clock
   randomness, provider call, or database write. The scene is an overview of
@@ -1351,9 +1352,11 @@ fixed laboratory plan (ADR-0062):
   agent detail, `t` opens the selected task, `f` opens the active project's
   Kanban, `o` populates the laboratory, `m` opens memories, `r` reloads, and
   `?` shows help. Layout works at 60×20, 80×24, and 100×30.
-- The scene uses a double frame, tiled floors, room accent colors, desks,
-  chairs, whiteboard, coffee machine, plant, couch, and compact face sprites.
-  Sprite text is clipped to the room; the corridor shows `[f] KANBAN`.
+- The scene uses a double frame, tiled floors, a top-down T plan with a
+  compact row fallback, connected rooms, room accent colors, desks, chairs,
+  whiteboard, coffee machine, plant, couch, and compact face sprites. Sprite
+  text and bubbles are clipped to the room; a walkway with doors connects the
+  rooms.
 - The floor and the active project's Kanban link both ways with `f`; `Esc`
   returns to the screen that opened the current view. The scene renders no
   model text, CV, or credential.

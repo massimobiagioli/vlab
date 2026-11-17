@@ -17,8 +17,8 @@ use crate::app::kanban::StoryState;
 
 use super::{Theme, action_grid, clean};
 
-const LEG_TICKS: u64 = 36;
-const WALK_TICKS: u64 = 12;
+const LEG_TICKS: u64 = 60;
+const WALK_TICKS: u64 = 24;
 const MAX_TOUR: usize = 4;
 
 const FLOOR_ACTIONS: [(&str, &str); 11] = [
@@ -741,9 +741,9 @@ fn draw_couch(canvas: &mut Canvas, room: RoomRect, theme: Theme) {
 
 fn draw_corridor(canvas: &mut Canvas, layout: &FloorPlan, theme: Theme) {
     let (h, v, cross, door) = if theme.unicode {
-        ('─', '│', '┼', '╥')
+        ('▒', '▒', '┼', '╥')
     } else {
-        ('-', '|', '+', '+')
+        ('.', '.', '+', '+')
     };
     let y = layout.corridor_y;
     if y >= canvas.height.saturating_sub(1) {
@@ -895,7 +895,9 @@ fn tour_for(
     }
     // A worker may walk to the War Room to coordinate with the lead. This is
     // the only cross-room tour and is grounded in stored assignments.
-    if room == 0 && floor.lead.is_some() && agent.is_working() {
+    if (room == 0 && floor.lead.is_some() && agent.is_working())
+        || (room == 2 && floor.lead.is_some())
+    {
         let war = rooms[1];
         spots.push(Spot {
             room: 1,
@@ -911,47 +913,31 @@ fn room_spots(rect: RoomRect, room: usize, slot: usize, count: usize) -> Vec<Spo
     let usable = rect.inner_w().saturating_sub(2).max(1);
     let step = (usable / count.max(1)).max(3);
     let base = rect.inner_x() + 3 + (slot * step) % usable;
-    let desk_y = rect.floor_y();
-    let mid_y = (rect.inner_y() + 3).min(desk_y.saturating_sub(1));
-    let upper_y = (rect.inner_y() + 2).min(mid_y);
+    let desk_y = rect.floor_y().saturating_sub(1);
+    let mid_y = (rect.inner_y() + 2).min(desk_y);
+    let upper_y = (rect.inner_y() + 1).min(desk_y.saturating_sub(1));
     let second = (base + step.min(4)).min(rect.x + rect.w.saturating_sub(3));
     let third = (second + step.min(4)).min(rect.x + rect.w.saturating_sub(3));
-    match room {
-        0 | 1 => vec![
-            Spot {
-                room,
-                x: base,
-                y: desk_y,
-            },
-            Spot {
-                room,
-                x: second,
-                y: mid_y,
-            },
-            Spot {
-                room,
-                x: base,
-                y: upper_y,
-            },
-        ],
-        _ => vec![
-            Spot {
-                room,
-                x: base,
-                y: desk_y,
-            },
-            Spot {
-                room,
-                x: second,
-                y: mid_y,
-            },
-            Spot {
-                room,
-                x: third,
-                y: upper_y,
-            },
-        ],
+    let mut spots = vec![
+        Spot {
+            room,
+            x: base,
+            y: desk_y,
+        },
+        Spot {
+            room,
+            x: second,
+            y: mid_y,
+        },
+    ];
+    if rect.inner_h() >= 4 {
+        spots.push(Spot {
+            room,
+            x: if room == 2 { third } else { base },
+            y: upper_y,
+        });
     }
+    spots
 }
 
 fn position_at(
@@ -1102,6 +1088,42 @@ fn draw_agent(
     let text = format!("{prefix}{sprite}");
     let available = max_x.saturating_sub(x).max(1);
     paint_text(canvas, x, y, available, &text, base);
+
+    let name_width = max_x.saturating_sub(x);
+    if name_width > 0 && y + 1 < canvas.height {
+        paint_text(
+            canvas,
+            x,
+            y + 1,
+            name_width,
+            &clean(&agent.name),
+            if selected { base } else { theme.muted_style() },
+        );
+    }
+
+    let bubble = if lead {
+        if theme.unicode { "(★)" } else { "(*)" }
+    } else if agent.is_idle() {
+        "(zzz)"
+    } else if walking {
+        if theme.unicode { "(→)" } else { "(>)" }
+    } else if agent.is_focused() {
+        "(///)"
+    } else {
+        "( ... )"
+    };
+    if y > 0 {
+        let bubble_width = bubble.width();
+        let bubble_x = x.min(max_x.saturating_sub(bubble_width));
+        paint_text(
+            canvas,
+            bubble_x,
+            y - 1,
+            bubble_width,
+            bubble,
+            if selected { base } else { theme.muted_style() },
+        );
+    }
 }
 
 fn draw_exchanges(canvas: &mut Canvas, drawn: &[DrawnAgent], rooms: &[RoomRect; 3], theme: Theme) {
@@ -1119,7 +1141,7 @@ fn draw_exchanges(canvas: &mut Canvas, drawn: &[DrawnAgent], rooms: &[RoomRect; 
             continue;
         };
         let x = (first.x + second.x) / 2;
-        let y = first.y.saturating_sub(1).max(rect.inner_y());
+        let y = first.y.saturating_sub(2).max(rect.inner_y());
         if x < canvas.width && y < canvas.height {
             canvas.set(
                 x,
@@ -1387,8 +1409,8 @@ mod tests {
         ada.tasks.clear();
         let mut bea = agent("10000002", "Bea", "dev", 1, &["20000001"]);
         bea.tasks.push(reset.clone());
-        let mut cid = agent("10000003", "Cid", "qa", 1, &["20000001"]);
-        cid.tasks.push(audit.clone());
+        let mut cid = agent("10000003", "Cid", "qa", 0, &["20000001"]);
+        cid.tasks.clear();
         let mut dee = agent("10000004", "Dee", "analyst", 2, &["20000002"]);
         dee.tasks.push(task(
             "30000003",
@@ -1476,8 +1498,9 @@ mod tests {
         assert!(!screen.contains("Reset password"), "{screen}");
         assert!(!screen.contains("Audit log"), "{screen}");
         assert!(!screen.contains("TECH LEAD"), "{screen}");
-        assert!(!screen.contains("Bea"), "{screen}");
-        assert!(!screen.contains("Cid"), "{screen}");
+        assert!(screen.contains("Bea"), "{screen}");
+        assert!(screen.contains("Cid"), "{screen}");
+        assert!(screen.contains("(zzz)"), "{screen}");
     }
 
     #[test]
@@ -1541,7 +1564,7 @@ mod tests {
         ];
         let first = position_at(agent, &spots, 0, &layout);
         let same = position_at(agent, &spots, 0, &layout);
-        let later = position_at(agent, &spots, 6, &layout);
+        let later = position_at(agent, &spots, 30, &layout);
         assert_eq!(first, same);
         assert_ne!(first, later);
         // The path through the corridor never leaves the canvas.
