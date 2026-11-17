@@ -198,30 +198,33 @@ planning context within the 8 KiB bound.
 
 Interactive route: in **Projects** select the project and press `r` (or press
 `n` on its Kanban board). Type or paste the request in the dialog and press
-`Enter`; `Esc` cancels. The outcome dialog lists the planned stories or the
-Tech Lead's questions. After planning, assigned stories are executed for real
-in isolated git worktrees: work by the assignee, commit on
-`vlab/<story-id>`, review by the first active QA (or the Tech Lead), then
-`DONE` with the outcome stored.
+`Enter`; `Esc` cancels. The request is queued as `TODO` immediately and a
+`REQUEST` card appears in the Kanban `TODO` column. The background Tech Lead
+picks up the oldest queued request, plans it, and runs the bounded workflow.
+A second request waits in `TODO` without blocking the dashboard. Press `Enter`
+on a request card to read its text.
 
-The hidden legacy flag still works for scripts:
+The hidden legacy flags still work for scripts:
 
 ```sh
 vlab --new-request "Add password reset"
+vlab --run-queue
 ```
 
 Or pipe a file:
 
 ```sh
 vlab --new-request < request.md
+vlab --run-queue
 ```
 
-VLab stores the request first, calls DeepSeek with bounded retries, validates
-the JSON proposal, assigns only the project's agents (or laboratory members
-when none is assigned), computes due dates locally, and saves all stories in
-one transaction. It then stores a short planning-summary memory. It prints the
-request ID, status, and story table. If it returns questions, the status is
-`NEEDS_CLARIFICATION`; submit a revised request if needed.
+`--new-request` only queues. `--run-queue` calls DeepSeek with bounded retries,
+validates the JSON proposal, assigns only the project's agents (or laboratory
+members when none is assigned), computes due dates locally, and saves all
+stories in one transaction. It then stores a short planning-summary memory and
+prints the request status. If planning returns questions, the status is
+`NEEDS_CLARIFICATION`; submit a revised request if needed. A missing provider
+configuration leaves the request in `TODO`.
 
 ## 9. Read the result
 

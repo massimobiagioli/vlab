@@ -24,7 +24,7 @@ DEV_ENV := VLAB_CONFIG_DIR="$(DATA_DIR)" VLAB_DATA_DIR="$(DATA_DIR)"
 # Arguments for `make run`, for example: make run ARGS="--list-labs"
 ARGS ?= --help
 
-.PHONY: help build-debug build-release run load-preset run-schedules import agent-create-from-file \
+.PHONY: help build-debug build-release run load-preset run-schedules run-queue import agent-create-from-file \
 	test lint fmt fmt-check clippy audit deny check tools snapshot clean clean-data clean-workspace
 
 help: ## Show this help
@@ -42,7 +42,7 @@ help: ## Show this help
 	} \
 	function group(name) { \
 		if (name == "help" || name == "build-debug" || name == "build-release" || name == "run") return 1; \
-		if (name == "load-preset" || name == "run-schedules" || name == "import" || name == "agent-create-from-file") return 2; \
+		if (name == "load-preset" || name == "run-schedules" || name == "run-queue" || name == "import" || name == "agent-create-from-file") return 2; \
 		if (name == "test" || name == "lint" || name == "fmt" || name == "fmt-check" || name == "clippy" || name == "audit" || name == "deny" || name == "check") return 3; \
 		if (name == "tools" || name == "snapshot" || name == "clean" || name == "clean-data" || name == "clean-workspace") return 4; \
 		return 5; \
@@ -69,6 +69,7 @@ help: ## Show this help
 		printf "  %smake%s                         show this help\n", cyan, reset; \
 		printf "  %smake run%s ARGS=\"--list-labs\"   run a command with .data/ storage\n", cyan, reset; \
 		printf "  %smake load-preset%s             load the fictional agent catalog\n", cyan, reset; \
+		printf "  %smake run-queue%s               drain up to 8 queued TODO requests\n", cyan, reset; \
 		printf "  %smake import%s SRC=notes/security.md INTO=lab/Payments\n", cyan, reset; \
 		printf "  %smake agent-create-from-file%s SRC=agents/example.md\n", cyan, reset; \
 		printf "  %smake check%s                   run every quality gate\n", cyan, reset; \
@@ -91,6 +92,10 @@ load-preset: build-debug ## Load assets/agents.yaml into the .data/ database
 run-schedules: build-debug ## Run due schedules for the current project in .data/
 	@mkdir -p "$(DATA_DIR)" && chmod 700 "$(DATA_DIR)"
 	@$(DEV_ENV) ./target/debug/vlab --run-schedules
+
+run-queue: build-debug ## Drain up to 8 queued TODO requests in .data/
+	@mkdir -p "$(DATA_DIR)" && chmod 700 "$(DATA_DIR)"
+	@$(DEV_ENV) ./target/debug/vlab --run-queue
 
 import: build-debug ## Import a markdown document (SRC=file.md INTO=lab/<name>|project/<name>|agent [AGENT=...])
 	@test -n "$(SRC)" || { echo "Usage: make import SRC=<file.md> INTO=<lab/name|project/name|agent> [AGENT=<name-or-id>]"; exit 2; }

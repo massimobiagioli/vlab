@@ -80,6 +80,22 @@ impl BoardCounts {
     }
 }
 
+/// One queued request shown as a `REQUEST` card in the `TODO` column.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingRequest {
+    pub id: crate::domain::ids::RequestId,
+    pub content: String,
+    pub status: String,
+    pub created_at: String,
+}
+
+/// A selectable Kanban cell: a queued request or a story.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KanbanEntry {
+    Pending(PendingRequest),
+    Story(Card),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Board {
     pub project_id: ProjectId,
@@ -90,12 +106,25 @@ pub struct Board {
     pub lead_name: Option<String>,
     pub counts: BoardCounts,
     pub pending_intake: u64,
+    /// Requests in `TODO` or `PLANNING`, oldest first.
+    pub pending: Vec<PendingRequest>,
     pub cards: Vec<Card>,
 }
 
 impl Board {
     pub fn cards_in(&self, state: StoryState) -> impl Iterator<Item = &Card> {
         self.cards.iter().filter(move |card| card.state == state)
+    }
+
+    /// Entries for one column. The `TODO` column shows queued requests before
+    /// stories; every other column shows stories only.
+    pub fn entries_in(&self, state: StoryState) -> Vec<KanbanEntry> {
+        let mut entries = Vec::new();
+        if state == StoryState::Todo {
+            entries.extend(self.pending.iter().cloned().map(KanbanEntry::Pending));
+        }
+        entries.extend(self.cards_in(state).cloned().map(KanbanEntry::Story));
+        entries
     }
 }
 
@@ -266,6 +295,7 @@ mod tests {
             lead_name: None,
             counts: BoardCounts::default(),
             pending_intake: 0,
+            pending: Vec::new(),
             cards: Vec::new(),
         };
         assert!(

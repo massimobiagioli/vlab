@@ -12,10 +12,13 @@ From the dashboards (ADR-0044): press `r` on a project in **Projects**, or `n`
 on its Kanban board. A prompt dialog collects the text (`Alt+Enter` line
 break, bracketed paste keeps line breaks and drops other control characters,
 `Enter` submits, `Esc` cancels; empty text is not submitted). The project
-becomes current, a `Planning…` dialog is shown while the single provider
-invocation runs on the dashboard's database connection, and `Esc` or `Ctrl-C`
-cancels with the same rules as SIGINT below. An outcome dialog reports the
-result; the exit-code column below applies only to the flag path.
+becomes current and the request is persisted as `TODO` immediately; the
+dashboard reports its identifier and remains responsive. A single in-process
+Tech Lead worker plans queued requests one at a time and runs the bounded
+workflow in the background (ADR-0061). A second request waits visibly in
+`TODO`; it does not block intake. `q` stops the dashboard and cancels the
+worker's shared token. The exit-code column below applies only to the flag
+path.
 
 The hidden legacy flag remains for scripts:
 
@@ -33,32 +36,43 @@ cat request.md | vlab --new-request
 - When no positional text is given and stdin is a terminal, VLab exits 2
   instead of waiting indefinitely.
 
+`--new-request` only enqueues. Hidden `--run-queue` (and `make run-queue`)
+drains at most eight queued requests for the active laboratory and exits.
+
 ## Workflow
 
-1. Validate the active laboratory and project ownership.
-2. Run structural laboratory validation. A failed laboratory exits 4 before any
-   request or provider call.
-3. Persist the request as `TODO`, then mark it `PLANNING`.
-4. Build a bounded prompt with the roster, request text, request date, and the
-   selected scoped memories (laboratory, project, Tech Lead agent).
-5. One logical provider invocation through the bounded retry policy.
-6. Parse and validate JSON schema version 1 locally.
-7. Apply project-roster and due-date rules locally.
-8. In one transaction, insert every story as `IN PROGRESS` when it has an
-   assignee and as `TODO` otherwise, then set the terminal status (ADR-0047).
-9. Run the bounded real execution workflow for pending assigned stories
-   (ADR-0050).
-10. Record `planning_started`, `provider_attempt`, workflow events, and
-    `planning_completed` or `planning_failed` with no content.
+Intake and planning are separate (ADR-0061):
 
-No partial story set is committed. The request row is written before the
-provider call and is preserved on clarification, validation failure, provider
-failure, timeout, budget exhaustion, and cancellation.
+1. Validate the active laboratory and project ownership.
+2. Persist the request as `TODO` and return without a provider call.
+3. The interactive worker or `--run-queue` selects the oldest `TODO` request
+   for the active laboratory, one at a time, and marks it `PLANNING`.
+4. Run structural laboratory validation. An invalid laboratory fails that
+   request before any provider call; the worker continues with the next one.
+5. Build a bounded prompt with the roster, request text, request date, and the
+   selected scoped memories (laboratory, project, Tech Lead agent).
+6. One logical provider invocation through the bounded retry policy.
+7. Parse and validate JSON schema version 1 locally.
+8. Apply project-roster and due-date rules locally.
+9. In one transaction, insert every story as `IN PROGRESS` when it has an
+   assignee and as `TODO` otherwise, then set the terminal status (ADR-0047).
+10. Run the bounded real execution workflow for pending assigned stories
+    (ADR-0050).
+11. Record `request_queued`, `planning_started`, `provider_attempt`, workflow
+    events, and `planning_completed` or `planning_failed` with no content.
+12. Continue with the next queued request.
+
+No partial story set is committed. The request row is written at intake and is
+preserved on clarification, validation failure, provider failure, timeout,
+budget exhaustion, and cancellation. A request that cannot be planned by the
+worker is marked `FAILED` with a stable code so the queue advances; a missing
+provider configuration leaves it in `TODO` and pauses the worker.
 
 ## Terminal outcomes
 
 | Outcome | Request status | Exit code |
 |---|---|---|
+| Queued for the background Tech Lead | `TODO` | 0 |
 | Stories created | `PLANNED` | 0 |
 | Questions returned | `NEEDS_CLARIFICATION` | 0 |
 | Local validation/assignment/date failure | `FAILED` (`validation`) | 4 |

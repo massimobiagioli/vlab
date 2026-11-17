@@ -35,7 +35,7 @@ recorded.
 Event kinds: `migration_applied`, `lab_created`, `lab_updated`, `lab_opened`, `lab_populated`, `lab_deleted`,
 `agent_created`, `agent_archived`, `schedule_created`, `schedule_updated`, `schedule_deleted`,
 `document_imported`, `project_created`, `project_updated`, `project_deleted`,
-`request_accepted`, `planning_started`, `planning_completed`,
+`request_accepted`, `request_queued`, `planning_started`, `planning_completed`,
 `planning_failed`, `provider_attempt`, `question_answered`, `confirmation_granted`, `confirmation_declined`,
 `budget_exhausted`, `cancelled`, `memory_created`, `memory_updated`,
 `memory_deleted`, `story_work_completed`, `story_reviewed`, `story_completed`,

@@ -89,6 +89,7 @@ revises a technical decision must keep it current.
 | ADR-0058 | Agent duplication with optional memory preservation | Accepted | 2026-11-17 | — | [adr-0058.md](adr-0058.md) |
 | ADR-0059 | Markdown file store for memories and documents | Accepted | 2026-11-17 | — | [adr-0059.md](adr-0059.md) |
 | ADR-0060 | Agent definitions from markdown files | Accepted | 2026-11-17 | — | [adr-0060.md](adr-0060.md) |
+| ADR-0061 | Background request queue with serial Tech Lead processing | Accepted | 2026-11-17 | — | [adr-0061.md](adr-0061.md) |
 
 ## Supersession map
 

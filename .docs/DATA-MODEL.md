@@ -68,7 +68,9 @@ content, a status (`TODO`, `PLANNING`, `PLANNED`, `NEEDS_CLARIFICATION`,
 `FAILED`), optional bounded clarification questions, a stable failure code and
 sanitized explanation, the planning-lease start, and the agent that planned it
 (`planned_by_agent_id`, schema v13). The request is preserved even when planning
-fails.
+fails. `TODO` is the durable queue: intake writes it and returns, and one
+background Tech Lead selects the oldest `TODO` for the active laboratory,
+oldest first, before marking it `PLANNING` (ADR-0061).
 
 ### Project interaction history
 

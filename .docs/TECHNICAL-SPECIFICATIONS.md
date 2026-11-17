@@ -237,6 +237,7 @@ Agents
   --delete-agent <agent-id>
   --show-agent-detail <agent-id>
   --ask <question> [--to-agent <agent-id>]
+  --run-queue
 ```
 
 A bare `vlab` opens the home dashboard in a terminal and prints help otherwise.
@@ -873,12 +874,19 @@ Rules:
 
 ### 9.2 Planning Workflow
 
-A valid request shall trigger this sequence:
+Request intake and planning are separate (ADR-0061). A valid request shall be
+enqueued immediately:
 
-1. Validate the project and laboratory.
-2. Verify provider prerequisites.
-3. Persist the original request as a `TODO` intake item.
-4. Mark processing as `PLANNING`.
+1. Validate the project, laboratory, text, encoding, size, and credential
+   marker.
+2. Persist the original request as a `TODO` intake item and return without a
+   provider call or workflow.
+3. While the interactive application runs, one bounded background worker
+   selects the oldest `TODO` request for the active laboratory. The hidden
+   `--run-queue` command performs the same drain headlessly, at most eight
+   requests per pass. There is no daemon, no parallel request, and no
+   model-chosen order.
+4. Mark the selected request as `PLANNING`.
 5. Give the Tech Lead the request and relevant team context, including the project agent roster (or the laboratory roster when none is assigned) and the bounded memories defined in §3.5.
 6. Obtain structured user-story proposals.
 7. Validate the proposals locally.
@@ -889,11 +897,17 @@ A valid request shall trigger this sequence:
     commit, review, and mark the story `DONE`. Review is assigned to the first
     active QA in the project roster, else the Tech Lead.
 11. Best effort: request and store a bounded model-generated project memory summary.
-12. Display the result.
+12. Refresh the dashboard with the outcome and continue with the next queued
+    request.
 
 The original request shall remain linked to every generated story.
 
-Once planned, the intake item shall no longer appear as a separate pending Kanban card, preventing duplicate work counts.
+Queued `TODO` and picked-up `PLANNING` requests appear as `REQUEST` cards at the
+top of the Kanban `TODO` column, before stories. Selecting one opens a
+read-only detail. Once planned, the request card disappears and its stories
+appear through the normal board refresh; the request row remains for
+traceability. A second request submitted while the first is being planned
+remains visible in `TODO` and is processed afterwards.
 
 ### 9.3 Required Story Fields
 
@@ -1021,6 +1035,11 @@ The board remains read-only; state changes come only from that
 application-owned workflow, not from navigation. `DONE` means the work ran and
 was committed on `vlab/<story-id>` and reviewed; it does not mean the branch was
 merged or deployed.
+
+The `TODO` column also lists queued requests as `REQUEST` cards before stories.
+A card shows its `TODO` or `PLANNING` status; `Enter` opens a read-only detail
+with the request text. The background Tech Lead removes the request card when
+planning completes and the resulting stories appear.
 
 ## 11. Persistence and Data Model
 
@@ -1200,6 +1219,16 @@ Use a mock provider by default to test:
 
 Live-provider tests shall be opt-in and shall never require committed credentials.
 
+### Queue Tests
+
+- Enqueue persists `TODO` without calling the provider.
+- The queue returns the oldest request and leaves later requests untouched.
+- Planning one request leaves the next in `TODO`; the worker event refreshes the
+  dashboard without content.
+- The Kanban `TODO` column renders and opens request cards.
+- `--new-request` queues and exits; `--run-queue` drains a bounded batch.
+- Secret-bearing text is rejected before the request row.
+
 ## 17. Acceptance Criteria
 
 The initial release is acceptable when:
@@ -1227,6 +1256,9 @@ The initial release is acceptable when:
 21. Memories are generated automatically for laboratories, agents, projects, and successful plans, with scope enforced and deletion cascading from the owner.
 22. Memory content is bounded, sanitized, treated as untrusted data, and never executed or used to grant permissions or change assignment rules; automatic writes never fail the triggering action.
 23. Planning and questions include only the scoped memories within the configured cap, delimited as data; omission beyond the cap is explicit in the design and never truncates a memory silently.
+24. Request intake returns immediately with a `TODO` request; a serial
+    background worker or `--run-queue` plans it and runs the bounded workflow
+    without blocking the dashboard; a second request visibly waits in `TODO`.
 
 ## 18. Incremental Delivery Plan
 

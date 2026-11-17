@@ -30,6 +30,7 @@ pub mod planning;
 pub mod policy;
 pub mod project_agents;
 pub mod projects;
+pub mod queue;
 pub mod schedules;
 pub mod workflow;
 pub mod workspace;

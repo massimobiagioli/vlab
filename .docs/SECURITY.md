@@ -73,6 +73,7 @@ Prompts are behavioral guidance, not security boundaries.
 | Application → GitHub | Validate the project source; clone only the validated repository; pass the global credential through a short-lived askpass helper and child environment; bound time; discard output; no token in arguments or logs. |
 | Application → local folder | Accept only an absolute path outside `.workspace`; reject symlinks and special files; exclude `.git`; bound entries, bytes, and depth; copy into a private temporary directory; initialize git only inside the copy; never modify the source. |
 | Schedule → workflow | Do not grant the model a timer or arbitrary command authority. Due schedules create normal bounded requests, at most three per pass; the existing planning/workflow rules and budgets apply; no background daemon. |
+| Queue → worker | Intake only writes a `TODO` request. One in-process worker reads the oldest request, uses its own database connection, runs one bounded planning/workflow at a time, never touches the terminal, and stops on cancellation. No model-chosen order, no parallel provider call, no daemon. |
 | File store → local disk | Reject absolute paths, `..`, symlinks, and paths outside the data directory; bound markdown files; write with private permissions; never execute imported content. |
 | Model → orchestrator | Validate responses; never interpret proposals as authorization. |
 | Workflow output → story state | Accept only strict action/review JSON; the application validates and executes actions, owns `IN_REVIEW`/`DONE`, and the model cannot choose a transition. |
@@ -280,6 +281,8 @@ Required scenarios include:
 - Secrets are excluded from logs and outbound model requests.
 - Memory content is scoped, bounded, and delimited; an oversized or out-of-scope
   memory is rejected before dispatch.
+- Request intake persists `TODO` without a provider call; the worker processes
+  one request at a time in creation order and cannot be steered by model output.
 - Timeouts and exhausted budgets prevent subsequent actions.
 - Cancellation does not trigger unsafe retries.
 - Uncertain external effects remain explicitly marked as unknown.

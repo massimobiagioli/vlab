@@ -23,16 +23,14 @@ use crate::app::projects::{self, CreatedProject, ProjectOverview};
 use crate::app::requests::{self, PlanningOutcome};
 use crate::app::settings::{self, SettingsReport, SettingsStore};
 use crate::app::settings_edit;
-use crate::app::workflow;
 use crate::cli::args::DashboardGroup;
 use crate::cli::prompt::{TerminalEditor, TerminalPrompter};
-use crate::domain::budget::{CancelToken, ExecutionLimits};
+use crate::domain::budget::ExecutionLimits;
 use crate::domain::ids::{AgentId, LabId, MemoryId, ProjectId};
 use crate::domain::memory::MemoryScope;
 use crate::domain::project::{GithubSource, ProjectSource};
 use crate::infra::config::SettingsFile;
 use crate::infra::db::Database;
-use crate::infra::execution::WorkspaceEnvironment;
 use crate::infra::paths::Paths;
 use crate::infra::workspace::{DEFAULT_CLONE_TIMEOUT, GitWorkspace};
 use crate::obs::events::{AuditEvent, EntityRef, EntityType, EventKind, Outcome};
@@ -43,6 +41,7 @@ mod interactions;
 mod memory;
 mod populate;
 mod schedules;
+mod worker;
 
 /// Opens a group dashboard.
 pub fn run(group: DashboardGroup, no_color: bool, run_id: RunId) -> Result<(), AppError> {
@@ -538,10 +537,6 @@ enum Mode {
     },
     Help,
     Prompt(Prompt),
-    /// Shown while the provider call blocks the dashboard.
-    Planning {
-        project_name: String,
-    },
     /// Card detail dialog over the Kanban screen; `scroll` is clamped when
     /// rendered.
     Story {
@@ -617,7 +612,7 @@ impl KanbanView {
     }
 
     fn column_len(&self, column: usize) -> usize {
-        self.board.cards_in(kanban::StoryState::ALL[column]).count()
+        self.board.entries_in(kanban::StoryState::ALL[column]).len()
     }
 
     fn move_column(&mut self, delta: isize) {
@@ -682,10 +677,11 @@ impl KanbanView {
         visible
     }
 
-    fn selected_card(&self) -> Option<&kanban::Card> {
+    fn selected_entry(&self) -> Option<kanban::KanbanEntry> {
         self.board
-            .cards_in(self.state())
-            .nth(self.cards[self.column])
+            .entries_in(self.state())
+            .get(self.cards[self.column])
+            .cloned()
     }
 
     /// Keeps every remembered position valid after a reload.
@@ -707,8 +703,6 @@ impl KanbanView {
 enum Deferred {
     EditSettings,
     NewAgent,
-    /// Plans `App::pending_request` inside the dashboard.
-    Plan,
 }
 
 struct App {
@@ -745,7 +739,7 @@ struct App {
     /// Screen to return to when Interactions closes (Projects or Kanban).
     interactions_return: Screen,
     schedules: Option<schedules::ScheduleView>,
-    pending_request: Option<(ProjectId, String)>,
+    worker: Option<worker::WorkerHandle>,
 }
 
 impl App {
@@ -795,9 +789,10 @@ impl App {
             interactions: None,
             interactions_return: Screen::Group(DashboardGroup::Projects),
             schedules: None,
-            pending_request: None,
+            worker: None,
         };
         app.reload();
+        app.worker = Some(worker::spawn(app.paths.clone(), app.run_id));
         Ok(app)
     }
 
@@ -810,7 +805,21 @@ impl App {
                     kind: error.kind(),
                 })?;
             if self.quit {
+                if let Some(worker) = &self.worker {
+                    worker.stop();
+                }
                 return Ok(());
+            }
+            let has_event =
+                event::poll(std::time::Duration::from_millis(200)).map_err(|error| {
+                    AppError::Io {
+                        context: "polling terminal input",
+                        kind: error.kind(),
+                    }
+                })?;
+            self.drain_worker();
+            if !has_event {
+                continue;
             }
             let event = event::read().map_err(|error| AppError::Io {
                 context: "reading terminal input",
@@ -830,10 +839,6 @@ impl App {
                 },
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
                     if let Some(deferred) = self.handle_key(key) {
-                        if deferred == Deferred::Plan {
-                            self.run_planning(terminal)?;
-                            continue;
-                        }
                         stop_terminal();
                         let result = self.execute_deferred(deferred);
                         *terminal = start_terminal("restarting the terminal dashboard")?;
@@ -849,6 +854,61 @@ impl App {
                 }
                 Event::Resize(_, _) => {}
                 _ => {}
+            }
+        }
+    }
+
+    fn drain_worker(&mut self) {
+        let mut events = Vec::new();
+        if let Some(worker) = &self.worker {
+            while let Ok(event) = worker.events.try_recv() {
+                events.push(event);
+            }
+        }
+        if events.is_empty() {
+            return;
+        }
+        for event in events {
+            self.apply_worker_event(event);
+        }
+        self.reload();
+    }
+
+    fn apply_worker_event(&mut self, event: worker::WorkerEvent) {
+        match event {
+            worker::WorkerEvent::Started { request_id } => {
+                self.status = Some(format!("Tech Lead is planning request {request_id}..."));
+            }
+            worker::WorkerEvent::Finished {
+                request_id,
+                outcome,
+                workflow,
+            } => {
+                let base = match outcome {
+                    PlanningOutcome::Planned { stories, .. } => {
+                        format!("Request {request_id}: planned ({} stories).", stories.len())
+                    }
+                    PlanningOutcome::NeedsClarification { questions, .. } => format!(
+                        "Request {request_id}: needs clarification ({} questions).",
+                        questions.len()
+                    ),
+                    PlanningOutcome::Failed { code, .. } => {
+                        format!("Request {request_id}: failed ({code}).")
+                    }
+                    PlanningOutcome::Cancelled { .. } => {
+                        format!("Request {request_id}: cancelled.")
+                    }
+                };
+                self.status = Some(match workflow {
+                    Some(Ok((completed, failed, remaining))) => format!(
+                        "{base} Workflow: {completed} completed, {failed} failed, {remaining} remaining."
+                    ),
+                    Some(Err(reason)) => format!("{base} Workflow skipped: {reason}"),
+                    None => base,
+                });
+            }
+            worker::WorkerEvent::Warning(message) => {
+                self.status = Some(message);
             }
         }
     }
@@ -1143,8 +1203,6 @@ impl App {
                 None
             }
             Mode::Message { .. } | Mode::Help => None,
-            // Input is read by the cancellation watcher while planning.
-            Mode::Planning { .. } => None,
             Mode::Prompt(mut prompt) => {
                 prompt.notice = None;
                 match key.code {
@@ -1156,8 +1214,21 @@ impl App {
                         if prompt.field.value.trim().is_empty() {
                             prompt.notice = Some("Write a request first.");
                         } else {
-                            self.pending_request = Some((prompt.project_id, prompt.field.value));
-                            return Some(Deferred::Plan);
+                            let project = prompt.project_id.clone();
+                            let text = prompt.field.value.clone();
+                            match self.queue_request(&project, &text) {
+                                Ok(request_id) => {
+                                    self.mode = Mode::Browse;
+                                    self.status =
+                                        Some(format!("Request {request_id} queued in TODO."));
+                                    self.reload();
+                                }
+                                Err(error) => {
+                                    self.mode = Mode::Browse;
+                                    self.show_error(error);
+                                }
+                            }
+                            return None;
                         }
                     }
                     KeyCode::Backspace => prompt.field.backspace(),
@@ -1643,173 +1714,56 @@ impl App {
         let Some(view) = self.kanban.as_ref() else {
             return Ok(());
         };
-        let Some(card) = view.selected_card() else {
-            self.status = Some(format!("No stories in {}.", view.state().label()));
+        let Some(entry) = view.selected_entry() else {
+            let noun = if view.state() == kanban::StoryState::Todo {
+                "cards"
+            } else {
+                "stories"
+            };
+            self.status = Some(format!("No {noun} in {}.", view.state().label()));
             return Ok(());
         };
-        let detail = kanban::story(&self.db, &self.db, &view.board.project_id, &card.id)?;
-        self.mode = Mode::Story {
-            detail: Box::new(detail),
-            scroll: 0,
-        };
+        match entry {
+            kanban::KanbanEntry::Pending(request) => {
+                self.mode = Mode::Message {
+                    title: format!("Request {} in TODO", request.id),
+                    lines: pending_request_lines(&request),
+                };
+            }
+            kanban::KanbanEntry::Story(card) => {
+                let detail = kanban::story(&self.db, &self.db, &view.board.project_id, &card.id)?;
+                self.mode = Mode::Story {
+                    detail: Box::new(detail),
+                    scroll: 0,
+                };
+            }
+        }
         Ok(())
     }
 
     /// Submits the pending request through the same use case as the flag
     /// path, then shows the outcome (ADR-0044).
-    fn run_planning(&mut self, terminal: &mut DefaultTerminal) -> Result<(), AppError> {
-        let Some((project_id, text)) = self.pending_request.take() else {
-            return Ok(());
-        };
-        match self.plan_request(terminal, &project_id, &text) {
-            Ok((title, lines)) => {
-                self.reload();
-                self.mode = Mode::Message { title, lines };
-            }
-            Err(error) => {
-                self.reload();
-                self.show_error(error);
-            }
-        }
-        Ok(())
-    }
-
-    fn plan_request(
+    fn queue_request(
         &mut self,
-        terminal: &mut DefaultTerminal,
-        project_id: &ProjectId,
+        project: &ProjectId,
         text: &str,
-    ) -> Result<(String, Vec<String>), AppError> {
-        let project = projects::open(&self.db, &self.db, project_id.as_str())?;
-        let settings = settings::show(&self.settings_file())?.settings;
-        let limits = ExecutionLimits::default();
-        let provider = crate::cli::dispatch::provider_from_settings(&settings, limits)?;
-        self.mode = Mode::Planning {
-            project_name: project.name.clone(),
-        };
-        terminal
-            .draw(|frame| self.render(frame))
-            .map_err(|error| AppError::Io {
-                context: "drawing the terminal dashboard",
-                kind: error.kind(),
-            })?;
-        let cancel = CancelToken::default();
-        let watcher = CancelWatcher::start(cancel.clone());
-        let outcome = requests::plan(
+    ) -> Result<crate::domain::ids::RequestId, AppError> {
+        // Queueing must not depend on provider configuration; the worker
+        // pauses and reports the problem instead. The secret check still runs
+        // when a credential is configured.
+        let secret = settings::show(&self.settings_file())
+            .ok()
+            .and_then(|report| report.settings.credentials.deepseek_api_key);
+        projects::open(&self.db, &self.db, project.as_str())?;
+        requests::enqueue(
             &self.db,
             &self.db,
-            project_id,
+            project,
             text,
-            &settings,
-            &provider,
-            limits,
-            &crate::domain::clock::SystemClock,
-            cancel.clone(),
+            secret.as_deref(),
+            ExecutionLimits::default(),
             self.run_id,
-        );
-        let workflow_report = match &outcome {
-            Ok(PlanningOutcome::Planned { .. }) => {
-                let environment = WorkspaceEnvironment::new(self.paths.workspace_dir());
-                Some(workflow::run(
-                    &self.db,
-                    &self.db,
-                    project_id,
-                    &settings,
-                    &provider,
-                    &environment,
-                    limits,
-                    &crate::domain::clock::SystemClock,
-                    cancel,
-                    self.run_id,
-                ))
-            }
-            _ => None,
-        };
-        watcher.stop();
-        let (title, mut lines) = self.outcome_lines(&outcome?);
-        if let Some(report) = workflow_report {
-            lines.insert(
-                1,
-                match report {
-                    Ok(report) => format!(
-                        "Workflow: {} completed, {} failed, {} remaining.",
-                        report.completed, report.failed, report.remaining
-                    ),
-                    Err(error) => format!("Workflow could not start: {} {}", error, error.hint()),
-                },
-            );
-        }
-        Ok((title, lines))
-    }
-
-    fn outcome_lines(&self, outcome: &PlanningOutcome) -> (String, Vec<String>) {
-        let on_board = self.screen == Screen::Kanban;
-        let retry_key = if on_board { "n" } else { "r" };
-        match outcome {
-            PlanningOutcome::Planned {
-                request_id,
-                stories,
-            } => {
-                let names: std::collections::HashMap<String, String> = self
-                    .active_lab
-                    .as_ref()
-                    .and_then(|lab| self.db.lab_agents(lab).ok())
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|member| (member.id.to_string(), member.name))
-                    .collect();
-                let mut lines = vec![format!("{} stories planned.", stories.len()), String::new()];
-                for story in stories {
-                    let assignee = story
-                        .assigned_agent_id
-                        .as_deref()
-                        .and_then(|id| names.get(id).cloned())
-                        .unwrap_or_else(|| "Unassigned".to_owned());
-                    lines.push(format!("• {} — {assignee}", story.title));
-                }
-                lines.push(String::new());
-                lines.push(if on_board {
-                    "The board has been refreshed. Press any key to close.".to_owned()
-                } else {
-                    "Press v to open the board.".to_owned()
-                });
-                (format!("Request {request_id} planned"), lines)
-            }
-            PlanningOutcome::NeedsClarification {
-                request_id,
-                questions,
-            } => {
-                let mut lines = vec!["The Tech Lead needs more information:".to_owned()];
-                for (index, question) in questions.iter().enumerate() {
-                    lines.push(format!("{}. {question}", index + 1));
-                }
-                lines.push(String::new());
-                lines.push(format!("Press {retry_key} to submit a revised request."));
-                (format!("Request {request_id} needs clarification"), lines)
-            }
-            PlanningOutcome::Failed {
-                request_id,
-                code,
-                hint,
-                ..
-            } => (
-                format!("Request {request_id} failed"),
-                vec![
-                    format!("Code: {code}"),
-                    format!("Hint: {hint}"),
-                    String::new(),
-                    "The request is kept for traceability.".to_owned(),
-                ],
-            ),
-            PlanningOutcome::Cancelled { request_id } => (
-                format!("Request {request_id} cancelled"),
-                vec![
-                    "Planning was cancelled; no stories were added.".to_owned(),
-                    "Provider-side processing may have continued after local cancellation."
-                        .to_owned(),
-                ],
-            ),
-        }
+        )
     }
 
     fn open_group(&mut self, group: DashboardGroup) {
@@ -3034,8 +2988,6 @@ impl App {
 
     fn execute_deferred(&mut self, deferred: Deferred) -> Result<String, AppError> {
         match deferred {
-            // Planning stays inside the dashboard; see `run_planning`.
-            Deferred::Plan => Ok(String::new()),
             Deferred::EditSettings => {
                 let editor = TerminalEditor::from_environment()?;
                 settings_edit::edit(&self.settings_file(), &editor)?;
@@ -3747,10 +3699,23 @@ impl App {
         let focused = column == view.column;
         // List border plus card border on each side.
         let text_width = usize::from(area.width.saturating_sub(4));
-        let titles: Vec<Vec<String>> = view
-            .board
-            .cards_in(state)
-            .map(|card| wrap_clipped(&clean(&card.title), text_width, KANBAN_TITLE_LINES))
+        let entries = view.board.entries_in(state);
+        let titles: Vec<Vec<String>> = entries
+            .iter()
+            .map(|entry| match entry {
+                kanban::KanbanEntry::Pending(request) => wrap_clipped(
+                    &clean(&format!(
+                        "REQUEST [{}] {}",
+                        request.status,
+                        request.content.lines().next().unwrap_or_default()
+                    )),
+                    text_width,
+                    KANBAN_TITLE_LINES,
+                ),
+                kanban::KanbanEntry::Story(card) => {
+                    wrap_clipped(&clean(&card.title), text_width, KANBAN_TITLE_LINES)
+                }
+            })
             .collect();
         let heights: Vec<u16> = titles
             .iter()
@@ -3821,7 +3786,10 @@ impl App {
                 "No stories",
                 self.theme.muted_style(),
             ))];
-            if state == kanban::StoryState::Todo && view.board.cards.is_empty() {
+            if state == kanban::StoryState::Todo
+                && view.board.cards.is_empty()
+                && view.board.pending.is_empty()
+            {
                 lines.push(Line::from(""));
                 lines.push(Line::from(Span::styled(
                     "Press n to submit a request.",
@@ -3840,7 +3808,14 @@ impl App {
                 width: inner.width,
                 height: heights[index],
             };
-            self.render_kanban_card(frame, rect, &titles[index], focused && index == selected);
+            let pending = matches!(entries[index], kanban::KanbanEntry::Pending(_));
+            self.render_kanban_card(
+                frame,
+                rect,
+                &titles[index],
+                focused && index == selected,
+                pending,
+            );
             y += heights[index];
         }
     }
@@ -3851,11 +3826,14 @@ impl App {
         area: Rect,
         title: &[String],
         selected: bool,
+        pending: bool,
     ) {
         // A card shows only the short description; Enter opens the rest.
         let width = usize::from(area.width.saturating_sub(2));
         let style = if selected {
             self.theme.selected()
+        } else if pending {
+            self.theme.warning_style()
         } else {
             Style::default()
         };
@@ -4064,16 +4042,6 @@ impl App {
                 lines.push("\nEnter assign · Esc cancel".to_owned());
                 ("Assign agent".to_owned(), lines)
             }
-            Mode::Planning { project_name } => (
-                "Planning".to_owned(),
-                vec![
-                    format!("Planning a request for {}…", clean(project_name)),
-                    String::new(),
-                    "The Tech Lead is drafting stories and executing assigned work; a story can take up to 15 minutes.".to_owned(),
-                    String::new(),
-                    "Esc cancel".to_owned(),
-                ],
-            ),
             Mode::Form(_)
             | Mode::Browse
             | Mode::Story { .. }
@@ -4819,6 +4787,18 @@ fn agent_detail_lines(detail: &agents::AgentDetail) -> Vec<String> {
     lines
 }
 
+fn pending_request_lines(request: &kanban::PendingRequest) -> Vec<String> {
+    vec![
+        format!("Status: {}", clean(&request.status)),
+        format!("Created: {}", clean(&request.created_at)),
+        String::new(),
+        request.content.clone(),
+        String::new(),
+        "The Tech Lead works this request from TODO.".to_owned(),
+        "This card is read-only.".to_owned(),
+    ]
+}
+
 fn kanban_help_lines() -> Vec<String> {
     vec![
         "h/l or ←/→  previous/next list".to_owned(),
@@ -5101,44 +5081,6 @@ fn fitting<'a>(candidates: &[&'a str], width: usize) -> &'a str {
         .unwrap_or(candidates[candidates.len() - 1])
 }
 
-/// Reads terminal input while planning blocks the dashboard; `Esc` or
-/// `Ctrl-C` cancels. It only touches the cancel token, never the database.
-struct CancelWatcher {
-    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    handle: std::thread::JoinHandle<()>,
-}
-
-impl CancelWatcher {
-    fn start(cancel: CancelToken) -> Self {
-        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let flag = std::sync::Arc::clone(&stop);
-        let handle = std::thread::spawn(move || {
-            while !flag.load(std::sync::atomic::Ordering::SeqCst) {
-                if !event::poll(std::time::Duration::from_millis(50)).unwrap_or(false) {
-                    continue;
-                }
-                if let Ok(Event::Key(key)) = event::read()
-                    && key.kind == KeyEventKind::Press
-                    && is_cancel_key(key)
-                {
-                    cancel.cancel();
-                }
-            }
-        });
-        Self { stop, handle }
-    }
-
-    fn stop(self) {
-        self.stop.store(true, std::sync::atomic::Ordering::SeqCst);
-        let _ = self.handle.join();
-    }
-}
-
-fn is_cancel_key(key: KeyEvent) -> bool {
-    key.code == KeyCode::Esc
-        || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL))
-}
-
 fn record_event(
     db: &mut Database,
     run_id: RunId,
@@ -5224,7 +5166,7 @@ mod tests {
             interactions: None,
             interactions_return: Screen::Group(DashboardGroup::Projects),
             schedules: None,
-            pending_request: None,
+            worker: None,
         };
         (app, dir)
     }
@@ -5566,6 +5508,7 @@ mod tests {
             lead_name: Some("Grace".to_owned()),
             counts: kanban::BoardCounts::default(),
             pending_intake: 1,
+            pending: Vec::new(),
             cards,
         }
     }
@@ -5745,13 +5688,16 @@ mod tests {
         }
         let view = app.kanban.as_ref().unwrap();
         assert_eq!(view.cards[0], 1);
-        assert_eq!(view.selected_card().unwrap().title, "Two");
+        match view.selected_entry().unwrap() {
+            kanban::KanbanEntry::Story(card) => assert_eq!(card.title, "Two"),
+            kanban::KanbanEntry::Pending(_) => panic!("expected a story"),
+        }
         for _ in 0..9 {
             app.handle_key(key(KeyCode::Char('l')));
         }
         let view = app.kanban.as_ref().unwrap();
         assert_eq!(view.column, 4);
-        assert!(view.selected_card().is_none());
+        assert!(view.selected_entry().is_none());
         app.handle_key(key(KeyCode::Char('?')));
         assert!(matches!(app.mode, Mode::Help));
         assert!(rendered(&mut app).contains("previous/next list"));
@@ -6341,18 +6287,103 @@ mod tests {
             app.handle_key(key(KeyCode::Char(ch)));
         }
         assert!(rendered(&mut app).contains("18 chars"));
-        let deferred = app.handle_key(key(KeyCode::Enter));
-        assert_eq!(deferred, Some(Deferred::Plan));
-        let (project, text) = app.pending_request.clone().unwrap();
-        assert_eq!(project.as_str(), "0b1c2d3e");
-        assert_eq!(text, "Add reset\nby email");
+        assert_eq!(app.handle_key(key(KeyCode::Enter)), None);
+        assert!(matches!(app.mode, Mode::Browse));
+        assert!(
+            app.status
+                .as_deref()
+                .is_some_and(|status| status.contains("queued in TODO")),
+            "{:?}",
+            app.status
+        );
+        let (status, content): (String, String) = app
+            .db
+            .block_on(async {
+                sqlx::query_as("SELECT status, content FROM requests WHERE content = ?1")
+                    .bind("Add reset\nby email")
+                    .fetch_one(app.db.pool())
+                    .await
+            })
+            .unwrap();
+        assert_eq!(status, "TODO");
+        assert_eq!(content, "Add reset\nby email");
 
-        app.pending_request = None;
+        // Escape still cancels a fresh prompt without adding a request.
         app.handle_key(key(KeyCode::Char('r')));
         app.handle_key(key(KeyCode::Char('x')));
         assert_eq!(app.handle_key(key(KeyCode::Esc)), None);
         assert!(matches!(app.mode, Mode::Browse));
-        assert!(app.pending_request.is_none());
+        let count: i64 = app
+            .db
+            .block_on(async {
+                sqlx::query_scalar("SELECT count(*) FROM requests WHERE content = ?1")
+                    .bind("Add reset\nby email")
+                    .fetch_one(app.db.pool())
+                    .await
+            })
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn queued_requests_render_in_todo_and_open_a_read_only_detail() {
+        let (mut app, _dir) = kanban_fixture(vec![card(
+            "2d3e4f50",
+            "Reset password",
+            kanban::StoryState::Todo,
+        )]);
+        let mut board = app.kanban.take().unwrap().board;
+        board.pending = vec![kanban::PendingRequest {
+            id: crate::domain::ids::RequestId::parse("1c2d3e4f").unwrap(),
+            content: "Add password reset by email".to_owned(),
+            status: "TODO".to_owned(),
+            created_at: "2026-01-01T00:00:00Z".to_owned(),
+        }];
+        app.kanban = Some(KanbanView::new(board));
+        let screen = rendered(&mut app);
+        assert!(screen.contains("REQUEST [TODO]"), "{screen}");
+        assert!(screen.contains("Add password"), "{screen}");
+        assert!(screen.contains("reset by email"), "{screen}");
+        app.handle_key(key(KeyCode::Enter));
+        let Mode::Message { title, lines } = &app.mode else {
+            panic!("expected request detail, got {:?}", app.mode);
+        };
+        assert_eq!(title, "Request 1c2d3e4f in TODO");
+        assert!(lines.join("\n").contains("Add password reset by email"));
+        assert!(
+            lines
+                .join("\n")
+                .contains("The Tech Lead works this request")
+        );
+    }
+
+    #[test]
+    fn worker_events_update_the_status_without_request_content() {
+        let (mut app, _dir) = kanban_fixture(Vec::new());
+        app.apply_worker_event(worker::WorkerEvent::Started {
+            request_id: crate::domain::ids::RequestId::parse("1c2d3e4f").unwrap(),
+        });
+        assert!(
+            app.status
+                .as_deref()
+                .is_some_and(|status| status.contains("planning request 1c2d3e4f")),
+            "{:?}",
+            app.status
+        );
+        app.apply_worker_event(worker::WorkerEvent::Finished {
+            request_id: crate::domain::ids::RequestId::parse("1c2d3e4f").unwrap(),
+            outcome: PlanningOutcome::Failed {
+                request_id: crate::domain::ids::RequestId::parse("1c2d3e4f").unwrap(),
+                code: "provider_timeout",
+                hint: "retry later.",
+                validation: false,
+            },
+            workflow: None,
+        });
+        assert_eq!(
+            app.status.as_deref(),
+            Some("Request 1c2d3e4f: failed (provider_timeout).")
+        );
     }
 
     #[test]
@@ -6471,58 +6502,5 @@ mod tests {
             assert!(screen.contains("Memories"), "{width}x{height}: {screen}");
             assert!(screen.contains("[Tab]"), "{width}x{height}: {screen}");
         }
-    }
-
-    #[test]
-    fn planning_outcomes_are_reported_and_sanitized() {
-        let (mut app, _dir) = kanban_fixture(Vec::new());
-        let request_id = crate::domain::ids::RequestId::parse("1c2d3e4f").unwrap();
-        let (title, lines) = app.outcome_lines(&PlanningOutcome::NeedsClarification {
-            request_id: request_id.clone(),
-            questions: vec!["Which \u{1b}[31memail provider?".to_owned()],
-        });
-        assert_eq!(title, "Request 1c2d3e4f needs clarification");
-        assert!(
-            lines
-                .join("\n")
-                .contains("Press n to submit a revised request.")
-        );
-        app.mode = Mode::Message { title, lines };
-        let screen = rendered(&mut app);
-        assert!(screen.contains("1. Which email provider?"), "{screen}");
-        assert!(!screen.contains('\u{1b}'), "{screen}");
-
-        let (title, lines) = app.outcome_lines(&PlanningOutcome::Cancelled {
-            request_id: request_id.clone(),
-        });
-        assert_eq!(title, "Request 1c2d3e4f cancelled");
-        assert!(lines.join(" ").contains("Provider-side processing"));
-
-        let (title, lines) = app.outcome_lines(&PlanningOutcome::Failed {
-            request_id,
-            code: "provider_timeout",
-            hint: "Try again later.",
-            validation: false,
-        });
-        assert_eq!(title, "Request 1c2d3e4f failed");
-        assert!(lines.contains(&"Code: provider_timeout".to_owned()));
-
-        app.mode = Mode::Planning {
-            project_name: "Portal".to_owned(),
-        };
-        let screen = rendered(&mut app);
-        assert!(screen.contains("Planning a request for Portal"), "{screen}");
-        assert!(screen.contains("Esc cancel"), "{screen}");
-    }
-
-    #[test]
-    fn only_esc_and_ctrl_c_cancel_planning() {
-        assert!(is_cancel_key(key(KeyCode::Esc)));
-        assert!(is_cancel_key(KeyEvent::new(
-            KeyCode::Char('c'),
-            KeyModifiers::CONTROL
-        )));
-        assert!(!is_cancel_key(key(KeyCode::Char('c'))));
-        assert!(!is_cancel_key(key(KeyCode::Enter)));
     }
 }

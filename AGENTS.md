@@ -245,6 +245,11 @@ Material post-release features are planned in tracked files under
   automated sequence is the bounded story execution in ADR-0050: one git
   worktree per story, a fixed action loop with explicit round, time, output,
   and attempt budgets, and no model-chosen state transition.
+- **Background queue:** intake persists a `TODO` request and returns. One
+  in-process worker drains the active laboratory queue oldest-first, one
+  request at a time, using a separate connection and no terminal access
+  (ADR-0061). `--run-queue` is the bounded headless drain; do not add a daemon
+  or parallel provider calls.
 - **Tools for the model:** the model may propose `list_files`, `read_file`,
   `write_file`, and `run_command` actions. The application validates every path
   inside the worktree, bounds output and time, and executes the action itself.

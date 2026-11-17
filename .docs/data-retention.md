@@ -164,6 +164,10 @@ WP-4 adds these tables ([ADR-0023](adr/adr-0023.md), [ADR-0022](adr/adr-0022.md)
 | `planned_by_agent_id` | Agent identifier or `NULL` (added by schema v13, ADR-0056) | Attributes the planning interaction to the actual Tech Lead even if the lead changes later. |
 | `created_at`, `updated_at` | RFC 3339 UTC timestamps | Ordering and diagnosis. |
 
+`TODO` is the durable queue; the request content is retained until the request
+is planned or fails and then remains for traceability (ADR-0061). Queued
+requests are not duplicated into a second table or into events.
+
 #### `schedules` (schema v14, ADR-0057)
 
 | Column | Contents | Why it is stored |

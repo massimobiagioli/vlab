@@ -135,55 +135,18 @@ pub fn dispatch(
             let text = input::request_text(text.as_deref(), limits)?;
             let db = open_database(run_id)?;
             let project = context::active_project(&db)?.require()?;
-            let settings = settings::show(&settings_file()?)?.settings;
-            let provider = provider_from_settings(&settings, limits)?;
-            let cancel = CancelToken::default();
-            let handler_token = cancel.clone();
-            let _ = ctrlc::set_handler(move || handler_token.cancel());
-            let environment = WorkspaceEnvironment::new(Paths::from_environment()?.workspace_dir());
-            let outcome = requests::plan(
-                &db,
-                &db,
-                &project,
-                &text,
-                &settings,
-                &provider,
-                limits,
-                &crate::domain::clock::SystemClock,
-                cancel.clone(),
-                run_id,
-            )?;
-            if matches!(&outcome, PlanningOutcome::Planned { .. }) {
-                match workflow::run(
-                    &db,
-                    &db,
-                    &project,
-                    &settings,
-                    &provider,
-                    &environment,
-                    limits,
-                    &crate::domain::clock::SystemClock,
-                    cancel,
-                    run_id,
-                ) {
-                    Ok(report) => write_stdout(
-                        stdout,
-                        &format!(
-                            "Workflow: {} completed, {} failed, {} remaining.\n",
-                            report.completed, report.failed, report.remaining
-                        ),
-                    )?,
-                    Err(error) => write_stderr(
-                        stderr,
-                        &format!(
-                            "Warning: the workflow could not start: {} {}\n",
-                            error,
-                            error.hint()
-                        ),
-                    )?,
-                }
-            }
-            render_plan_outcome(stdout, stderr, &db, &outcome)
+            let secret = settings::show(&settings_file()?)
+                .ok()
+                .and_then(|report| report.settings.credentials.deepseek_api_key);
+            let request =
+                requests::enqueue(&db, &db, &project, &text, secret.as_deref(), limits, run_id)?;
+            write_stdout(
+                stdout,
+                &format!(
+                    "Request {request} queued in TODO.\n\
+                     The Tech Lead will process it when the dashboard or `vlab --run-queue` runs.\n"
+                ),
+            )
         }
         Action::RunSchedules => {
             let db = open_database(run_id)?;
@@ -214,6 +177,125 @@ pub fn dispatch(
                     report.ran, report.failed, report.remaining
                 ),
             )
+        }
+        Action::RunQueue => {
+            let db = open_database(run_id)?;
+            let lab = context::active_lab(&db)?.require()?;
+            let settings = settings::show(&settings_file()?)?.settings;
+            let limits = ExecutionLimits::default();
+            let provider = provider_from_settings(&settings, limits)?;
+            let cancel = CancelToken::default();
+            let handler = cancel.clone();
+            let _ = ctrlc::set_handler(move || handler.cancel());
+            let environment = WorkspaceEnvironment::new(Paths::from_environment()?.workspace_dir());
+            let mut processed = 0usize;
+            let mut failed = 0usize;
+            while processed < crate::app::queue::MAX_QUEUE_BATCH {
+                let Some(request) = crate::app::queue::next(&db, &lab)? else {
+                    break;
+                };
+                processed += 1;
+                write_stdout(stdout, &format!("Request {}: planning\n", request.id))?;
+                let outcome = requests::plan_queued(
+                    &db,
+                    &db,
+                    &request,
+                    &settings,
+                    &provider,
+                    limits,
+                    &crate::domain::clock::SystemClock,
+                    cancel.clone(),
+                    run_id,
+                );
+                match outcome {
+                    Ok(PlanningOutcome::Planned {
+                        request_id,
+                        stories,
+                    }) => {
+                        write_stdout(
+                            stdout,
+                            &format!(
+                                "Request {request_id}: planned ({} stories)\n",
+                                stories.len()
+                            ),
+                        )?;
+                        match workflow::run(
+                            &db,
+                            &db,
+                            &request.project_id,
+                            &settings,
+                            &provider,
+                            &environment,
+                            limits,
+                            &crate::domain::clock::SystemClock,
+                            cancel.clone(),
+                            run_id,
+                        ) {
+                            Ok(report) => write_stdout(
+                                stdout,
+                                &format!(
+                                    "Workflow: {} completed, {} failed, {} remaining.\n",
+                                    report.completed, report.failed, report.remaining
+                                ),
+                            )?,
+                            Err(error) => write_stderr(
+                                stderr,
+                                &format!(
+                                    "Warning: the workflow could not start: {} {}\n",
+                                    error,
+                                    error.hint()
+                                ),
+                            )?,
+                        }
+                    }
+                    Ok(PlanningOutcome::NeedsClarification {
+                        request_id,
+                        questions,
+                    }) => write_stdout(
+                        stdout,
+                        &format!(
+                            "Request {request_id}: needs clarification ({} questions)\n",
+                            questions.len()
+                        ),
+                    )?,
+                    Ok(PlanningOutcome::Failed {
+                        request_id, code, ..
+                    }) => {
+                        failed += 1;
+                        write_stdout(stdout, &format!("Request {request_id}: failed ({code})\n"))?;
+                    }
+                    Ok(PlanningOutcome::Cancelled { request_id }) => {
+                        write_stdout(stdout, &format!("Request {request_id}: cancelled\n"))?;
+                        return Err(AppError::Interrupted);
+                    }
+                    Err(error) => {
+                        failed += 1;
+                        let _ = crate::app::planning::PlanningStore::finish_failed(
+                            &db,
+                            &request.id,
+                            "queue_precondition",
+                            "the queued request could not be planned.",
+                        );
+                        write_stderr(
+                            stderr,
+                            &format!(
+                                "Warning: request {} could not be planned: {} {}\n",
+                                request.id,
+                                error,
+                                error.hint()
+                            ),
+                        )?;
+                    }
+                }
+            }
+            if processed == 0 {
+                write_stdout(stdout, "No queued requests.\n")
+            } else {
+                write_stdout(
+                    stdout,
+                    &format!("Queue: {processed} processed, {failed} failed.\n"),
+                )
+            }
         }
         Action::ImportDocument { src, into, agent } => {
             let mut db = open_database(run_id)?;
@@ -1404,113 +1486,6 @@ pub(crate) fn provider_from_settings(
     .map_err(|_| AppError::Provider(ProviderFailure::Configuration))
 }
 
-fn render_plan_outcome(
-    stdout: &mut dyn Write,
-    stderr: &mut dyn Write,
-    db: &Database,
-    outcome: &PlanningOutcome,
-) -> Result<(), AppError> {
-    match outcome {
-        PlanningOutcome::Planned {
-            request_id,
-            stories,
-        } => {
-            let members = db.lab_agents(&crate::app::context::active_lab(db)?.require()?)?;
-            let names: std::collections::HashMap<String, String> = members
-                .into_iter()
-                .map(|member| (member.id.to_string(), member.name))
-                .collect();
-            let columns = [
-                Column::identifier("ID"),
-                Column::text("Title"),
-                Column::text("Assignee"),
-                Column::text("Priority"),
-                Column::text("Complexity"),
-                Column::text("Due"),
-            ];
-            let rows: Vec<Vec<String>> = stories
-                .iter()
-                .map(|story| {
-                    let assignee = story
-                        .assigned_agent_id
-                        .as_deref()
-                        .and_then(|id| names.get(id).cloned())
-                        .unwrap_or_else(|| "Unassigned".to_owned());
-                    vec![
-                        story.id.to_string(),
-                        story.title.clone(),
-                        assignee,
-                        story.priority.clone(),
-                        story.complexity.clone(),
-                        story.due_date.clone(),
-                    ]
-                })
-                .collect();
-            write_stdout(
-                stdout,
-                &format!(
-                    "Request {request_id}: planned\n{}",
-                    render_table(terminal_width(), &columns, &rows)
-                ),
-            )
-        }
-        PlanningOutcome::NeedsClarification {
-            request_id,
-            questions,
-        } => {
-            let mut out = format!("Request {request_id}: needs clarification\nQuestions:\n");
-            for (index, question) in questions.iter().enumerate() {
-                out.push_str(&format!("  {}. {}\n", index + 1, sanitize(question)));
-            }
-            write_stdout(stdout, &out)
-        }
-        PlanningOutcome::Failed {
-            request_id,
-            code,
-            hint,
-            validation,
-        } => {
-            write_stdout(
-                stdout,
-                &format!(
-                    "Request {request_id}: failed\nCode: {code}\nHint: {}\n",
-                    sanitize(hint)
-                ),
-            )?;
-            if *validation {
-                Err(AppError::Validation {
-                    problem: "the request was not planned; local validation failed.".to_owned(),
-                    hint: (*hint).to_owned(),
-                })
-            } else {
-                Err(AppError::Provider(provider_failure_from_code(code)))
-            }
-        }
-        PlanningOutcome::Cancelled { request_id } => {
-            write_stdout(stdout, &format!("Request {request_id}: cancelled\n"))?;
-            write_stderr(
-                stderr,
-                "Warning: provider-side processing may have continued after local cancellation.\n",
-            )?;
-            Err(AppError::Interrupted)
-        }
-    }
-}
-
-fn provider_failure_from_code(code: &str) -> ProviderFailure {
-    match code {
-        "provider_authentication" => ProviderFailure::Authentication,
-        "provider_rate_limited" => ProviderFailure::RateLimited,
-        "provider_timeout" => ProviderFailure::Timeout,
-        "provider_transport" => ProviderFailure::Transport,
-        "provider_server" => ProviderFailure::Server,
-        "provider_response_too_large" => ProviderFailure::ResponseTooLarge,
-        "provider_configuration" => ProviderFailure::Configuration,
-        "budget_exceeded" => ProviderFailure::BudgetExceeded,
-        _ => ProviderFailure::InvalidOutput,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1530,6 +1505,7 @@ mod tests {
                 ..BoardCounts::default()
             },
             pending_intake: 1,
+            pending: Vec::new(),
             cards: vec![crate::app::kanban::Card {
                 id: StoryId::parse("a3f91c07").unwrap(),
                 title: "Add reset".to_owned(),

@@ -8,7 +8,7 @@ Run `vlab` or `vlab --help` for the grouped help.
 
 | Command | Behavior |
 |---|---|
-| `vlab` | Home dashboard in a terminal; resumes pending story execution for the current project first. Prints help otherwise. |
+| `vlab` | Home dashboard in a terminal; starts the background request queue and resumes pending story execution without blocking the dashboard. Prints help otherwise. |
 | `-h`, `--help` | Print help. |
 | `-V`, `--version` | Print the version. |
 
@@ -37,13 +37,16 @@ Interactions, Schedules, Delete, Filter, Help, Back, and Quit. **New** opens a f
 (`None`, `GitHub`, `Folder`) and one source field; the source cannot be changed
 after creation. **Edit** renames the selected project. **Request** (`r`, or `n` on the Kanban board)
 makes the project current and opens a prompt dialog: type or paste the request
-(`Alt+Enter` adds a line break), `Enter` submits, `Esc` cancels. While the Tech
-Lead plans, a `Planning…` dialog is shown and `Esc` or `Ctrl-C` cancels; the
-outcome dialog lists the new stories, the clarification questions, or the
-failure code and hint. **Kanban** (`v`) opens the selected project's board
+(`Alt+Enter` adds a line break), `Enter` submits, `Esc` cancels. Submission
+persists the request as `TODO` and returns immediately; it never waits for
+planning. A background Tech Lead worker plans queued requests one at a time and
+runs the bounded workflow. **Kanban** (`v`) opens the selected project's board
 as a full-screen view: the header shows project, laboratory, Tech Lead,
 optional GitHub source, story counts, and pending intake; the five states are
 side-by-side lists of cards, each showing only the story's short description.
+Queued requests appear as `REQUEST` cards at the top of `TODO`; `Enter` opens a
+read-only request detail. The request card disappears when planning creates its
+stories.
 Every list scrolls on its own and shows `↑N`, `↓N more`, and `position/total`
 in its border. Use `←/→` or `h/l` for lists, `↑/↓` or `j/k` for cards,
 `PgUp/PgDn` to scroll a page, `Home/End` or `g/G` for the first/last card,
@@ -129,7 +132,8 @@ window but is hidden from `--help`. New work uses the group subcommands.
 | `--assign-agent <agent-id>` | Assign an active laboratory member to the current project; repeated assignment is idempotent. |
 | `--show-project-kanban` | Read-only five-column board for the current project, plus counts and pending intake. |
 | `--delete-project` | Confirm, then delete the current project and cascade requests/stories/memories/assignments. |
-| `--new-request [text]` | Plan a request for the current project from literal text or piped stdin, then execute assigned stories in git worktrees. |
+| `--new-request [text]` | Validate a request for the current project from literal text or piped stdin and queue it as `TODO`; return immediately without a provider call. |
+| `--run-queue` | Drain up to eight queued `TODO` requests for the active laboratory, oldest first, running planning and the bounded workflow; print a per-request and batch summary. |
 | `--run-schedules` | Run up to three due schedules for the current project, creating bounded requests and executing planned work; print a run/failed/remaining summary. |
 | `--import --src <file.md> --into <dest> [--agent <name-or-id>]` | Copy a UTF-8 markdown file into the data document store. `--into` is `lab/<name>`, `project/<name>`, or `agent` (with `--agent`). |
 
@@ -163,6 +167,7 @@ surface. Deletion follows the owning laboratory or project.
 - `--folder-source`: optional project local folder path; mutually exclusive
   with `--github-source`.
 - `--run-schedules`: run due project schedules instead of a dashboard action.
+- `--run-queue`: process queued `TODO` requests instead of opening a dashboard.
 - `--src`, `--into`, `--agent`: destination for `--import`.
 - `--create-agent-from-file`: read an agent definition instead of the wizard.
 

@@ -27,6 +27,7 @@ pub mod populate;
 pub mod presets;
 pub mod projects;
 pub mod provider_retry;
+pub mod queue;
 pub mod requests;
 pub mod schedules;
 pub mod settings;

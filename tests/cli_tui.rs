@@ -585,7 +585,7 @@ fn the_projects_dashboard_submits_a_request_through_the_prompt() {
     let plain = strip_ansi(&output);
     assert!(plain.contains("New request"), "{output:?}");
     assert!(plain.contains("Write a request first."), "{output:?}");
-    assert!(plain.contains("planned"), "{output:?}");
+    assert!(plain.contains("queued in TODO"), "{output:?}");
     assert!(plain.contains("reset"), "{output:?}");
     assert!(plain.contains("IN PROGRESS 1"), "{output:?}");
     assert!(plain.contains("TODO 0"), "{output:?}");

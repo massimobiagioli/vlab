@@ -110,7 +110,7 @@ fn the_input_matrix_rejects_dual_empty_invalid_and_oversized_input() {
 }
 
 #[test]
-fn an_end_to_end_request_creates_linked_stories() {
+fn a_request_is_queued_then_the_drain_creates_linked_stories() {
     let sandbox = Sandbox::new();
     seed(&sandbox);
     settings(&sandbox);
@@ -147,24 +147,52 @@ fn an_end_to_end_request_creates_linked_stories() {
             .await;
     });
 
-    let outcome = Outcome::from(
+    let queued = Outcome::from(
+        sandbox
+            .command()
+            .arg("--new-request")
+            .write_stdin("Add password reset")
+            .output()
+            .unwrap(),
+    );
+    queued
+        .assert_success()
+        .assert_absent(support::SECRET_MARKER);
+    assert!(
+        queued.stdout.contains("queued in TODO"),
+        "{}",
+        queued.stdout
+    );
+
+    let db = sandbox.seed_database();
+    let (status, stories): (String, i64) = db.block_on(async {
+        let status: String = sqlx::query_scalar("SELECT status FROM requests LIMIT 1")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        let stories: i64 = sqlx::query_scalar("SELECT count(*) FROM stories")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        (status, stories)
+    });
+    assert_eq!((status.as_str(), stories), ("TODO", 0));
+
+    let drained = Outcome::from(
         sandbox
             .command()
             .env(
                 "VLAB_DEEPSEEK_ENDPOINT",
                 format!("{}/chat/completions", server.uri()),
             )
-            .arg("--new-request")
-            .write_stdin("Add password reset")
+            .arg("--run-queue")
             .output()
             .unwrap(),
     );
-    outcome
+    drained
         .assert_success()
         .assert_absent(support::SECRET_MARKER);
-    assert!(outcome.stdout.contains("Request "), "{}", outcome.stdout);
-    assert!(outcome.stdout.contains("planned"), "{}", outcome.stdout);
-    assert!(outcome.stdout.contains("Add reset"), "{}", outcome.stdout);
+    assert!(drained.stdout.contains("planned"), "{}", drained.stdout);
 
     let db = sandbox.seed_database();
     let rows: (String, i64) = db.block_on(async {

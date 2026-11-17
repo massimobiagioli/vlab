@@ -34,6 +34,7 @@ own prints the list.
 | `make run ARGS="..."` | Build, then run `vlab` with its settings and database in `.data/` (see below). Without `ARGS`, shows `--help`. |
 | `make load-preset` | Build, then load the fictional agent catalog in `assets/agents.yaml` into the `.data/` database. |
 | `make run-schedules` | Build, then run due project schedules for the current project in `.data/`. |
+| `make run-queue` | Build, then drain up to eight queued `TODO` requests for the active laboratory in `.data/`. |
 | `make import SRC=<file.md> INTO=<dest> [AGENT=<name-or-id>]` | Copy a markdown document into `data/documents` for a lab, project, or agent. |
 | `make agent-create-from-file SRC=<file.md>` | Create an agent from a markdown definition with YAML frontmatter and a CV body. |
 | `make test` | Run all tests. |
@@ -101,8 +102,9 @@ Run `vlab` in a terminal to open the home dashboard:
 vlab
 ```
 
-On startup the active project's pending stories are executed automatically
-before the dashboard appears. Choose Laboratories, Projects,
+On startup a background Tech Lead worker drains queued `TODO` requests and the
+active project's pending stories while the dashboard remains usable. Choose
+Laboratories, Projects,
 Agents, Settings, Lab floor, or Metrics with the arrow keys and `Enter` (or
 `1`–`6`). Run `vlab --logs` to print the newest content-free audit events.
 Inside a group use `j/k` or arrows to move, the action
@@ -120,7 +122,12 @@ with `e`, and opens a full-screen,
 Trello-style Kanban board with `v`: lists side by side, cards with the short
 description only, independent scrolling per list, and `Enter` for a dialog
 with the full story. Press `r` on a project (or `n` on its board) to submit a
-new request in a simple prompt dialog; the Tech Lead plans it into stories.
+new request in a simple prompt dialog. Submission returns immediately: the
+request appears as a `REQUEST` card in `TODO`, and the background Tech Lead
+plans it into stories one request at a time. A second request waits visibly in
+`TODO` without blocking the dashboard. `Enter` on a request card opens its
+read-only detail. The hidden `--run-queue` flag and `make run-queue` drain the
+queue headlessly.
 Press `i` on a project (or on its board) to open the read-only interaction
 history: planning, work, and review entries with participants, outcome, and a
 recap. `Enter` opens the full recap, `r` reloads, and `Esc` returns. Press `s`
@@ -291,22 +298,26 @@ DeepSeek and GitHub keys in `settings.yaml` are set (`set`/`unset` only).
 
 ## Request planning
 
-Planning requires a structurally valid active laboratory, a project, valid
-settings, and `credentials.deepseek_api_key` in `settings.yaml`.
+Intake requires a structurally valid active laboratory and project. Background
+planning then requires valid settings and `credentials.deepseek_api_key` in
+`settings.yaml`; without them the request stays in `TODO` and the worker pauses.
 
 ```sh
 vlab --open-project <project-id>
 vlab --new-request "Add password reset"
 cat request.md | vlab --new-request
+vlab --run-queue
 vlab --show-project-kanban
 ```
 
-The request is persisted before any provider call. DeepSeek returns a strict
-JSON proposal; VLab validates it, assigns only project agents (or active
-laboratory members when the project has no assignments), computes due dates
-locally in UTC (2/5/10 calendar days by complexity), and
-inserts all stories in one transaction. Clarification, provider, validation,
-budget, timeout, and cancellation outcomes preserve the request. Retries are
+`--new-request` only persists the request as `TODO`; it calls no provider.
+`--run-queue` (or the interactive background worker) selects the oldest queued
+request and plans it. DeepSeek returns a strict JSON proposal; VLab validates
+it, assigns only project agents (or active laboratory members when the project
+has no assignments), computes due dates locally in UTC (2/5/10 calendar days by
+complexity), and inserts all stories in one transaction. Clarification,
+provider, validation, budget, timeout, and cancellation outcomes preserve the
+request. A second request waits in `TODO` until the first finishes. Retries are
 bounded and may incur additional provider charges; exactly-once remote
 execution is not promised.
 

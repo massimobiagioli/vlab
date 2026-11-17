@@ -2,7 +2,9 @@
 
 use sqlx::SqliteConnection;
 
-use crate::app::kanban::{Board, BoardCounts, Card, StoryDetail, StoryOutcome, StoryState};
+use crate::app::kanban::{
+    Board, BoardCounts, Card, PendingRequest, StoryDetail, StoryOutcome, StoryState,
+};
 use crate::domain::ids::{LabId, ProjectId, RequestId, StoryId};
 
 type OutcomeRow = (
@@ -38,6 +40,11 @@ SELECT s.id, s.title, s.state, a.name, s.priority, s.due_date, \
        (s.due_date < date('now')) AS overdue \
 FROM stories s LEFT JOIN agents a ON a.id = s.assigned_agent_id \
 WHERE s.project_id = ?1 ORDER BY s.created_at, s.id";
+
+const SELECT_PENDING_CARDS: &str = "\
+SELECT id, content, status, created_at FROM requests \
+WHERE project_id = ?1 AND status IN ('TODO', 'PLANNING') \
+ORDER BY created_at, id";
 
 const SELECT_STORY: &str = "\
 SELECT s.id, s.request_id, s.title, s.description, s.state, a.name, s.priority, s.complexity, \
@@ -109,6 +116,22 @@ pub async fn board(
         .fetch_one(&mut *connection)
         .await?;
 
+    let pending_rows: Vec<(String, String, String, String)> = sqlx::query_as(SELECT_PENDING_CARDS)
+        .bind(project_id.as_str())
+        .fetch_all(&mut *connection)
+        .await?;
+    let pending = pending_rows
+        .into_iter()
+        .map(|(id, content, status, created_at)| {
+            Ok(PendingRequest {
+                id: RequestId::parse(&id).ok_or(sqlx::Error::RowNotFound)?,
+                content: content.chars().take(4000).collect(),
+                status,
+                created_at,
+            })
+        })
+        .collect::<Result<Vec<_>, sqlx::Error>>()?;
+
     let card_rows: Vec<CardRow> = sqlx::query_as(SELECT_CARDS)
         .bind(project_id.as_str())
         .fetch_all(&mut *connection)
@@ -139,6 +162,7 @@ pub async fn board(
         lead_name,
         counts,
         pending_intake: u64::try_from(pending_intake).unwrap_or(0),
+        pending,
         cards,
     }))
 }

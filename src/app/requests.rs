@@ -9,6 +9,7 @@ use crate::app::planning::rules;
 use crate::app::planning::schema;
 use crate::app::planning::{PlannedStoryRow, PlanningStore};
 use crate::app::projects::ProjectStore;
+use crate::app::queue::QueuedRequest;
 use crate::app::storage::AppStateStore;
 use crate::domain::budget::{Budget, CancelToken, ExecutionLimits};
 use crate::domain::clock::Clock;
@@ -59,30 +60,17 @@ impl PlanningOutcome {
     }
 }
 
-/// Runs one bounded planning operation. The request row is written before the
-/// provider is called and is always preserved.
-#[allow(clippy::too_many_arguments)]
-pub fn plan(
-    store: &(impl PlanningStore + Directory + ProjectStore + MemoryStore + InvocationStore),
-    state: &impl AppStateStore,
-    project_id: &ProjectId,
+fn validate_text(
     request_text: &str,
-    settings: &Settings,
-    provider: &impl ModelProvider,
+    secret: Option<&str>,
     limits: ExecutionLimits,
-    clock: &impl Clock,
-    cancel: CancelToken,
-    run_id: RunId,
-) -> Result<PlanningOutcome, AppError> {
+) -> Result<(), AppError> {
     if request_text.trim().is_empty() {
         return Err(AppError::Usage {
             message: "a request must contain non-empty text.".to_owned(),
         });
     }
-    if contains_secret(
-        request_text,
-        settings.credentials.deepseek_api_key.as_deref(),
-    ) {
+    if contains_secret(request_text, secret) {
         return Err(AppError::Validation {
             problem: "the request contains a value that looks like the provider credential."
                 .to_owned(),
@@ -97,13 +85,119 @@ pub fn plan(
             ),
         });
     }
+    Ok(())
+}
+
+/// Persists a request as `TODO` and returns immediately (ADR-0061).
+///
+/// No provider call and no workflow happen here. The request is reserved for
+/// the background Tech Lead or the hidden queue drain.
+pub fn enqueue(
+    store: &(impl PlanningStore + ProjectStore),
+    state: &impl AppStateStore,
+    project_id: &ProjectId,
+    request_text: &str,
+    secret: Option<&str>,
+    limits: ExecutionLimits,
+    run_id: RunId,
+) -> Result<RequestId, AppError> {
+    validate_text(request_text, secret, limits)?;
     let lab_id = crate::app::context::active_lab(state)?.require()?;
-    let project = store
+    store
         .project_in_lab(project_id, &lab_id)?
         .ok_or_else(|| AppError::NotFound {
             entity: crate::app::EntityKind::Project,
             id: project_id.to_string(),
         })?;
+    let request_id = RequestId::generate();
+    store.insert_request(&request_id, project_id, request_text)?;
+    record(
+        store,
+        run_id,
+        EventKind::RequestQueued,
+        Outcome::Success,
+        Some(&request_id),
+        None,
+        None,
+    );
+    Ok(request_id)
+}
+
+/// Runs enqueue and planning in one call. Used by tests and explicit one-shot
+/// callers; intakes use [`enqueue`] instead.
+#[allow(clippy::too_many_arguments)]
+pub fn plan(
+    store: &(impl PlanningStore + Directory + ProjectStore + MemoryStore + InvocationStore),
+    state: &impl AppStateStore,
+    project_id: &ProjectId,
+    request_text: &str,
+    settings: &Settings,
+    provider: &impl ModelProvider,
+    limits: ExecutionLimits,
+    clock: &impl Clock,
+    cancel: CancelToken,
+    run_id: RunId,
+) -> Result<PlanningOutcome, AppError> {
+    let request_id = enqueue(
+        store,
+        state,
+        project_id,
+        request_text,
+        settings.credentials.deepseek_api_key.as_deref(),
+        limits,
+        run_id,
+    )?;
+    let lab_id = crate::app::context::active_lab(state)?.require()?;
+    let created_at = store
+        .request_created_at(&request_id)?
+        .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_owned());
+    let request = QueuedRequest {
+        id: request_id,
+        project_id: project_id.clone(),
+        lab_id,
+        content: request_text.to_owned(),
+        status: "TODO".to_owned(),
+        created_at,
+    };
+    plan_queued(
+        store, state, &request, settings, provider, limits, clock, cancel, run_id,
+    )
+}
+
+/// Runs the bounded planning operation for an already queued request.
+///
+/// The request row exists before this function is called and is always
+/// preserved. The associated laboratory comes from the request, not from a
+/// possibly changed active selection.
+#[allow(clippy::too_many_arguments)]
+pub fn plan_queued(
+    store: &(impl PlanningStore + Directory + ProjectStore + MemoryStore + InvocationStore),
+    state: &impl AppStateStore,
+    request: &QueuedRequest,
+    settings: &Settings,
+    provider: &impl ModelProvider,
+    limits: ExecutionLimits,
+    clock: &impl Clock,
+    cancel: CancelToken,
+    run_id: RunId,
+) -> Result<PlanningOutcome, AppError> {
+    let request_id = request.id.clone();
+    let project_id = request.project_id.clone();
+    let request_text = request.content.as_str();
+    let created_at = request.created_at.clone();
+    validate_text(
+        request_text,
+        settings.credentials.deepseek_api_key.as_deref(),
+        limits,
+    )?;
+    let lab_id = request.lab_id.clone();
+    let project =
+        store
+            .project_in_lab(&project_id, &lab_id)?
+            .ok_or_else(|| AppError::NotFound {
+                entity: crate::app::EntityKind::Project,
+                id: project_id.to_string(),
+            })?;
     let lab = store.lab(&lab_id)?.ok_or_else(|| AppError::NotFound {
         entity: crate::app::EntityKind::Laboratory,
         id: lab_id.to_string(),
@@ -129,7 +223,7 @@ pub fn plan(
             problem: "the laboratory needs a Tech Lead before planning.".to_owned(),
             hint: "Run `vlab --check-lab <lab-id>` and add a lead.".to_owned(),
         })?;
-    let assigned = store.project_agent_ids(project_id)?;
+    let assigned = store.project_agent_ids(&project_id)?;
     let members = if assigned.is_empty() {
         all_members
     } else {
@@ -148,8 +242,6 @@ pub fn plan(
     };
     let _ = store.recover_stale_planning(STALE_PLANNING_SECONDS)?;
 
-    let request_id = RequestId::generate();
-    store.insert_request(&request_id, project_id, request_text)?;
     store.mark_planning(&request_id, &lead.id)?;
     record(
         store,
@@ -179,9 +271,6 @@ pub fn plan(
         return Ok(PlanningOutcome::Cancelled { request_id });
     }
 
-    let created_at = store
-        .request_created_at(&request_id)?
-        .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_owned());
     let lab_memories = store.memories(&MemoryScope::Lab(lab_id.clone()))?;
     let project_memories = store.memories(&MemoryScope::Project(project_id.clone()))?;
     let lead_memories = store.memories(&MemoryScope::Agent(lead.id.clone()))?;
@@ -438,7 +527,7 @@ pub fn plan(
             due_date: applied.due_date,
         })
         .collect();
-    store.finish_planned(&request_id, project_id, &stories)?;
+    store.finish_planned(&request_id, &project_id, &stories)?;
     if let Some(summary) = planning_summary(
         store,
         &lead.id,
