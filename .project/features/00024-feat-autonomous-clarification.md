@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00024` |
 | Branch | `feat/autonomous-clarification` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-17 |
 | Related ADRs | ADR-0066 (autonomous clarification), ADR-0026 (planning), ADR-0003 (bounded provider) |
 | Scope | Resolve Tech Lead questions without a human and keep the board moving |
@@ -55,7 +55,7 @@ then create cards and start the existing workflow.
 - `tests/planning_flow.rs` covers resolved and unresolved clarification.
 - `tests/security_planning.rs` covers prompt injection and secret exclusion on
   the clarification path.
-- Hosted CI has not run; the plan stays `In progress` until it is green.
+- Hosted CI is green on commit `060cc0b`.
 
 ## Task checklist
 
@@ -66,4 +66,4 @@ then create cards and start the existing workflow.
   unresolved questions with `clarification_unresolved`.
 - [x] **F03-01** Update tests and documentation.
 - [x] **F04-01** Run `make check`.
-- [ ] **F04-02** Push, confirm hosted CI is green, and set the status to `Done`.
+- [x] **F04-02** Push, confirm hosted CI is green, and set the status to `Done`.
