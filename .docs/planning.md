@@ -88,10 +88,13 @@ submit a revised request and keep the previous record for traceability.
 
 ## Real worktree execution
 
-After planning, and automatically when the interactive application starts,
+After planning, and in the background when the interactive application starts,
 assigned stories in `TODO`, `IN_PROGRESS`, or `IN_REVIEW` without an outcome
 are executed sequentially (ADR-0050). An assigned `TODO` story moves to
-`IN_PROGRESS` when its attempt starts.
+`IN_PROGRESS` when its attempt starts. The dashboard opens first; the worker
+runs due schedules and the startup workflow, reports `Background:` status, and
+then drains queued requests. There is no pre-dashboard blocking message
+(ADR-0064).
 
 1. The application creates `.workspace/.worktrees/<story-id>` on branch
    `vlab/<story-id>` from the project checkout. A project without a checkout is

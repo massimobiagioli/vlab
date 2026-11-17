@@ -717,7 +717,7 @@ fn settings_file() -> Result<SettingsFile, AppError> {
 /// and the same bounded workflow as a planning run runs once for the current
 /// project. Missing context or settings simply skip both; every failure is
 /// reported as a warning and never prevents the dashboard from opening.
-pub(crate) fn resume_pending_workflow(stderr: &mut dyn Write, run_id: RunId) {
+pub(crate) fn resume_pending_workflow(stderr: &mut dyn Write, run_id: RunId, cancel: CancelToken) {
     let db = match open_database(run_id) {
         Ok(db) => db,
         Err(error) => {
@@ -753,9 +753,6 @@ pub(crate) fn resume_pending_workflow(stderr: &mut dyn Write, run_id: RunId) {
         Ok(provider) => provider,
         Err(_) => return,
     };
-    let cancel = CancelToken::default();
-    let handler = cancel.clone();
-    let _ = ctrlc::set_handler(move || handler.cancel());
     let environment = match Paths::from_environment() {
         Ok(paths) => WorkspaceEnvironment::new(paths.workspace_dir()),
         Err(error) => {

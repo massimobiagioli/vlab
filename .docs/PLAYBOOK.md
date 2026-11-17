@@ -251,7 +251,7 @@ the provider or changes a story.
 In **Projects** select a project and press `s`. Use `n` to create a recurring
 task: title, single-line request, interval (daily/weekly/monthly), and owner
 agent. `p` pauses/resumes, `d` deletes after confirmation, and `Enter` opens the
-full task. Due schedules run when the dashboard starts or with:
+full task. Due schedules run in the background after the dashboard opens, or with:
 
 ```sh
 make run-schedules

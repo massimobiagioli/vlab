@@ -37,6 +37,7 @@ pub(super) enum WorkerEvent {
         outcome: PlanningOutcome,
         workflow: Option<Result<(usize, usize, usize), String>>,
     },
+    Background(String),
     Warning(String),
 }
 
@@ -91,6 +92,20 @@ fn run(
             return;
         }
     };
+    let _ = tx.send(WorkerEvent::Background(
+        "Background: checking schedules and pending work...".to_owned(),
+    ));
+    let mut startup = Vec::new();
+    crate::cli::dispatch::resume_pending_workflow(&mut startup, run_id, cancel.clone());
+    for line in String::from_utf8_lossy(&startup)
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+    {
+        let _ = tx.send(WorkerEvent::Background(line.to_owned()));
+    }
+    let _ = tx.send(WorkerEvent::Background(
+        "Background: startup check complete.".to_owned(),
+    ));
     let settings_file = SettingsFile::new(paths.config_dir(), paths.settings_file());
     let mut last_warning = String::new();
     while !shutdown.load(Ordering::SeqCst) && !cancel.is_cancelled() {

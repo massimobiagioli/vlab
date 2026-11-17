@@ -917,6 +917,9 @@ impl App {
                     None => base,
                 });
             }
+            worker::WorkerEvent::Background(message) => {
+                self.status = Some(message);
+            }
             worker::WorkerEvent::Warning(message) => {
                 self.status = Some(message);
             }
@@ -6464,6 +6467,13 @@ mod tests {
     #[test]
     fn worker_events_update_the_status_without_request_content() {
         let (mut app, _dir) = kanban_fixture(Vec::new());
+        app.apply_worker_event(worker::WorkerEvent::Background(
+            "Background: checking schedules and pending work...".to_owned(),
+        ));
+        assert_eq!(
+            app.status.as_deref(),
+            Some("Background: checking schedules and pending work...")
+        );
         app.apply_worker_event(worker::WorkerEvent::Started {
             request_id: crate::domain::ids::RequestId::parse("1c2d3e4f").unwrap(),
         });

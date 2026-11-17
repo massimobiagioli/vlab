@@ -8,7 +8,7 @@ Run `vlab` or `vlab --help` for the grouped help.
 
 | Command | Behavior |
 |---|---|
-| `vlab` | Home dashboard in a terminal; starts the background request queue and resumes pending story execution without blocking the dashboard. Prints help otherwise. |
+| `vlab` | Home dashboard opens immediately in a terminal; a background worker runs due schedules, resumes pending story execution, and drains the request queue while the status line reports `Background:` progress. Prints help otherwise. |
 | `-h`, `--help` | Print help. |
 | `-V`, `--version` | Print the version. |
 
@@ -69,8 +69,9 @@ selected project and from the Kanban board for the current project.
 **Schedules** (`s`) opens the selected project's recurring tasks. The page lists
 title, owner, interval, next run, status, and last result; `n` creates a task,
 `p` pauses/resumes, `d` deletes after confirmation, `Enter` opens the full task,
-`r` reloads, and `Esc` returns. Due schedules run on dashboard startup and with
-`--run-schedules`; the page itself never calls the provider.
+`r` reloads, and `Esc` returns. Due schedules run in the background after the
+dashboard opens and with `--run-schedules`; the page itself never calls the
+provider.
 
 The home dashboard lists Laboratories, Projects, Agents, Settings, Lab
 floor, and Metrics. Use `Enter` to open the selected group, `1`–`6` to jump

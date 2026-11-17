@@ -58,7 +58,9 @@ laboratories staffed by AI agents.
 - **Queue:** intake persists a `TODO` request and returns; one in-process
   worker drains the active laboratory oldest-first, one request at a time, with
   no daemon or parallel provider calls (ADR-0061). `--run-queue` is the bounded
-  headless drain.
+  headless drain. The same worker runs due schedules and resumes pending
+  stories after the dashboard opens; startup never blocks on a pre-terminal
+  message (ADR-0064).
 - **Floor:** the laboratory floor is a fixed three-room MSX scene (Project Lab,
   War Room, Lounge) with real task context, deterministic animation, and a
   bidirectional `f` link to the active project's Kanban (ADR-0062). It is
@@ -389,7 +391,8 @@ Ask these before approving any VLab change:
 - `.docs/cli-reference.md`
 - `.docs/configuration.md`
 - `.docs/adr/registry.md`
-- `.docs/adr/adr-0061.md`, `.docs/adr/adr-0062.md`, `.docs/adr/adr-0063.md`
+- `.docs/adr/adr-0061.md`, `.docs/adr/adr-0062.md`, `.docs/adr/adr-0063.md`,
+  `.docs/adr/adr-0064.md`
 - `.agents/skills/msx-computer-senior-software-architect/SKILL.md`
 - `.project/IMPLEMENTATION-PLAN.md`
 - `.project/features/`

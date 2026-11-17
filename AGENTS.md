@@ -114,6 +114,7 @@ over convenience or delivery speed.
 | [`.docs/adr/adr-0061.md`](.docs/adr/adr-0061.md) | Background request queue with serial Tech Lead processing. |
 | [`.docs/adr/adr-0062.md`](.docs/adr/adr-0062.md) | Fixed three-room MSX floor with bidirectional Kanban. |
 | [`.docs/adr/adr-0063.md`](.docs/adr/adr-0063.md) | Maintain the Tech Lead skill after every feature. |
+| [`.docs/adr/adr-0064.md`](.docs/adr/adr-0064.md) | Non-blocking startup resume. |
 | [`.project/IMPLEMENTATION-PLAN.md`](.project/IMPLEMENTATION-PLAN.md) | Ordered work packages, tasks, and gates for the initial release. |
 | [`.project/features/`](.project/features/) | Tracked feature plans with task checklists (ADR-0037). |
 

@@ -102,9 +102,10 @@ Run `vlab` in a terminal to open the home dashboard:
 vlab
 ```
 
-On startup a background Tech Lead worker drains queued `TODO` requests and the
-active project's pending stories while the dashboard remains usable. Choose
-Laboratories, Projects,
+The dashboard opens immediately. A background worker then runs due schedules,
+resumes the active project's pending stories, and drains queued `TODO` requests
+while the status line reports `Background:` progress. Choose Laboratories,
+Projects,
 Agents, Settings, Lab floor, or Metrics with the arrow keys and `Enter` (or
 `1`–`6`). Run `vlab --logs` to print the newest content-free audit events.
 Inside a group use `j/k` or arrows to move, the action
@@ -133,8 +134,8 @@ history: planning, work, and review entries with participants, outcome, and a
 recap. `Enter` opens the full recap, `r` reloads, and `Esc` returns. Press `s`
 on a project for **Schedules**: create a recurring task with `n`, pause/resume
 with `p`, delete with `d`, and open its full request with `Enter`. Due schedules
-run on dashboard startup and with `make run-schedules`; the page never calls the
-provider.
+run in the background after the dashboard opens and with `make run-schedules`;
+the page never calls the provider.
 
 The **Lab floor** is a fixed three-room MSX laboratory: **Project Lab** for the
 active project and its task board, **War Room** for the Tech Lead and focused

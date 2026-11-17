@@ -793,8 +793,11 @@ A schedule shall:
 - Be pausable/resumable and deletable after confirmation.
 - Show a scrollable detail with the full task request and last result.
 
-Due schedules shall be executed on dashboard startup and by the hidden
-`--run-schedules` command (and `make run-schedules`). Each due schedule shall:
+Due schedules shall be executed by the background startup worker when the
+dashboard opens and by the hidden `--run-schedules` command (and
+`make run-schedules`). The dashboard opens immediately; startup progress is a
+`Background:` status, never a pre-terminal blocking message (ADR-0064). Each due
+schedule shall:
 
 - Create a normal project request that passes the existing planning rules and
   bounded workflow; the owner is named in the request but the Tech Lead still
