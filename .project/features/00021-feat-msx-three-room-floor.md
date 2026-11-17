@@ -79,7 +79,8 @@ context, and a two-way link with the active project's Kanban board.
   story.
 - `AGENTS.md`, `vlab-tech-lead`, and ADR-0063 record the mandatory post-feature
   skill update.
-- Hosted CI is green on commit `3e36e26`.
+- Hosted CI is green on commit `164f807` (including the visual and movement
+  refinement).
 
 ## Task checklist
 
