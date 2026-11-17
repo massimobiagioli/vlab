@@ -4,7 +4,7 @@
 |---|---|
 | Identifier | `00029` |
 | Branch | `feat/bounded-rework` |
-| Status | `In progress` |
+| Status | `Done` |
 | Date | 2026-11-17 |
 | Related ADRs | ADR-0071 (rework policy), ADR-0050 (workflow), ADR-0069 (closing compromise), ADR-0070 (develop integration) |
 | Scope | Preserve work on retry, structured findings, bounded rework, Tech Lead escalation |
@@ -68,7 +68,7 @@ card closes with a technical-debt card.
   bounds.
 - The git adapter test covers worktree/branch reuse.
 - Migration tests cover schema v20.
-- `make check` passed; hosted CI pending.
+- `make check` passed; hosted CI is green on `03b1f11`.
 
 ## Task checklist
 
@@ -82,4 +82,4 @@ card closes with a technical-debt card.
 - [x] **F06-01** Include findings in prompts, debt cards, events, and docs.
 - [x] **F07-01** Update and add tests.
 - [x] **F08-01** Run `make check`.
-- [ ] **F08-02** Push, confirm hosted CI is green, and set the status to `Done`.
+- [x] **F08-02** Push, confirm hosted CI is green, and set the status to `Done`.
